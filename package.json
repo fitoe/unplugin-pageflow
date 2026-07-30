@@ -58,7 +58,7 @@
     "preview": "vite preview"
   },
   "dependencies": {
-    "@leafer-ui/core": "^2.2.6",
+    "leafer-ui": "^2.2.6",
     "unplugin": "^2.3.5"
   },
   "peerDependencies": {

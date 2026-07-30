@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { access } from 'node:fs/promises'
+import { access, readFile } from 'node:fs/promises'
 import PageFlow from '../dist/plugin/index.js'
 
 assert.equal(typeof PageFlow.vite, 'function')
@@ -20,4 +20,7 @@ assert.doesNotMatch(runtimeModule, /file:\/\//)
 await access('src/client/mount.ts')
 await access('src/runtime/client.ts')
 await access('dist/style.css')
+const clientOutput = await readFile('dist/client/mount.js', 'utf8')
+assert.match(clientOutput, /origin\.createCanvas/)
+assert.match(clientOutput, /leafer-canvas-view/)
 console.log('Built package exposes unplugin adapters and resolves its client assets.')

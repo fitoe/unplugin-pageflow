@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref } from 'vue'
-import { Leafer, Rect, Text, Line, Group, MoveEvent, ZoomEvent } from '@leafer-ui/core'
+import { Leafer, Rect, Text, Line, Group, MoveEvent, ZoomEvent } from 'leafer-ui'
 import type { PageFlowPage, ResolvedPageFlowOptions } from './shared/types'
 import { fetchPageFlowGraph, scanPageLinks, startRouteDiscovery, subscribeToGraphUpdates } from './client/graph'
 import { resolvePreviewUrl } from './client/preview'
