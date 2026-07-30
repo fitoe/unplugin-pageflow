@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { access, readFile } from 'node:fs/promises'
+import { access, readFile, readdir } from 'node:fs/promises'
 import PageFlow from '../dist/plugin/index.js'
 
 assert.equal(typeof PageFlow.vite, 'function')
@@ -21,8 +21,16 @@ await access('src/client/mount.ts')
 await access('src/runtime/client.ts')
 await access('dist/style.css')
 const clientOutput = await readFile('dist/client/mount.js', 'utf8')
+const packagedAssets = await readdir('dist/assets')
 assert.match(clientOutput, /origin\.createCanvas/)
 assert.match(clientOutput, /leafer-canvas-view/)
 assert.match(clientOutput, /zoomLayer/)
 assert.match(clientOutput, /viewport/)
+assert.match(clientOutput, /image\/webp/)
+assert.match(clientOutput, /EventSource/)
+assert.match(clientOutput, /unplugin-pageflow:page-update/)
+assert.match(clientOutput, /unplugin-pageflow:wheel/)
+assert.match(clientOutput, /layout\.worker-/)
+assert.doesNotMatch(clientOutput, /["']\/assets\/layout\.worker-/)
+assert(packagedAssets.some(file => /^layout\.worker-.*\.js$/.test(file)))
 console.log('Built package exposes unplugin adapters and resolves its client assets.')

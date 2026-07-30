@@ -8,6 +8,10 @@
     ".": {
       "types": "./dist/plugin/index.d.ts",
       "import": "./dist/plugin/index.js"
+    },
+    "./source": {
+      "types": "./dist/plugin/index.d.ts",
+      "import": "./src/plugin/index.ts"
     }
   },
   "files": [
@@ -60,6 +64,8 @@
   "dependencies": {
     "@leafer-in/view": "^2.2.6",
     "@leafer-in/viewport": "^2.2.6",
+    "@leafer-ui/core": "^2.2.6",
+    "html2canvas": "^1.4.1",
     "leafer-ui": "^2.2.6",
     "unplugin": "^2.3.5"
   },

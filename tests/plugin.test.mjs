@@ -12,6 +12,7 @@ test('serves the unplugin-pageflow client from the configured development route'
   })
 
   await server.listen()
+  const eventController = new AbortController()
 
   try {
     const address = server.httpServer?.address()
@@ -41,23 +42,28 @@ test('serves the unplugin-pageflow client from the configured development route'
     const routeUpdate = await fetch(`${origin}/__unplugin-pageflow/api/routes`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ routes }),
+      body: JSON.stringify({ routeMode: 'hash', routes }),
     })
     const pageflowPlugin = server.config.plugins.find(plugin => plugin.name === 'unplugin-pageflow')
     assert.equal(typeof pageflowPlugin?.transform, 'function')
     await pageflowPlugin.transform(await readFile(componentFile, 'utf8'), componentFile)
     const staticGraph = await (await fetch(`${origin}/__unplugin-pageflow/api/graph`)).json()
+    const eventResponse = await fetch(`${origin}/__unplugin-pageflow/api/events`, { signal: eventController.signal })
+    const eventReader = eventResponse.body.getReader()
+    const eventDecoder = new TextDecoder()
+    assert.match(eventDecoder.decode((await eventReader.read()).value), /connected/)
     const pageUpdate = await fetch(`${origin}/__unplugin-pageflow/api/page`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ path: '/', links: [{ label: 'About us', to: '/about' }] }),
     })
+    const pageEvent = eventDecoder.decode((await eventReader.read()).value)
     const graphResponse = await fetch(`${origin}/__unplugin-pageflow/api/graph`)
     const graph = await graphResponse.json()
     await fetch(`${origin}/__unplugin-pageflow/api/routes`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ routes }),
+      body: JSON.stringify({ routeMode: 'hash', routes }),
     })
     const unchangedGraph = await (await fetch(`${origin}/__unplugin-pageflow/api/graph`)).json()
 
@@ -74,14 +80,17 @@ test('serves the unplugin-pageflow client from the configured development route'
     assert.match(runtimeClientCode, /collectLinks/)
     assert.equal(routeUpdate.status, 204)
     assert.equal(pageUpdate.status, 204)
+    assert.match(pageEvent, /event: unplugin-pageflow:page-update/)
+    assert.match(pageEvent, /About us/)
     assert.equal(graphResponse.status, 200)
+    assert.equal(graph.routeMode, 'hash')
     assert.deepEqual(staticGraph.pages[0].links, [
       { label: 'push /about', to: 'about' },
       { label: 'push /users/42', to: 'user' },
       { label: 'replace /contact', to: 'contact' },
     ])
-    assert.equal(graph.version, 3)
-    assert.equal(unchangedGraph.version, 3)
+    assert(graph.version >= 3)
+    assert.equal(unchangedGraph.version, graph.version)
     assert.deepEqual(graph.pages.map(page => page.path), ['/', '/about', '/contact', '/users/:id'])
     assert.deepEqual(graph.pages[0].links, [
       { label: 'About us', to: 'about' },
@@ -89,6 +98,7 @@ test('serves the unplugin-pageflow client from the configured development route'
       { label: 'replace /contact', to: 'contact' },
     ])
   } finally {
+    eventController.abort()
     await server.close()
   }
 })

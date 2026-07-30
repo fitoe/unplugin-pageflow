@@ -1,10 +1,11 @@
 import type {
   PageFlowRuntimeLink,
   PageFlowRuntimeRoute,
+  PageFlowRouteMode,
   ResolvedPageFlowOptions,
 } from '../shared/types'
 import { PAGEFLOW_PREVIEW_PARAM } from './index'
-import { PAGEFLOW_NAVIGATE_MESSAGE } from '../shared/protocol'
+import { PAGEFLOW_NAVIGATE_MESSAGE, PAGEFLOW_PAGE_REPORTED_MESSAGE, PAGEFLOW_READY_EVENT, PAGEFLOW_WHEEL_MESSAGE } from '../shared/protocol'
 
 interface RouterRecordLike {
   name?: string | symbol | null
@@ -14,7 +15,7 @@ interface RouterRecordLike {
 }
 
 interface RouterLike {
-  options?: { history?: { base?: string } }
+  options?: { history?: { base?: string; createHref?(location: string): string } }
   getRoutes(): RouterRecordLike[]
   currentRoute?: { value?: { path?: string; matched?: RouterRecordLike[] } }
   resolve?(to: unknown): { path?: string; matched?: RouterRecordLike[] }
@@ -41,6 +42,47 @@ function findRouter() {
   }
 }
 
+function repairPreviewAssetUrls(config: ResolvedPageFlowOptions) {
+  if (!new URLSearchParams(window.location.search).has(PAGEFLOW_PREVIEW_PARAM)) return
+  const appUrl = config.appUrl.endsWith('/') ? config.appUrl : `${config.appUrl}/`
+  const base = new URL(appUrl, window.location.origin)
+  const resolveRelative = (value: string) => /^\.\.?(?:\/|$)/.test(value) ? new URL(value, base).href : value
+  const repair = (root: ParentNode) => {
+    root.querySelectorAll<HTMLImageElement | HTMLSourceElement>('img[src], source[src]').forEach(element => {
+      const value = element.getAttribute('src')
+      const next = value && resolveRelative(value)
+      if (next && next !== value) element.setAttribute('src', next)
+    })
+    root.querySelectorAll<HTMLImageElement | HTMLSourceElement>('img[srcset], source[srcset]').forEach(element => {
+      const value = element.getAttribute('srcset')
+      if (!value) return
+      const next = value.split(',').map(candidate => {
+        const [url, descriptor] = candidate.trim().split(/\s+/, 2)
+        return [resolveRelative(url), descriptor].filter(Boolean).join(' ')
+      }).join(', ')
+      if (next !== value) element.setAttribute('srcset', next)
+    })
+    root.querySelectorAll<HTMLVideoElement>('video[poster]').forEach(element => {
+      const value = element.getAttribute('poster')
+      const next = value && resolveRelative(value)
+      if (next && next !== value) element.setAttribute('poster', next)
+    })
+  }
+  repair(document)
+  const observer = new MutationObserver(records => records.forEach(record => {
+    if (record.type === 'childList') record.addedNodes.forEach(node => {
+      if (node instanceof Element) repair(node.matches('img, source, video') ? node.parentNode ?? document : node)
+    })
+    else if (record.target.parentNode) repair(record.target.parentNode)
+  }))
+  observer.observe(document.documentElement, {
+    attributes: true,
+    attributeFilter: ['poster', 'src', 'srcset'],
+    childList: true,
+    subtree: true,
+  })
+}
+
 function normalizeRoutes(router: RouterLike): PageFlowRuntimeRoute[] {
   return router.getRoutes().map(route => {
     const name = route.name == null ? undefined : String(route.name)
@@ -62,10 +104,14 @@ function normalizeRoutes(router: RouterLike): PageFlowRuntimeRoute[] {
 }
 
 async function publishRoutes(router: RouterLike, config: ResolvedPageFlowOptions) {
+  const routeMode: PageFlowRouteMode = router.options?.history?.createHref?.('/').includes('#')
+    || window.location.hash.startsWith('#/')
+    ? 'hash'
+    : 'history'
   await fetch(`${config.previewPath}api/routes`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ routes: normalizeRoutes(router) }),
+    body: JSON.stringify({ routeMode, routes: normalizeRoutes(router) }),
   })
 }
 
@@ -96,6 +142,26 @@ function anchorRoutePath(router: RouterLike, target: URL) {
 function notifyNavigation(to: string) {
   if (window.parent === window) return
   window.parent.postMessage({ type: PAGEFLOW_NAVIGATE_MESSAGE, to }, window.location.origin)
+}
+
+function forwardPreviewWheel() {
+  if (window.parent === window) return
+  window.addEventListener('wheel', event => {
+    event.preventDefault()
+    window.parent.postMessage({
+      type: PAGEFLOW_WHEEL_MESSAGE,
+      clientX: event.clientX,
+      clientY: event.clientY,
+      deltaMode: event.deltaMode,
+      deltaX: event.deltaX,
+      deltaY: event.deltaY,
+      deltaZ: event.deltaZ,
+      ctrlKey: event.ctrlKey,
+      shiftKey: event.shiftKey,
+      altKey: event.altKey,
+      metaKey: event.metaKey,
+    }, window.location.origin)
+  }, { passive: false })
 }
 
 function addHotspot(layer: HTMLElement, element: Element) {
@@ -160,6 +226,8 @@ async function publishPage(router: RouterLike, config: ResolvedPageFlowOptions) 
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ path, links: collectLinks(router) }),
   })
+  if (window.parent !== window)
+    window.parent.postMessage({ type: PAGEFLOW_PAGE_REPORTED_MESSAGE, path }, window.location.origin)
 }
 
 function protectPreviewInteractions(router: RouterLike, config: ResolvedPageFlowOptions) {
@@ -212,6 +280,11 @@ function observePage(router: RouterLike, config: ResolvedPageFlowOptions) {
 export async function startPageFlowRuntime(config: ResolvedPageFlowOptions) {
   if (!config.enabled) return
 
+  repairPreviewAssetUrls(config)
+  Object.assign(window, {
+    __UNPLUGIN_PAGEFLOW_READY__: () => window.dispatchEvent(new Event(PAGEFLOW_READY_EVENT)),
+  })
+
   let router: RouterLike | undefined
   for (let attempt = 0; attempt < 50 && !router; attempt++) {
     router = findRouter()
@@ -219,12 +292,14 @@ export async function startPageFlowRuntime(config: ResolvedPageFlowOptions) {
   }
 
   if (!router) return
+  const previewMode = new URLSearchParams(window.location.search).has(PAGEFLOW_PREVIEW_PARAM)
+  if (previewMode) forwardPreviewWheel()
   protectPreviewInteractions(router, config)
-  await publishRoutes(router, config)
+  if (!previewMode) await publishRoutes(router, config)
   await publishPage(router, config)
   observePage(router, config)
   router.afterEach?.(() => {
-    void publishRoutes(router, config)
+    if (!previewMode) void publishRoutes(router, config)
     void publishPage(router, config)
   })
 }

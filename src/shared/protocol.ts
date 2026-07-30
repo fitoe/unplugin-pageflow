@@ -1,2 +1,6 @@
 export const PAGEFLOW_GRAPH_EVENT = 'unplugin-pageflow:graph-update'
+export const PAGEFLOW_PAGE_EVENT = 'unplugin-pageflow:page-update'
+export const PAGEFLOW_PAGE_REPORTED_MESSAGE = 'unplugin-pageflow:page-reported'
 export const PAGEFLOW_NAVIGATE_MESSAGE = 'unplugin-pageflow:navigate'
+export const PAGEFLOW_WHEEL_MESSAGE = 'unplugin-pageflow:wheel'
+export const PAGEFLOW_READY_EVENT = 'unplugin-pageflow:ready'

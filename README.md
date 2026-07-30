@@ -74,7 +74,11 @@ PageFlow.vite({
 
 The Vite plugin injects a small runtime only while the dev server is running. The runtime reads `router.getRoutes()`, reports visible navigation hotspots, and sends graph updates to the PageFlow client. LeaferJS renders the infinite canvas and relationships; same-origin iframes render the real pages.
 
-Large projects remain usable through viewport-based iframe mounting and sequential background link discovery.
+Large projects remain usable through bounded viewport rendering, persistent thumbnails, one selected live iframe, and on-demand runtime link discovery for the initial or selected page. Both DOM previews and LeaferJS scene objects are limited to nearby pages. Thumbnails are cached in `.unplugin-pageflow/cache`, survive reloads, and remain visible while stale pages are refreshed in the background. Distant pages use compact WebP previews; nearby long pages are split into viewport-mounted tiles. Layout runs in a Worker for graphs above 1,000 pages, while a spatial index avoids scanning the full graph during navigation. Memory and disk caches use fixed LRU budgets. PageFlow waits for fonts, images, and a quiet DOM before capturing one page at a time. Pages with long-running async work can explicitly signal readiness:
+
+```ts
+(window as any).__UNPLUGIN_PAGEFLOW_READY__?.()
+```
 
 ## Preview safety
 
@@ -136,8 +140,9 @@ unplugin-pageflow  http://localhost:5173/__unplugin-pageflow/
 - 自动发现 Vue Router 路由
 - 在 LeaferJS 无限画布中展示页面关系
 - 使用同源 iframe 渲染真实页面
+- 字体、图片及 DOM 稳定后顺序生成快照；异步页面可调用 `window.__UNPLUGIN_PAGEFLOW_READY__()` 主动通知
 - 识别 `<RouterLink>`、同源链接和字面量程序式跳转
-- 支持动态路由示例参数、HMR 和大规模页面虚拟化
+- 支持动态路由示例参数、HMR、按需扫描及 DOM/Leafer 双层虚拟化
 - 仅开发环境启用，不进入生产产物
 
 动态路由可以配置示例参数：

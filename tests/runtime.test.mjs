@@ -16,7 +16,7 @@ test('discovers Vue Router routes and reports rendered navigation hotspots', asy
     { name: 'about', path: '/about', meta: { title: 'About' } },
   ]
   const router = {
-    options: { history: { base: '/app' } },
+    options: { history: { base: '/app', createHref: path => `#${path}` } },
     currentRoute: { value: { path: '/', matched: [routes[0]] } },
     getRoutes: () => routes,
     resolve: to => {
@@ -55,6 +55,10 @@ test('discovers Vue Router routes and reports rendered navigation hotspots', asy
   link.getBoundingClientRect = () => ({ left: 20, top: 30, width: 100, height: 24 })
   container.append(link)
 
+  const image = window.document.createElement('img')
+  image.src = './static/example.png'
+  container.append(image)
+
   const server = await createServer({ configFile: false, server: { middlewareMode: true }, appType: 'custom', logLevel: 'silent' })
   try {
     const runtime = await server.ssrLoadModule('/src/runtime/client.ts')
@@ -66,14 +70,23 @@ test('discovers Vue Router routes and reports rendered navigation hotspots', asy
       dynamicParams: {},
     })
 
-    assert.equal(requests[0].url, '/__unplugin-pageflow/api/routes')
-    assert.deepEqual(JSON.parse(requests[0].init.body).routes.map(route => route.path), ['/', '/about'])
-    assert.equal(requests[1].url, '/__unplugin-pageflow/api/page')
-    assert.deepEqual(JSON.parse(requests[1].init.body), {
+    assert.equal(typeof window.__UNPLUGIN_PAGEFLOW_READY__, 'function')
+    assert.equal(image.src, 'http://localhost/static/example.png')
+
+    assert.equal(requests[0].url, '/__unplugin-pageflow/api/page')
+    assert.deepEqual(JSON.parse(requests[0].init.body), {
       path: '/',
       links: [{ label: 'About us', to: '/about' }],
     })
+    assert.equal(requests.some(request => request.url.endsWith('/api/routes')), false)
+    assert(parentMessages.some(item => item.message.type === 'unplugin-pageflow:page-reported' && item.message.path === '/'))
     assert.equal(window.document.querySelectorAll('[data-unplugin-pageflow-hotspot]').length, 1)
+
+    const wheel = new window.WheelEvent('wheel', { cancelable: true, clientX: 40, clientY: 50, deltaY: 120 })
+    window.dispatchEvent(wheel)
+    assert.equal(wheel.defaultPrevented, true)
+    assert(parentMessages.some(item => item.message.type === 'unplugin-pageflow:wheel'
+      && item.message.deltaY === 120))
 
     const button = window.document.createElement('button')
     button.textContent = 'Open about'
@@ -85,22 +98,40 @@ test('discovers Vue Router routes and reports rendered navigation hotspots', asy
 
     const latestPage = [...requests].reverse().find(request => request.url.endsWith('/api/page'))
     assert(JSON.parse(latestPage.init.body).links.some(item => item.label === 'Open about' && item.to === '/about'))
-    assert.deepEqual(parentMessages.at(-1), {
+    assert.deepEqual(parentMessages.find(item => item.message.type === 'unplugin-pageflow:navigate'), {
       message: { type: 'unplugin-pageflow:navigate', to: '/about' },
       origin: 'http://localhost',
     })
+
+    window.history.replaceState({}, '', '/')
+    requests.length = 0
+    await runtime.startPageFlowRuntime({
+      enabled: true,
+      previewPath: '/__unplugin-pageflow/',
+      appUrl: '/',
+      dynamicParams: {},
+    })
+    assert.equal(requests.length, 1)
+    assert.equal(requests[0].url, '/__unplugin-pageflow/api/routes')
+    assert.equal(JSON.parse(requests[0].init.body).routeMode, 'hash')
+    assert.deepEqual(JSON.parse(requests[0].init.body).routes.map(route => route.path), ['/', '/about'])
 
     const scan = graphClient.scanPageLinks({
       enabled: true,
       previewPath: '/__unplugin-pageflow/',
       appUrl: '/',
       dynamicParams: {},
-    }, [{ id: 'about', title: 'About', path: '/about', accent: '#fff', links: [] }])
+    }, [{ id: 'about', title: 'About', path: '/about', accent: '#fff', links: [] }], 'hash')
     const scanFrame = window.document.querySelector('[data-unplugin-pageflow-link-discovery]')
     assert(scanFrame)
     assert.equal(scanFrame.hidden, false)
     assert.equal(scanFrame.style.width, '1280px')
+    assert.equal(scanFrame.src, 'http://localhost/?__unplugin-pageflow_preview=1#/about')
     scanFrame.dispatchEvent(new window.Event('load'))
+    window.dispatchEvent(new window.MessageEvent('message', {
+      data: { type: 'unplugin-pageflow:page-reported', path: '/about' },
+      origin: 'http://localhost',
+    }))
     await scan
     assert.equal(window.document.querySelector('[data-unplugin-pageflow-link-discovery]'), null)
   } finally {

@@ -1,5 +1,8 @@
 import { createUnplugin } from 'unplugin'
 import type { UnpluginFactory } from 'unplugin'
+import { createHash } from 'node:crypto'
+import type { ServerResponse } from 'node:http'
+import { resolve } from 'node:path'
 import type {
   PageFlowGraph,
   PageFlowOptions,
@@ -7,9 +10,10 @@ import type {
   PageFlowRuntimeLink,
   PageFlowRuntimePage,
   PageFlowRuntimeRoute,
+  PageFlowRouteMode,
   ResolvedPageFlowOptions,
 } from '../shared/types.ts'
-import { PAGEFLOW_GRAPH_EVENT } from '../shared/protocol.ts'
+import { PAGEFLOW_GRAPH_EVENT, PAGEFLOW_PAGE_EVENT } from '../shared/protocol.ts'
 import {
   PAGEFLOW_CLIENT_ID,
   PAGEFLOW_CLIENT_RESOLVED_ID,
@@ -18,6 +22,7 @@ import {
   PAGEFLOW_RUNTIME_ID,
   PAGEFLOW_RUNTIME_RESOLVED_ID,
 } from './constants.ts'
+import { createThumbnailCache } from './thumbnail-cache.ts'
 
 const ACCENTS = ['#ff795d', '#7c6cff', '#26b99a', '#e7ad43', '#dd648e']
 
@@ -38,7 +43,9 @@ function createGraph(
   routes: PageFlowRuntimeRoute[],
   reportedLinks: Map<string, PageFlowRuntimePage['links']>,
   staticLinksByFile: Map<string, PageFlowRuntimeLink[]>,
+  sourceRevisionsByFile: Map<string, string>,
   version: number,
+  routeMode: PageFlowRouteMode,
 ): PageFlowGraph {
   const seen = new Set<string>()
   const pages: PageFlowPage[] = routes
@@ -47,6 +54,9 @@ function createGraph(
       id: route.id,
       title: route.title,
       path: route.path,
+      revision: route.componentFile
+        ? [...sourceRevisionsByFile.entries()].find(([file]) => file === route.componentFile || file.endsWith(route.componentFile!))?.[1] ?? route.path
+        : route.path,
       accent: ACCENTS[index % ACCENTS.length],
       links: [],
     }))
@@ -77,7 +87,7 @@ function createGraph(
     page.links = [...links.values()]
   })
 
-  return { pages, version }
+  return { pages, routeMode, version }
 }
 
 function normalizeFile(id: string) {
@@ -122,17 +132,31 @@ async function readJson(request: AsyncIterable<Uint8Array | string>) {
   return JSON.parse(body) as Record<string, unknown>
 }
 
+async function readBinary(request: AsyncIterable<Uint8Array | string>, maximumBytes = 16_000_000) {
+  const chunks: Uint8Array[] = []
+  let length = 0
+  for await (const chunk of request) {
+    const data = typeof chunk === 'string' ? Buffer.from(chunk) : chunk
+    length += data.byteLength
+    if (length > maximumBytes) throw new Error('Thumbnail is too large')
+    chunks.push(data)
+  }
+  return Buffer.concat(chunks)
+}
+
 async function readRoutes(request: AsyncIterable<Uint8Array | string>) {
   const value = await readJson(request)
   if (!Array.isArray(value.routes)) throw new Error('routes must be an array')
 
-  return value.routes.filter((route): route is PageFlowRuntimeRoute => {
+  const routes = value.routes.filter((route): route is PageFlowRuntimeRoute => {
     if (!route || typeof route !== 'object') return false
     const candidate = route as Partial<PageFlowRuntimeRoute>
     return typeof candidate.id === 'string'
       && typeof candidate.path === 'string'
       && typeof candidate.title === 'string'
   })
+  const routeMode: PageFlowRouteMode = value.routeMode === 'hash' ? 'hash' : 'history'
+  return { routeMode, routes }
 }
 
 async function readPage(request: AsyncIterable<Uint8Array | string>): Promise<PageFlowRuntimePage> {
@@ -169,15 +193,27 @@ const factory: UnpluginFactory<PageFlowOptions | undefined> = (options) => {
   const clientEntry = toViteFsPath(new URL(packaged ? '../client/mount.js' : '../client/mount.ts', import.meta.url))
   const runtimeEntry = toViteFsPath(new URL(packaged ? '../runtime/client.js' : '../runtime/client.ts', import.meta.url))
   const clientStyle = packaged ? toViteFsPath(new URL('../style.css', import.meta.url)) : undefined
-  let graph: PageFlowGraph = { pages: [], version: 0 }
+  let graph: PageFlowGraph = { pages: [], routeMode: 'history', version: 0 }
   let routes: PageFlowRuntimeRoute[] = []
+  let routeMode: PageFlowRouteMode = 'history'
   const reportedLinks = new Map<string, PageFlowRuntimePage['links']>()
   const staticLinksByFile = new Map<string, PageFlowRuntimeLink[]>()
+  const sourceRevisionsByFile = new Map<string, string>()
+  const eventResponses = new Set<ServerResponse>()
   let sendGraphUpdate: ((graph: PageFlowGraph) => void) | undefined
+  let sendPageUpdate: ((page: PageFlowPage) => void) | undefined
 
-  const rebuildGraph = () => {
-    graph = createGraph(routes, reportedLinks, staticLinksByFile, graph.version + 1)
-    sendGraphUpdate?.(graph)
+  const rebuildGraph = (updatedPath?: string) => {
+    graph = createGraph(routes, reportedLinks, staticLinksByFile, sourceRevisionsByFile, graph.version + 1, routeMode)
+    if (updatedPath) {
+      const page = graph.pages.find(item => item.path === updatedPath)
+      if (page) sendPageUpdate?.(page)
+    } else sendGraphUpdate?.(graph)
+  }
+
+  const sendEvent = (event: string, data: unknown) => {
+    const message = `event: ${event}\ndata: ${JSON.stringify(data)}\n\n`
+    eventResponses.forEach(response => response.write(message))
   }
 
   return {
@@ -201,9 +237,13 @@ const factory: UnpluginFactory<PageFlowOptions | undefined> = (options) => {
       const file = normalizeFile(id)
       const nextLinks = extractStaticLinks(code)
       const currentLinks = staticLinksByFile.get(file) ?? []
-      if (JSON.stringify(currentLinks) === JSON.stringify(nextLinks)) return
+      const nextRevision = createHash('sha256').update(code).digest('hex').slice(0, 16)
+      const linksChanged = JSON.stringify(currentLinks) !== JSON.stringify(nextLinks)
+      const revisionChanged = sourceRevisionsByFile.get(file) !== nextRevision
+      if (!linksChanged && !revisionChanged) return
       if (nextLinks.length) staticLinksByFile.set(file, nextLinks)
       else staticLinksByFile.delete(file)
+      sourceRevisionsByFile.set(file, nextRevision)
       if (routes.length) rebuildGraph()
     },
     vite: {
@@ -222,13 +262,36 @@ const factory: UnpluginFactory<PageFlowOptions | undefined> = (options) => {
       },
       configureServer(server) {
         if (!resolved.enabled) return
-        sendGraphUpdate = nextGraph => server.ws.send({ type: 'custom', event: PAGEFLOW_GRAPH_EVENT, data: nextGraph })
+        const thumbnailCache = createThumbnailCache(resolve(server.config.root, '.unplugin-pageflow/cache'))
+        sendGraphUpdate = nextGraph => {
+          server.ws.send({ type: 'custom', event: PAGEFLOW_GRAPH_EVENT, data: nextGraph })
+          sendEvent(PAGEFLOW_GRAPH_EVENT, nextGraph)
+        }
+        sendPageUpdate = page => {
+          server.ws.send({ type: 'custom', event: PAGEFLOW_PAGE_EVENT, data: page })
+          sendEvent(PAGEFLOW_PAGE_EVENT, page)
+        }
 
         server.middlewares.use(async (request, response, next) => {
-          const pathname = request.url?.split('?')[0]
+          const requestUrl = new URL(request.url ?? '/', 'http://unplugin-pageflow.local')
+          const pathname = requestUrl.pathname
           const graphPath = `${resolved.previewPath}api/graph`
+          const eventsPath = `${resolved.previewPath}api/events`
           const routesPath = `${resolved.previewPath}api/routes`
           const pagePath = `${resolved.previewPath}api/page`
+          const thumbnailsPath = `${resolved.previewPath}api/thumbnails`
+          const thumbnailPath = `${resolved.previewPath}api/thumbnail`
+
+          if (pathname === eventsPath && request.method === 'GET') {
+            response.statusCode = 200
+            response.setHeader('Content-Type', 'text/event-stream; charset=utf-8')
+            response.setHeader('Cache-Control', 'no-cache, no-transform')
+            response.setHeader('Connection', 'keep-alive')
+            response.write(': connected\n\n')
+            eventResponses.add(response)
+            request.on('close', () => eventResponses.delete(response))
+            return
+          }
 
           if (pathname === graphPath && request.method === 'GET') {
             response.setHeader('Content-Type', 'application/json; charset=utf-8')
@@ -236,11 +299,74 @@ const factory: UnpluginFactory<PageFlowOptions | undefined> = (options) => {
             return
           }
 
+          if (pathname === thumbnailsPath && request.method === 'GET') {
+            response.setHeader('Content-Type', 'application/json; charset=utf-8')
+            response.end(JSON.stringify(await thumbnailCache.manifest()))
+            return
+          }
+
+          if (pathname === thumbnailPath && request.method === 'GET') {
+            const slot = requestUrl.searchParams.get('slot')
+            const cached = slot ? await thumbnailCache.read(slot) : undefined
+            if (!cached) {
+              response.statusCode = 404
+              response.end()
+              return
+            }
+            response.setHeader('Content-Type', cached.record.mimeType)
+            response.setHeader('Cache-Control', 'public, max-age=31536000, immutable')
+            response.end(cached.data)
+            return
+          }
+
+          if (pathname === thumbnailPath && request.method === 'POST') {
+            try {
+              const slot = requestUrl.searchParams.get('slot')
+              const revision = requestUrl.searchParams.get('revision')
+              const width = Number(requestUrl.searchParams.get('width'))
+              const height = Number(requestUrl.searchParams.get('height'))
+              const optionalNumber = (name: string) => {
+                const value = requestUrl.searchParams.get(name)
+                return value == null ? undefined : Number(value)
+              }
+              const pageHeight = optionalNumber('pageHeight')
+              const tileCount = optionalNumber('tileCount')
+              const tileIndex = optionalNumber('tileIndex')
+              const tileTop = optionalNumber('tileTop')
+              const mimeType = request.headers['content-type']?.split(';')[0]
+              if (!slot || slot.length > 500 || !revision || revision.length > 200)
+                throw new Error('slot and revision are required')
+              if (!Number.isFinite(width) || width <= 0 || !Number.isFinite(height) || height <= 0)
+                throw new Error('width and height must be positive numbers')
+              if ([pageHeight, tileCount, tileIndex, tileTop].some(value => value != null && (!Number.isFinite(value) || value < 0)))
+                throw new Error('Invalid thumbnail tile metadata')
+              if (!mimeType || !['image/webp', 'image/jpeg', 'image/png'].includes(mimeType))
+                throw new Error('Unsupported thumbnail format')
+              const record = await thumbnailCache.write(
+                slot,
+                revision,
+                width,
+                height,
+                mimeType,
+                await readBinary(request),
+                { pageHeight, tileCount, tileIndex, tileTop },
+              )
+              response.setHeader('Content-Type', 'application/json; charset=utf-8')
+              response.end(JSON.stringify(record))
+            } catch (error) {
+              response.statusCode = 400
+              response.setHeader('Content-Type', 'application/json; charset=utf-8')
+              response.end(JSON.stringify({ error: error instanceof Error ? error.message : 'Invalid thumbnail' }))
+            }
+            return
+          }
+
           if (pathname === routesPath && request.method === 'POST') {
             try {
-              const nextRoutes = await readRoutes(request)
-              if (JSON.stringify(nextRoutes) !== JSON.stringify(routes)) {
-                routes = nextRoutes
+              const next = await readRoutes(request)
+              if (next.routeMode !== routeMode || JSON.stringify(next.routes) !== JSON.stringify(routes)) {
+                routeMode = next.routeMode
+                routes = next.routes
                 rebuildGraph()
               }
               response.statusCode = 204
@@ -259,7 +385,7 @@ const factory: UnpluginFactory<PageFlowOptions | undefined> = (options) => {
               const currentLinks = reportedLinks.get(page.path)
               if (JSON.stringify(currentLinks) !== JSON.stringify(page.links)) {
                 reportedLinks.set(page.path, page.links)
-                rebuildGraph()
+                rebuildGraph(page.path)
               }
               response.statusCode = 204
               response.end()
@@ -289,6 +415,10 @@ const factory: UnpluginFactory<PageFlowOptions | undefined> = (options) => {
             : 'localhost'
           const protocol = server.config.server.https ? 'https' : 'http'
           server.config.logger.info(`  unplugin-pageflow  ${protocol}://${host}:${port}${resolved.previewPath}`)
+        })
+        server.httpServer?.once('close', () => {
+          eventResponses.forEach(response => response.end())
+          eventResponses.clear()
         })
       },
     },

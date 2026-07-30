@@ -20,6 +20,8 @@ export interface PageFlowRuntimeRoute {
   componentFile?: string
 }
 
+export type PageFlowRouteMode = 'history' | 'hash'
+
 export interface PageFlowRuntimeLink {
   label: string
   to: string
@@ -39,11 +41,30 @@ export interface PageFlowPage {
   id: string
   title: string
   path: string
+  revision?: string
   accent: string
   links: PageFlowLink[]
 }
 
+export interface PageFlowThumbnailRecord {
+  slot: string
+  revision: string
+  width: number
+  height: number
+  mimeType: string
+  file: string
+  updatedAt: number
+  pageHeight?: number
+  tileCount?: number
+  tileIndex?: number
+  tileTop?: number
+  bytes?: number
+}
+
+export type PageFlowThumbnailManifest = Record<string, PageFlowThumbnailRecord>
+
 export interface PageFlowGraph {
   pages: PageFlowPage[]
+  routeMode: PageFlowRouteMode
   version: number
 }

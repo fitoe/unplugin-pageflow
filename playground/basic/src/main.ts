@@ -1,5 +1,5 @@
 import { createApp } from 'vue'
-import { createRouter, createWebHistory } from 'vue-router'
+import { createRouter, createWebHashHistory, createWebHistory } from 'vue-router'
 import App from './App.vue'
 import Home from './pages/Home.vue'
 import Explore from './pages/Explore.vue'
@@ -9,7 +9,7 @@ import Checkout from './pages/Checkout.vue'
 import './style.css'
 
 const router = createRouter({
-  history: createWebHistory(),
+  history: import.meta.env.VITE_PAGEFLOW_HASH_ROUTER ? createWebHashHistory() : createWebHistory(),
   routes: [
     { path: '/', name: 'home', component: Home, meta: { title: 'Home' } },
     { path: '/explore', name: 'explore', component: Explore, meta: { title: 'Explore' } },
