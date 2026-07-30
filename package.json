@@ -1,0 +1,86 @@
+{
+  "name": "unplugin-pageflow",
+  "private": false,
+  "version": "0.1.0",
+  "type": "module",
+  "types": "./dist/plugin/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/plugin/index.d.ts",
+      "import": "./dist/plugin/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "docs",
+    "src/plugin",
+    "src/client",
+    "src/runtime",
+    "src/shared",
+    "src/App.vue",
+    "src/style.css",
+    "README.md"
+  ],
+  "engines": {
+    "node": ">=20.19",
+    "npm": ">=10"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/fitoe/unplugin-pageflow.git"
+  },
+  "bugs": {
+    "url": "https://github.com/fitoe/unplugin-pageflow/issues"
+  },
+  "homepage": "https://github.com/fitoe/unplugin-pageflow#readme",
+  "keywords": [
+    "vue",
+    "vite",
+    "unplugin",
+    "vue-router",
+    "leaferjs",
+    "visualization"
+  ],
+  "scripts": {
+    "dev": "vite",
+    "dev:plugin": "concurrently -k -n plugin,client \"tsup src/plugin/index.ts src/runtime/client.ts --format esm --dts --out-dir dist --external unplugin --external vue --external vue-router --tsconfig tsconfig.app.json --watch\" \"vite build --config vite.package.config.ts --watch\"",
+    "build": "npm run build:plugin && npm run build:demo",
+    "build:plugin": "tsup src/plugin/index.ts src/runtime/client.ts --format esm --dts --clean --out-dir dist --external unplugin --external vue --external vue-router --tsconfig tsconfig.app.json && vite build --config vite.package.config.ts",
+    "build:demo": "tsc -b && vite build",
+    "build:playground": "vite build --config playground/basic/vite.config.ts",
+    "check": "npm test && npm run build && npm run check:package && npm run build:playground && npm run check:production && npm run pack:check",
+    "check:package": "node tests/package-output.mjs",
+    "check:production": "node tests/production-output.mjs",
+    "pack:check": "npm pack --dry-run",
+    "prepack": "npm run build:plugin",
+    "test": "node --test tests/*.test.mjs",
+    "playground": "vite --config playground/basic/vite.config.ts",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "@leafer-ui/core": "^2.2.6",
+    "unplugin": "^2.3.5"
+  },
+  "peerDependencies": {
+    "vite": "^5.0.0",
+    "vue": ">=3.4.0",
+    "vue-router": ">=4.0.0"
+  },
+  "overrides": {
+    "tsup": {
+      "esbuild": "^0.28.1"
+    }
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.10",
+    "@vitejs/plugin-vue": "^5.2.4",
+    "concurrently": "^10.0.4",
+    "happy-dom": "^20.11.1",
+    "tsup": "^8.5.1",
+    "typescript": "~5.8.3",
+    "vite": "^5.0.0",
+    "vue": "^3.5.17",
+    "vue-router": "^4.5.1",
+    "vue-tsc": "^3.3.8"
+  }
+}
