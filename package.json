@@ -58,6 +58,8 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "@leafer-in/view": "^2.2.6",
+    "@leafer-in/viewport": "^2.2.6",
     "leafer-ui": "^2.2.6",
     "unplugin": "^2.3.5"
   },

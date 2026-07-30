@@ -6,6 +6,7 @@ test('lays out linked pages in layers and limits previews to the viewport', asyn
   const server = await createServer({ configFile: false, server: { middlewareMode: true }, appType: 'custom', logLevel: 'silent' })
   try {
     const { getVisiblePageIds, layoutPages } = await server.ssrLoadModule('/src/client/layout.ts')
+    const { PAGEFLOW_CANVAS_CONFIG } = await server.ssrLoadModule('/src/client/canvas.ts')
     const { resolvePreviewUrl } = await server.ssrLoadModule('/src/client/preview.ts')
     const pages = Array.from({ length: 30 }, (_, index) => ({
       id: `page-${index}`,
@@ -14,6 +15,10 @@ test('lays out linked pages in layers and limits previews to the viewport', asyn
       accent: '#ff795d',
       links: index < 2 ? [{ label: 'Next', to: `page-${index + 1}` }] : [],
     }))
+    assert.equal(PAGEFLOW_CANVAS_CONFIG.type, 'viewport')
+    assert.deepEqual(PAGEFLOW_CANVAS_CONFIG.zoom, { min: 0.05, max: 32 })
+    assert.equal(PAGEFLOW_CANVAS_CONFIG.wheel.zoomMode, true)
+    assert.equal(PAGEFLOW_CANVAS_CONFIG.move.dragEmpty, true)
     const positions = layoutPages(pages)
 
     assert.deepEqual(positions.get('page-0'), [80, 90])

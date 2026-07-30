@@ -1,10 +1,13 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { Leafer, Rect, Text, Line, Group, MoveEvent, ZoomEvent } from 'leafer-ui'
+import '@leafer-in/view'
+import '@leafer-in/viewport'
 import type { PageFlowPage, ResolvedPageFlowOptions } from './shared/types'
 import { fetchPageFlowGraph, scanPageLinks, startRouteDiscovery, subscribeToGraphUpdates } from './client/graph'
 import { resolvePreviewUrl } from './client/preview'
 import { PAGEFLOW_NAVIGATE_MESSAGE } from './shared/protocol'
+import { PAGEFLOW_CANVAS_CONFIG } from './client/canvas'
 import {
   getVisiblePageIds,
   layoutPages,
@@ -89,10 +92,8 @@ function draw() {
   leafer?.destroy()
   canvas.value.innerHTML = ''
   leafer = new Leafer({
+    ...PAGEFLOW_CANVAS_CONFIG,
     view: canvas.value,
-    zoom: 0.9,
-    wheel: { zoomMode: true },
-    move: { drag: true, dragEmpty: true },
   })
   leafer.on(MoveEvent.MOVE, syncOverlay)
   leafer.on(ZoomEvent.ZOOM, syncOverlay)

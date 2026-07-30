@@ -8,6 +8,12 @@ importers:
 
   .:
     dependencies:
+      '@leafer-in/view':
+        specifier: ^2.2.6
+        version: 2.2.6(@leafer-in/interface@2.2.6(@leafer-ui/interface@2.2.6)(@leafer/interface@2.2.6))(@leafer-ui/draw@2.2.6)(@leafer-ui/interface@2.2.6)
+      '@leafer-in/viewport':
+        specifier: ^2.2.6
+        version: 2.2.6(@leafer-in/interface@2.2.6(@leafer-ui/interface@2.2.6)(@leafer/interface@2.2.6))(@leafer-ui/core@2.2.6)(@leafer-ui/interface@2.2.6)
       leafer-ui:
         specifier: ^2.2.6
         version: 2.2.6
@@ -380,6 +386,20 @@ packages:
     peerDependencies:
       '@leafer-ui/interface': ^2.2.6
       '@leafer/interface': ^2.2.6
+
+  '@leafer-in/view@2.2.6':
+    resolution: {integrity: sha512-xN+t237rb6QtB3lHkMI43QqO3WP7VKlgMNcDc51C9MwZ5EK587db2nDtRkIlIrE6ArybcZzqayA+U0YGvflIlQ==}
+    peerDependencies:
+      '@leafer-in/interface': ^2.2.6
+      '@leafer-ui/draw': ^2.2.6
+      '@leafer-ui/interface': ^2.2.6
+
+  '@leafer-in/viewport@2.2.6':
+    resolution: {integrity: sha512-QOJ3UKw5cZNlBz6aPXRLIuP/7PsKp6q6fE7LwMJeuCDc8mdLDWkWIkiG5FZjhZojqueU7JMy9uT/DBti4vnKAg==}
+    peerDependencies:
+      '@leafer-in/interface': ^2.2.6
+      '@leafer-ui/core': ^2.2.6
+      '@leafer-ui/interface': ^2.2.6
 
   '@leafer-ui/app@2.2.6':
     resolution: {integrity: sha512-pyu3Cc5e5hjAqYizWhqRqazBdQ/MFQ6Mu34DUCdM8015GTlzT2M4ckgWZwCKArw/eOQl83OquP+U4ERJhHu4uA==}
@@ -1307,6 +1327,18 @@ snapshots:
     dependencies:
       '@leafer-ui/interface': 2.2.6
       '@leafer/interface': 2.2.6
+
+  '@leafer-in/view@2.2.6(@leafer-in/interface@2.2.6(@leafer-ui/interface@2.2.6)(@leafer/interface@2.2.6))(@leafer-ui/draw@2.2.6)(@leafer-ui/interface@2.2.6)':
+    dependencies:
+      '@leafer-in/interface': 2.2.6(@leafer-ui/interface@2.2.6)(@leafer/interface@2.2.6)
+      '@leafer-ui/draw': 2.2.6
+      '@leafer-ui/interface': 2.2.6
+
+  '@leafer-in/viewport@2.2.6(@leafer-in/interface@2.2.6(@leafer-ui/interface@2.2.6)(@leafer/interface@2.2.6))(@leafer-ui/core@2.2.6)(@leafer-ui/interface@2.2.6)':
+    dependencies:
+      '@leafer-in/interface': 2.2.6(@leafer-ui/interface@2.2.6)(@leafer/interface@2.2.6)
+      '@leafer-ui/core': 2.2.6
+      '@leafer-ui/interface': 2.2.6
 
   '@leafer-ui/app@2.2.6':
     dependencies:
