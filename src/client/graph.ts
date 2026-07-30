@@ -8,6 +8,15 @@ export async function fetchPageFlowGraph(config: ResolvedPageFlowOptions) {
   return response.json() as Promise<PageFlowGraph>
 }
 
+export async function reportPageTitle(config: ResolvedPageFlowOptions, path: string, title: string) {
+  const response = await fetch(`${config.previewPath}api/page`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ path, title }),
+  })
+  if (!response.ok) throw new Error(`Failed to report page title: ${response.status}`)
+}
+
 export function subscribeToPageFlowUpdates(
   config: ResolvedPageFlowOptions,
   callbacks: { graph: (graph: PageFlowGraph) => void; page: (page: PageFlowPage) => void },
@@ -32,6 +41,7 @@ export async function scanPageLinks(
   config: ResolvedPageFlowOptions,
   pages: PageFlowGraph['pages'],
   routeMode: PageFlowRouteMode = 'history',
+  viewport = { width: 1280, height: 900 },
 ) {
   const frame = document.createElement('iframe')
   frame.title = 'unplugin-pageflow link discovery'
@@ -42,8 +52,8 @@ export async function scanPageLinks(
     position: 'fixed',
     left: '-10000px',
     top: '0',
-    width: '1280px',
-    height: '900px',
+    width: `${viewport.width}px`,
+    height: `${viewport.height}px`,
     border: '0',
     opacity: '0',
     pointerEvents: 'none',

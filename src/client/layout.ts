@@ -2,7 +2,7 @@ import type { PageFlowPage } from '../shared/types'
 
 export const PAGE_CARD_WIDTH = 240
 export const PAGE_CARD_HEIGHT = 256
-export const PAGE_CARD_META_HEIGHT = 87
+export const PAGE_CARD_META_HEIGHT = 68
 export const PAGE_PREVIEW_INSET = 0
 export const PAGE_PREVIEW_WIDTH = 240
 export const PAGE_PREVIEW_HEIGHT = 169
@@ -25,6 +25,20 @@ export interface PageBounds {
   top: number
   right: number
   bottom: number
+}
+
+export function centerPageTransform(
+  position: [number, number],
+  pageHeight: number,
+  viewport: ViewportSize,
+  scale: number,
+): CanvasTransform {
+  return {
+    x: viewport.width / 2 - (position[0] + PAGE_CARD_WIDTH / 2) * scale,
+    y: viewport.height / 2 - (position[1] + pageHeight / 2) * scale,
+    scaleX: scale,
+    scaleY: scale,
+  }
 }
 
 export interface PageSpatialIndex {
@@ -136,6 +150,92 @@ export function layoutPages(items: PageFlowPage[], cardHeights = new Map<string,
     offsets.set(level, y + (cardHeights.get(page.id) ?? PAGE_CARD_HEIGHT) + 48)
     return [page.id, [64 + level * 320, y] as [number, number]]
   }))
+}
+
+export function layoutPagesByRoute(items: PageFlowPage[], cardHeights = new Map<string, number>()) {
+  const columnGap = 100
+  const rowGap = 120
+  const treeGap = 200
+  const root: RouteTreeNode = { key: '', depth: -1, pages: [], children: new Map() }
+  items.forEach(page => insertRoutePage(root, page))
+  const positions = new Map<string, [number, number]>()
+  let treeTop = 64
+  ;[...root.children.values()].sort((left, right) => left.key.localeCompare(right.key)).forEach(tree => {
+    const rowHeights = new Map<number, number>()
+    collectTreePages(tree).forEach(page => {
+      const depth = routeSegments(page).length - 1
+      rowHeights.set(depth, Math.max(rowHeights.get(depth) ?? 0, cardHeights.get(page.id) ?? PAGE_CARD_HEIGHT))
+    })
+    const rowTops = new Map<number, number>()
+    let nextRowTop = treeTop
+    for (let depth = 0; depth <= Math.max(0, ...rowHeights.keys()); depth++) {
+      rowTops.set(depth, nextRowTop)
+      nextRowTop += (rowHeights.get(depth) ?? 0) + rowGap
+    }
+    const sortedChildren = (node: RouteTreeNode) => [...node.children.values()].sort((left, right) => left.key.localeCompare(right.key))
+    const widths = new Map<RouteTreeNode, number>()
+    const measure = (node: RouteTreeNode): number => {
+      const children = sortedChildren(node)
+      const childrenWidth = children.reduce((total, child, index) => total + measure(child) + (index ? columnGap : 0), 0)
+      const pagesWidth = Math.max(1, node.pages.length) * PAGE_CARD_WIDTH + Math.max(0, node.pages.length - 1) * columnGap
+      const width = Math.max(childrenWidth, pagesWidth)
+      widths.set(node, width)
+      return width
+    }
+    measure(tree)
+    const place = (node: RouteTreeNode, left: number): number => {
+      const nodeWidth = widths.get(node)!
+      const children = sortedChildren(node)
+      const childrenWidth = children.reduce((total, child, index) => total + widths.get(child)! + (index ? columnGap : 0), 0)
+      let childLeft = left + (nodeWidth - childrenWidth) / 2
+      children.forEach(child => {
+        place(child, childLeft)
+        childLeft += widths.get(child)! + columnGap
+      })
+      const center = left + nodeWidth / 2
+      const pagesWidth = node.pages.length * PAGE_CARD_WIDTH + Math.max(0, node.pages.length - 1) * columnGap
+      node.pages
+        .sort((left, right) => (left.path || left.id).localeCompare(right.path || right.id))
+        .forEach((page, index) => positions.set(page.id, [center - pagesWidth / 2 + index * (PAGE_CARD_WIDTH + columnGap), rowTops.get(node.depth) ?? treeTop]))
+      return center
+    }
+    place(tree, 64)
+    treeTop = nextRowTop + treeGap
+  })
+  return positions
+}
+
+interface RouteTreeNode {
+  key: string
+  depth: number
+  pages: PageFlowPage[]
+  children: Map<string, RouteTreeNode>
+}
+
+function insertRoutePage(root: RouteTreeNode, page: PageFlowPage) {
+  const segments = routeSegments(page)
+  let node = root
+  segments.forEach((segment, depth) => {
+    let child = node.children.get(segment)
+    if (!child) {
+      child = { key: segment, depth, pages: [], children: new Map() }
+      node.children.set(segment, child)
+    }
+    node = child
+  })
+  node.pages.push(page)
+}
+
+function routeSegments(page: PageFlowPage) {
+  const segments = (page.path || page.id).split(/[/?#]/).filter(Boolean)
+  if (segments[0] === 'pages') segments.shift()
+  segments.pop()
+  if (!segments.length) segments.push('/')
+  return segments
+}
+
+function collectTreePages(node: RouteTreeNode): PageFlowPage[] {
+  return [...node.pages, ...[...node.children.values()].flatMap(collectTreePages)]
 }
 
 export function getVisiblePageIds(

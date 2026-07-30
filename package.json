@@ -65,6 +65,7 @@
     "@leafer-in/view": "^2.2.6",
     "@leafer-in/viewport": "^2.2.6",
     "@leafer-ui/core": "^2.2.6",
+    "elkjs": "^0.12.0",
     "html2canvas": "^1.4.1",
     "leafer-ui": "^2.2.6",
     "unplugin": "^2.3.5"

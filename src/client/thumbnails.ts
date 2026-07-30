@@ -9,6 +9,7 @@ import type { CanvasTransform, ViewportSize } from './layout'
 export type PageFlowPreviewMode = 'mobile' | 'tablet' | 'pc'
 export type PageFlowThumbnailTier = 'compact' | 'full'
 export const PAGEFLOW_THUMBNAIL_TILE_HEIGHT = 512
+const PAGEFLOW_THUMBNAIL_CAPTURE_VERSION = 5
 
 export function thumbnailTierForZoom(zoomPercent: number): PageFlowThumbnailTier {
   return zoomPercent < 50 ? 'compact' : 'full'
@@ -24,7 +25,7 @@ export function thumbnailSlot(
 }
 
 export function thumbnailRevision(page: PageFlowPage) {
-  return page.revision ?? page.path
+  return `${PAGEFLOW_THUMBNAIL_CAPTURE_VERSION}:${page.revision ?? page.path}`
 }
 
 export async function fetchThumbnailManifest(config: ResolvedPageFlowOptions) {
@@ -37,7 +38,7 @@ export function thumbnailUrl(
   config: ResolvedPageFlowOptions,
   record: PageFlowThumbnailRecord,
 ) {
-  return `${config.previewPath}api/thumbnail?slot=${encodeURIComponent(record.slot)}&v=${encodeURIComponent(record.revision)}`
+  return `${config.previewPath}api/thumbnail?slot=${encodeURIComponent(record.slot)}&v=${encodeURIComponent(record.revision)}&updated=${record.updatedAt}`
 }
 
 export async function saveThumbnail(

@@ -1,8 +1,10 @@
 import { createUnplugin } from 'unplugin'
 import type { UnpluginFactory } from 'unplugin'
 import { createHash } from 'node:crypto'
+import { readFile, readdir, stat } from 'node:fs/promises'
 import type { ServerResponse } from 'node:http'
 import { resolve } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import type {
   PageFlowGraph,
   PageFlowOptions,
@@ -36,27 +38,32 @@ function resolveOptions(options: PageFlowOptions = {}): ResolvedPageFlowOptions 
     previewPath: normalizePreviewPath(options.previewPath ?? '/__unplugin-pageflow/'),
     appUrl: options.appUrl ?? '/',
     dynamicParams: options.dynamicParams ?? {},
+    previewRoles: options.previewRoles ?? [],
   }
 }
 
 function createGraph(
   routes: PageFlowRuntimeRoute[],
-  reportedLinks: Map<string, PageFlowRuntimePage['links']>,
+  reportedPages: Map<string, PageFlowRuntimePage>,
   staticLinksByFile: Map<string, PageFlowRuntimeLink[]>,
   sourceRevisionsByFile: Map<string, string>,
   version: number,
   routeMode: PageFlowRouteMode,
 ): PageFlowGraph {
-  const seen = new Set<string>()
+  const sourceEntryForPath = <T>(entries: Map<string, T>, path: string) => {
+    const suffix = `/src${path}.vue`
+    return [...entries.entries()].find(([file]) => file.endsWith(suffix))?.[1]
+  }
+  const seenPaths = new Set<string>()
   const pages: PageFlowPage[] = routes
-    .filter(route => route.path && !seen.has(route.id) && seen.add(route.id))
+    .filter(route => route.path && !seenPaths.has(route.path) && seenPaths.add(route.path))
     .map((route, index) => ({
       id: route.id,
-      title: route.title,
+      title: reportedPages.get(route.path)?.title || route.title,
       path: route.path,
       revision: route.componentFile
         ? [...sourceRevisionsByFile.entries()].find(([file]) => file === route.componentFile || file.endsWith(route.componentFile!))?.[1] ?? route.path
-        : route.path,
+        : sourceEntryForPath(sourceRevisionsByFile, route.path) ?? route.path,
       accent: ACCENTS[index % ACCENTS.length],
       links: [],
     }))
@@ -64,9 +71,10 @@ function createGraph(
   const routesById = new Map(routes.map(route => [route.id, route]))
 
   const resolveTarget = (path: string) => {
-    const exact = idsByPath.get(path)
+    const normalizedPath = path.split(/[?#]/, 1)[0]
+    const exact = idsByPath.get(normalizedPath)
     if (exact) return exact
-    const targetSegments = path.split('/')
+    const targetSegments = normalizedPath.split('/')
     return pages.find(page => {
       const routeSegments = page.path.split('/')
       return routeSegments.length === targetSegments.length
@@ -78,11 +86,15 @@ function createGraph(
     const componentFile = routesById.get(page.id)?.componentFile
     const staticLinks = componentFile
       ? [...staticLinksByFile.entries()].find(([file]) => file === componentFile || file.endsWith(componentFile))?.[1] ?? []
-      : []
+      : sourceEntryForPath(staticLinksByFile, page.path) ?? []
     const links = new Map<string, PageFlowPage['links'][number]>()
-    ;[...staticLinks, ...(reportedLinks.get(page.path) ?? [])].forEach(link => {
+    ;[...staticLinks, ...(reportedPages.get(page.path)?.links ?? [])].forEach(link => {
       const target = resolveTarget(link.to)
-      if (target) links.set(target, { label: link.label, to: target })
+      if (!target) return
+      const hotspotKey = link.hotspot
+        ? `${link.hotspot.centerX}:${link.hotspot.centerY}`
+        : 'static'
+      links.set(`${target}:${hotspotKey}`, { label: link.label, to: target, hotspot: link.hotspot })
     })
     page.links = [...links.values()]
   })
@@ -112,10 +124,11 @@ function extractStaticLinks(code: string) {
   const routerCall = `(?:(?<![\\w$])(?:${callers})(?![\\w$])|useRouter\\(\\s*\\))`
   const calls = new RegExp(`${routerCall}\\s*\\.\\s*(push|replace)\\s*\\(\\s*(["'\\\`])([^"'\\\`]+)\\2`, 'g')
   const objectCalls = new RegExp(`${routerCall}\\s*\\.\\s*(push|replace)\\s*\\(\\s*\\{\\s*path\\s*:\\s*(["'])\\s*([^"']+)\\2`, 'g')
-  for (const pattern of [calls, objectCalls]) {
+  const uniCalls = /\buni\s*\.\s*(navigateTo|redirectTo|switchTab|reLaunch)\s*\(\s*\{\s*url\s*:\s*(["'`])([^"'`]+)\2/g
+  for (const pattern of [calls, objectCalls, uniCalls]) {
     for (const match of code.matchAll(pattern)) {
-      const target = match[3]
-      if (!target.startsWith('/') || target.includes('${')) continue
+      const target = match[3].split('${', 1)[0].split('?', 1)[0]
+      if (!target.startsWith('/') || target.endsWith('/')) continue
       links.push({ label: `${match[1]} ${target}`, to: target })
     }
   }
@@ -161,42 +174,69 @@ async function readRoutes(request: AsyncIterable<Uint8Array | string>) {
 
 async function readPage(request: AsyncIterable<Uint8Array | string>): Promise<PageFlowRuntimePage> {
   const value = await readJson(request)
-  if (typeof value.path !== 'string' || !Array.isArray(value.links))
-    throw new Error('path and links are required')
+  if (typeof value.path !== 'string' || (value.links != null && !Array.isArray(value.links)))
+    throw new Error('path is required and links must be an array')
 
-  const links = value.links.filter((link): link is PageFlowRuntimePage['links'][number] => {
+  const links = Array.isArray(value.links) ? value.links.filter((link): link is PageFlowRuntimeLink => {
     if (!link || typeof link !== 'object') return false
-    const candidate = link as Partial<PageFlowRuntimePage['links'][number]>
+    const candidate = link as Partial<PageFlowRuntimeLink>
     return typeof candidate.label === 'string' && typeof candidate.to === 'string'
-  })
-  return { path: value.path, links }
+  }) : undefined
+  const title = typeof value.title === 'string' && value.title.trim() ? value.title.trim() : undefined
+  return { path: value.path, title, links }
 }
 
-function pageflowHtml() {
+function pageflowHtml(base = '/', styleUrl?: string, versionUrl?: string) {
+  const clientUrl = `${base.endsWith('/') ? base : `${base}/`}@id/${PAGEFLOW_CLIENT_ID}`
   return `<!doctype html>
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>unplugin-pageflow</title>
+    ${styleUrl ? `<link rel="stylesheet" href="${styleUrl}" />` : ''}
   </head>
   <body>
     <div id="app"></div>
-    <script type="module">import '${PAGEFLOW_CLIENT_ID}'</script>
+    <script type="module" src="${clientUrl}"></script>
+    ${versionUrl ? `<script>
+      let pageflowClientVersion;
+      setInterval(async () => {
+        try {
+          const response = await fetch('${versionUrl}', { cache: 'no-store' });
+          const version = await response.text();
+          if (pageflowClientVersion && version !== pageflowClientVersion) location.reload();
+          pageflowClientVersion = version;
+        } catch {}
+      }, 1000);
+    </script>` : ''}
   </body>
 </html>`
 }
 
 const factory: UnpluginFactory<PageFlowOptions | undefined> = (options) => {
   const resolved = resolveOptions(options)
-  const packaged = !import.meta.url.includes('/src/plugin/')
-  const clientEntry = toViteFsPath(new URL(packaged ? '../client/mount.js' : '../client/mount.ts', import.meta.url))
-  const runtimeEntry = toViteFsPath(new URL(packaged ? '../runtime/client.js' : '../runtime/client.ts', import.meta.url))
-  const clientStyle = packaged ? toViteFsPath(new URL('../style.css', import.meta.url)) : undefined
+  const runningFromSource = import.meta.url.includes('/src/plugin/')
+  const pluginRoot = resolve(fileURLToPath(new URL('../..', import.meta.url)))
+  const pluginDist = `${normalizeFile(resolve(pluginRoot, 'dist'))}/`
+  const packaged = !runningFromSource || resolve(process.cwd()) !== pluginRoot
+  const clientEntryUrl = new URL(
+    packaged ? runningFromSource ? '../../dist/client/mount.js' : '../client/mount.js' : '../client/mount.ts',
+    import.meta.url,
+  )
+  const clientEntry = toViteFsPath(clientEntryUrl)
+  const clientEntryFile = fileURLToPath(clientEntryUrl)
+  const runtimeEntry = toViteFsPath(new URL(
+    packaged ? runningFromSource ? '../../dist/runtime/client.js' : '../runtime/client.js' : '../runtime/client.ts',
+    import.meta.url,
+  ))
+  const clientStyleFile = packaged
+    ? fileURLToPath(new URL(runningFromSource ? '../../dist/style.css' : '../style.css', import.meta.url))
+    : undefined
   let graph: PageFlowGraph = { pages: [], routeMode: 'history', version: 0 }
   let routes: PageFlowRuntimeRoute[] = []
   let routeMode: PageFlowRouteMode = 'history'
-  const reportedLinks = new Map<string, PageFlowRuntimePage['links']>()
+  const reportedPages = new Map<string, PageFlowRuntimePage>()
   const staticLinksByFile = new Map<string, PageFlowRuntimeLink[]>()
   const sourceRevisionsByFile = new Map<string, string>()
   const eventResponses = new Set<ServerResponse>()
@@ -204,11 +244,39 @@ const factory: UnpluginFactory<PageFlowOptions | undefined> = (options) => {
   let sendPageUpdate: ((page: PageFlowPage) => void) | undefined
 
   const rebuildGraph = (updatedPath?: string) => {
-    graph = createGraph(routes, reportedLinks, staticLinksByFile, sourceRevisionsByFile, graph.version + 1, routeMode)
+    graph = createGraph(routes, reportedPages, staticLinksByFile, sourceRevisionsByFile, graph.version + 1, routeMode)
     if (updatedPath) {
       const page = graph.pages.find(item => item.path === updatedPath)
       if (page) sendPageUpdate?.(page)
     } else sendGraphUpdate?.(graph)
+  }
+
+  const recordSource = (code: string, id: string) => {
+    const file = normalizeFile(id)
+    const nextLinks = extractStaticLinks(code)
+    const currentLinks = staticLinksByFile.get(file) ?? []
+    const nextRevision = createHash('sha256').update(code).digest('hex').slice(0, 16)
+    const linksChanged = JSON.stringify(currentLinks) !== JSON.stringify(nextLinks)
+    const revisionChanged = sourceRevisionsByFile.get(file) !== nextRevision
+    if (!linksChanged && !revisionChanged) return false
+    if (nextLinks.length) staticLinksByFile.set(file, nextLinks)
+    else staticLinksByFile.delete(file)
+    sourceRevisionsByFile.set(file, nextRevision)
+    return true
+  }
+
+  const scanVueSources = async (directory: string) => {
+    let changed = false
+    const scan = async (current: string) => {
+      for (const entry of await readdir(current, { withFileTypes: true })) {
+        const file = resolve(current, entry.name)
+        if (entry.isDirectory()) await scan(file)
+        else if (entry.isFile() && entry.name.endsWith('.vue'))
+          changed = recordSource(await readFile(file, 'utf8'), file) || changed
+      }
+    }
+    await scan(directory)
+    if (changed && routes.length) rebuildGraph()
   }
 
   const sendEvent = (event: string, data: unknown) => {
@@ -228,26 +296,34 @@ const factory: UnpluginFactory<PageFlowOptions | undefined> = (options) => {
       if (id === PAGEFLOW_CONFIG_RESOLVED_ID)
         return `export default ${JSON.stringify(resolved)}`
       if (id === PAGEFLOW_CLIENT_RESOLVED_ID)
-        return `${clientStyle ? `import '${clientStyle}';` : ''} import config from '${PAGEFLOW_CONFIG_ID}'; import { mountPageFlow } from '${clientEntry}'; mountPageFlow(document.querySelector('#app'), config)`
+        return `import config from '${PAGEFLOW_CONFIG_ID}'; import { mountPageFlow } from '${clientEntry}'; mountPageFlow(document.querySelector('#app'), config)`
       if (id === PAGEFLOW_RUNTIME_RESOLVED_ID)
         return `import config from '${PAGEFLOW_CONFIG_ID}'; import { startPageFlowRuntime } from '${runtimeEntry}'; startPageFlowRuntime(config)`
     },
     transform(code, id) {
-      if (!id.includes('.vue')) return
-      const file = normalizeFile(id)
-      const nextLinks = extractStaticLinks(code)
-      const currentLinks = staticLinksByFile.get(file) ?? []
-      const nextRevision = createHash('sha256').update(code).digest('hex').slice(0, 16)
-      const linksChanged = JSON.stringify(currentLinks) !== JSON.stringify(nextLinks)
-      const revisionChanged = sourceRevisionsByFile.get(file) !== nextRevision
-      if (!linksChanged && !revisionChanged) return
-      if (nextLinks.length) staticLinksByFile.set(file, nextLinks)
-      else staticLinksByFile.delete(file)
-      sourceRevisionsByFile.set(file, nextRevision)
-      if (routes.length) rebuildGraph()
+      if (!id.endsWith('.vue')) return
+      if (recordSource(code, id) && routes.length) rebuildGraph()
     },
     vite: {
       apply: 'serve',
+      config(config) {
+        const ignored = config.server?.watch?.ignored
+        return {
+          server: {
+            watch: {
+              ignored: [
+                ...(ignored == null ? [] : Array.isArray(ignored) ? ignored : [ignored]),
+                `${pluginDist}**`,
+                '**/.unplugin-pageflow/cache/**',
+              ],
+            },
+          },
+        }
+      },
+      handleHotUpdate(context) {
+        const file = normalizeFile(context.file)
+        if (`${file}/`.startsWith(pluginDist) || file.includes('/.unplugin-pageflow/cache/')) return []
+      },
       transformIndexHtml: {
         order: 'pre',
         handler(_html, context) {
@@ -256,12 +332,15 @@ const factory: UnpluginFactory<PageFlowOptions | undefined> = (options) => {
             tag: 'script',
             attrs: { type: 'module' },
             children: `import '${PAGEFLOW_RUNTIME_ID}'`,
-            injectTo: 'body',
+            injectTo: 'head-prepend',
           }]
         },
       },
       configureServer(server) {
         if (!resolved.enabled) return
+        void scanVueSources(resolve(server.config.root, 'src')).catch(error =>
+          server.config.logger.warn(`unplugin-pageflow could not scan Vue sources: ${error instanceof Error ? error.message : error}`),
+        )
         const thumbnailCache = createThumbnailCache(resolve(server.config.root, '.unplugin-pageflow/cache'))
         sendGraphUpdate = nextGraph => {
           server.ws.send({ type: 'custom', event: PAGEFLOW_GRAPH_EVENT, data: nextGraph })
@@ -281,6 +360,24 @@ const factory: UnpluginFactory<PageFlowOptions | undefined> = (options) => {
           const pagePath = `${resolved.previewPath}api/page`
           const thumbnailsPath = `${resolved.previewPath}api/thumbnails`
           const thumbnailPath = `${resolved.previewPath}api/thumbnail`
+          const stylePath = `${resolved.previewPath}style.css`
+          const clientVersionPath = `${resolved.previewPath}api/client-version`
+
+          if (pathname === clientVersionPath && request.method === 'GET') {
+            const files = [clientEntryFile, clientStyleFile].filter((file): file is string => Boolean(file))
+            const versions = await Promise.all(files.map(file => stat(file).then(info => info.mtimeMs).catch(() => 0)))
+            response.setHeader('Content-Type', 'text/plain; charset=utf-8')
+            response.setHeader('Cache-Control', 'no-store')
+            response.end(String(Math.max(...versions)))
+            return
+          }
+
+          if (pathname === stylePath && request.method === 'GET' && clientStyleFile) {
+            response.setHeader('Content-Type', 'text/css; charset=utf-8')
+            response.setHeader('Cache-Control', 'no-cache')
+            response.end(await readFile(clientStyleFile))
+            return
+          }
 
           if (pathname === eventsPath && request.method === 'GET') {
             response.statusCode = 200
@@ -382,9 +479,14 @@ const factory: UnpluginFactory<PageFlowOptions | undefined> = (options) => {
           if (pathname === pagePath && request.method === 'POST') {
             try {
               const page = await readPage(request)
-              const currentLinks = reportedLinks.get(page.path)
-              if (JSON.stringify(currentLinks) !== JSON.stringify(page.links)) {
-                reportedLinks.set(page.path, page.links)
+              const currentPage = reportedPages.get(page.path)
+              const nextPage = {
+                path: page.path,
+                title: page.title ?? currentPage?.title,
+                links: page.links ?? currentPage?.links ?? [],
+              }
+              if (JSON.stringify(currentPage) !== JSON.stringify(nextPage)) {
+                reportedPages.set(page.path, nextPage)
                 rebuildGraph(page.path)
               }
               response.statusCode = 204
@@ -400,10 +502,9 @@ const factory: UnpluginFactory<PageFlowOptions | undefined> = (options) => {
           if (pathname !== resolved.previewPath && pathname !== `${resolved.previewPath}index.html`)
             return next()
 
-          const html = await server.transformIndexHtml(resolved.previewPath, pageflowHtml())
           response.statusCode = 200
           response.setHeader('Content-Type', 'text/html; charset=utf-8')
-          response.end(html)
+          response.end(pageflowHtml(server.config.base, clientStyleFile ? stylePath : undefined, clientVersionPath))
         })
 
         server.httpServer?.once('listening', () => {

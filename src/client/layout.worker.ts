@@ -1,4 +1,4 @@
-import { layoutPages } from './layout'
+import { layoutPagesByRoute } from './layout'
 import type { PageFlowPage } from '../shared/types'
 
 interface LayoutRequest {
@@ -11,6 +11,6 @@ self.addEventListener('message', (event: MessageEvent<LayoutRequest>) => {
   const { id, pages, cardHeights } = event.data
   self.postMessage({
     id,
-    positions: [...layoutPages(pages, new Map(cardHeights))],
+    positions: [...layoutPagesByRoute(pages, new Map(cardHeights))],
   })
 })

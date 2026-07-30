@@ -7,8 +7,9 @@
 }
 
 * { box-sizing: border-box; }
+html, body, #app { overscroll-behavior: none; }
 body { margin: 0; background: #242628; }
-main { position: relative; height: 100vh; overflow: hidden; background: #242628; }
+main { position: relative; height: 100vh; overflow: hidden; overscroll-behavior: none; background: #242628; }
 
 header {
   height: 46px;
@@ -55,7 +56,20 @@ header {
 .viewport-switch button.active { color: #fff; background: #464a4e; }
 .viewport-switch button:focus-visible { outline: 1px solid #ff795d; outline-offset: 1px; }
 
-.workspace { position: absolute; inset: 46px 0 28px; overflow: hidden; }
+.workspace { position: absolute; inset: 46px 0 28px; overflow: hidden; overscroll-behavior: none; touch-action: none; }
+.workspace > .canvas,
+.workspace > .preview-overlay { opacity: 0; }
+.workspace.scene-ready > .canvas,
+.workspace.scene-ready > .preview-overlay { opacity: 1; transition: opacity 120ms ease-out; }
+.workspace:not(.scene-ready)::after {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  color: #777c80;
+  content: 'Loading flow…';
+  font: 10px 'DM Mono';
+  transform: translate(-50%, -50%);
+}
 .canvas {
   position: absolute;
   inset: 0;
@@ -65,15 +79,16 @@ header {
   background-size: 24px 24px;
 }
 
-.preview-overlay { position: absolute; inset: 0; overflow: hidden; pointer-events: none; }
+.preview-overlay { position: absolute; inset: 0; overflow: hidden; overscroll-behavior: none; pointer-events: none; touch-action: none; }
 .preview-world { position: absolute; inset: 0; transform-origin: 0 0; }
 .page-preview {
   position: absolute;
   width: 240px;
-  overflow: hidden;
-  background: #202224;
-  box-shadow: 0 8px 20px rgb(9 10 11 / 20%);
+  overflow: visible;
+  background: transparent;
   pointer-events: auto;
+  touch-action: none;
+  z-index: 1;
 }
 .page-preview iframe {
   display: block;
@@ -81,23 +96,6 @@ header {
   background: #fff;
   transform-origin: 0 0;
 }
-.page-preview > img {
-  display: block;
-  object-fit: fill;
-  user-select: none;
-}
-.demo-preview {
-  display: flex;
-  height: 100%;
-  flex-direction: column;
-  justify-content: flex-end;
-  gap: 5px;
-  padding: 16px;
-  color: #fff;
-}
-.demo-preview b { font-size: 18px; }
-.demo-preview span { font: 10px 'DM Mono'; opacity: .72; }
-
 .zoom {
   position: absolute;
   right: 18px;

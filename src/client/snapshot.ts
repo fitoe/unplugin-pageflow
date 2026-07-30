@@ -1,4 +1,96 @@
-import { PAGEFLOW_READY_EVENT } from '../shared/protocol'
+import { PAGEFLOW_NETWORK_EVENT, PAGEFLOW_READY_EVENT } from '../shared/protocol'
+
+interface PageFlowWindow extends Window {
+  __UNPLUGIN_PAGEFLOW_PENDING_REQUESTS__?: () => number
+}
+
+export function previewDocumentHeight(document: Document, minimumHeight: number) {
+  const body = document.body
+  const root = document.documentElement
+  return Math.ceil(Math.max(
+    minimumHeight,
+    body?.scrollHeight ?? 0,
+    body?.offsetHeight ?? 0,
+    body?.clientHeight ?? 0,
+    body?.getBoundingClientRect().height ?? 0,
+    root?.scrollHeight ?? 0,
+    root?.offsetHeight ?? 0,
+    root?.clientHeight ?? 0,
+    root?.getBoundingClientRect().height ?? 0,
+  ))
+}
+
+export function boundedPreviewDocumentHeight(document: Document, viewportHeight: number, maximumViewports = 4) {
+  if (isInfiniteListDocument(document)) return viewportHeight
+  const documentHeight = previewDocumentHeight(document, viewportHeight)
+  const contentHeight = previewContentHeight(document, viewportHeight)
+  const height = documentHeight - contentHeight > viewportHeight / 2 ? contentHeight : documentHeight
+  return Math.min(height, viewportHeight * maximumViewports)
+}
+
+export function previewContentHeight(document: Document, minimumHeight: number) {
+  const offset = document.defaultView?.scrollY ?? 0
+  const bottoms = [...(document.body?.querySelectorAll?.('*') ?? [])].flatMap(element => {
+    if (element.children.length && !['IMG', 'CANVAS', 'SVG'].includes(element.tagName)) return []
+    const rect = element.getBoundingClientRect()
+    return rect.width && rect.height ? [rect.bottom + offset] : []
+  })
+  if (!bottoms.length) return previewDocumentHeight(document, minimumHeight)
+  return Math.ceil(Math.max(minimumHeight, ...bottoms) + 24)
+}
+
+export function isInfiniteListDocument(document: Document) {
+  const marker = document.querySelector?.([
+    '[data-pageflow-infinite]',
+    '[class*="load-more"]',
+    '[class*="load_more"]',
+    '[class*="loadmore"]',
+    '[class*="load-state"]',
+    'uni-scroll-view[scroll-y="true"]',
+    'scroll-view[scroll-y]',
+  ].join(','))
+  if (marker) return true
+  const repeatedList = [...(document.querySelectorAll?.([
+    '[class$="-list"]',
+    '[class*="-list "]',
+    '[class$="-grid"]',
+    '[class*="-grid "]',
+  ].join(',')) ?? [])].some(element => element.children.length >= 6)
+  if (repeatedList) return true
+  return /(?:加载更多|没有更多|已加载全部|上拉加载)/.test(document.body?.innerText ?? '')
+}
+
+export function maskedIconBackground(maskImage: string, color: string) {
+  const match = maskImage.match(/^url\((['"]?)(data:image\/svg\+xml[^)]*)\1\)$/)
+  if (!match) return
+  const dataUrl = match[2]
+  const separator = dataUrl.indexOf(',')
+  if (separator < 0) return
+  try {
+    const svg = decodeURIComponent(dataUrl.slice(separator + 1)).replaceAll('currentColor', color)
+    return `url("data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}")`
+  } catch {
+    return
+  }
+}
+
+export function materializeMaskedIcons(document: Document) {
+  document.querySelectorAll<HTMLElement>('[class*="i-"], [style*="mask"]').forEach(element => {
+    const style = document.defaultView?.getComputedStyle(element)
+    if (!style) return
+    const backgroundImage = maskedIconBackground(style.maskImage || style.webkitMaskImage, style.color)
+    if (!backgroundImage) return
+    Object.assign(element.style, {
+      backgroundColor: 'transparent',
+      backgroundImage,
+      backgroundPosition: 'center',
+      backgroundRepeat: 'no-repeat',
+      backgroundSize: style.maskSize === 'auto' ? '100% 100%' : style.maskSize,
+      maskImage: 'none',
+      webkitMaskImage: 'none',
+    })
+  })
+}
 
 function waitForDomQuiet(frame: HTMLIFrameElement, quietMs: number, timeoutMs: number) {
   return new Promise<void>((resolve, reject) => {
@@ -14,30 +106,79 @@ function waitForDomQuiet(frame: HTMLIFrameElement, quietMs: number, timeoutMs: n
       clearTimeout(timeoutTimer)
       observer.disconnect()
       targetWindow.removeEventListener(PAGEFLOW_READY_EVENT, handleReady)
+      targetWindow.removeEventListener(PAGEFLOW_NETWORK_EVENT, scheduleQuiet)
       error ? reject(error) : resolve()
     }
     const scheduleQuiet = () => {
       clearTimeout(quietTimer)
+      if ((targetWindow as PageFlowWindow).__UNPLUGIN_PAGEFLOW_PENDING_REQUESTS__?.()) return
       quietTimer = setTimeout(() => finish(), quietMs)
     }
-    const handleReady = () => finish()
+    // A manual ready signal means the application finished its own work. Keep
+    // the quiet window: Vue/React can still flush DOM, fonts and images after it.
+    const handleReady = () => scheduleQuiet()
 
     observer.observe(body, { attributes: true, childList: true, subtree: true })
     targetWindow.addEventListener(PAGEFLOW_READY_EVENT, handleReady, { once: true })
+    targetWindow.addEventListener(PAGEFLOW_NETWORK_EVENT, scheduleQuiet)
     scheduleQuiet()
   })
 }
 
-export async function waitForPreviewReady(frame: HTMLIFrameElement, quietMs = 800, timeoutMs = 12000) {
+function activeFiniteAnimations(document: Document) {
+  if (typeof document.getAnimations !== 'function') return []
+  return document.getAnimations().filter(animation => {
+    if (animation.playState !== 'running' && animation.playState !== 'pending') return false
+    const timing = animation.effect?.getComputedTiming()
+    return Number.isFinite(timing?.endTime)
+  })
+}
+
+function visualSignature(document: Document) {
+  const body = document.body
+  const elements = body ? Array.from(body.getElementsByTagName('*')) : []
+  const sampleStride = Math.max(1, Math.ceil(elements.length / 64))
+  const geometry = elements.filter((_element, index) => index % sampleStride === 0 || index === elements.length - 1).map(element => {
+    const rect = element.getBoundingClientRect()
+    return `${Math.round(rect.left)},${Math.round(rect.top)},${Math.round(rect.width)},${Math.round(rect.height)}`
+  }).join(';')
+  const images = Array.from(document.querySelectorAll('img')).map(image =>
+    `${image.currentSrc || image.src}:${image.complete ? image.naturalWidth : 0}x${image.complete ? image.naturalHeight : 0}`,
+  ).join(';')
+  return [
+    previewDocumentHeight(document, 0),
+    body?.innerText.length ?? 0,
+    elements.length,
+    images,
+    geometry,
+  ].join('|')
+}
+
+async function waitForDocumentStable(document: Document, stableSamples = 4, intervalMs = 250, maximumWaitMs = 30000) {
+  const startedAt = performance.now()
+  let previous = ''
+  let stable = 0
+  while (stable < stableSamples && performance.now() - startedAt < maximumWaitMs) {
+    const signature = visualSignature(document)
+    stable = signature === previous && activeFiniteAnimations(document).length === 0 ? stable + 1 : 0
+    previous = signature
+    await new Promise(resolve => setTimeout(resolve, intervalMs))
+  }
+  if (stable < stableSamples) throw new Error('Preview visual state did not settle')
+}
+
+export async function waitForPreviewReady(frame: HTMLIFrameElement, quietMs = 3000, timeoutMs = 30000) {
   const document = frame.contentDocument
   if (!document?.body) throw new Error('Preview document is unavailable')
 
-  const waitForImages = () => Promise.all([...document.images].map(image =>
+  const waitForImages = () => Promise.all(Array.from(document.querySelectorAll('img')).map(image =>
     image.complete && image.naturalWidth ? undefined : image.decode().catch(() => undefined),
   ))
   await Promise.all([document.fonts?.ready, waitForImages()])
   await waitForDomQuiet(frame, quietMs, timeoutMs)
   await waitForImages()
+  await waitForDocumentStable(document, 4, 250, timeoutMs)
+  await new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve())))
 
   const body = document.body
   if (!body.children.length && !body.textContent?.trim()) throw new Error('Preview page is empty')

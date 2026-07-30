@@ -7,6 +7,8 @@ function openAbout() {
   navigation.push('/about')
   navigation.replace({ path: '/contact' })
   useRouter().push(`/users/42`)
+  uni.navigateTo({ url: '/about?from=home' })
+  uni.redirectTo({ url: `/users/42?tab=${items.length}` })
   items.push('/ignored')
 }
 </script>

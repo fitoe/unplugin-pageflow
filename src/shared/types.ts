@@ -3,6 +3,7 @@ export interface PageFlowOptions {
   previewPath?: string
   appUrl?: string
   dynamicParams?: Record<string, Record<string, string | number>>
+  previewRoles?: Array<{ match: string; role: string }>
 }
 
 export interface ResolvedPageFlowOptions {
@@ -10,6 +11,7 @@ export interface ResolvedPageFlowOptions {
   previewPath: string
   appUrl: string
   dynamicParams: Record<string, Record<string, string | number>>
+  previewRoles: Array<{ match: string; role: string }>
 }
 
 export interface PageFlowRuntimeRoute {
@@ -25,16 +27,19 @@ export type PageFlowRouteMode = 'history' | 'hash'
 export interface PageFlowRuntimeLink {
   label: string
   to: string
+  hotspot?: { centerX: number; centerY: number }
 }
 
 export interface PageFlowRuntimePage {
   path: string
-  links: PageFlowRuntimeLink[]
+  title?: string
+  links?: PageFlowRuntimeLink[]
 }
 
 export interface PageFlowLink {
   label: string
   to: string
+  hotspot?: { centerX: number; centerY: number }
 }
 
 export interface PageFlowPage {

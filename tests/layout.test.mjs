@@ -5,10 +5,12 @@ import { createServer } from 'vite'
 test('lays out linked pages in layers and limits previews to the viewport', async () => {
   const server = await createServer({ configFile: false, server: { middlewareMode: true }, appType: 'custom', logLevel: 'silent' })
   try {
-    const { createPageSpatialIndex, getAutoPreviewPageId, getRenderablePages, getVisiblePageIds, layoutPages, queryPageSpatialIndex } = await server.ssrLoadModule('/src/client/layout.ts')
+    const { centerPageTransform, createPageSpatialIndex, getAutoPreviewPageId, getRenderablePages, getVisiblePageIds, layoutPages, layoutPagesByRoute, queryPageSpatialIndex } = await server.ssrLoadModule('/src/client/layout.ts')
+    const { layoutPagesWithElk } = await server.ssrLoadModule('/src/client/layout-elk.ts')
     const { forwardWheelToCanvas, PAGEFLOW_CANVAS_CONFIG } = await server.ssrLoadModule('/src/client/canvas.ts')
     const { resolvePreviewUrl, touchPreviewCache } = await server.ssrLoadModule('/src/client/preview.ts')
-    const { fullThumbnailTiles, thumbnailSlot, thumbnailTierForZoom, visibleThumbnailTiles } = await server.ssrLoadModule('/src/client/thumbnails.ts')
+    const { fullThumbnailTiles, thumbnailRevision, thumbnailSlot, thumbnailTierForZoom, thumbnailUrl, visibleThumbnailTiles } = await server.ssrLoadModule('/src/client/thumbnails.ts')
+    const { boundedPreviewDocumentHeight, isInfiniteListDocument, maskedIconBackground, materializeMaskedIcons, previewDocumentHeight } = await server.ssrLoadModule('/src/client/snapshot.ts')
     const pages = Array.from({ length: 30 }, (_, index) => ({
       id: `page-${index}`,
       title: `Page ${index}`,
@@ -21,9 +23,50 @@ test('lays out linked pages in layers and limits previews to the viewport', asyn
     assert.equal(PAGEFLOW_CANVAS_CONFIG.wheel.zoomMode, true)
     assert.equal(PAGEFLOW_CANVAS_CONFIG.wheel.zoomSpeed, 0.025)
     assert.equal(PAGEFLOW_CANVAS_CONFIG.move.dragEmpty, true)
+    assert.deepEqual(
+      centerPageTransform([100, 200], 500, { width: 1000, height: 800 }, 2),
+      { x: 60, y: -500, scaleX: 2, scaleY: 2 },
+    )
     assert.deepEqual(touchPreviewCache([], 'home'), ['home'])
     assert.deepEqual(touchPreviewCache(['home', 'about', 'contact'], 'home'), ['about', 'contact', 'home'])
-    assert.deepEqual(touchPreviewCache(['home', 'about', 'contact'], 'settings'), ['home', 'about', 'contact', 'settings'])
+    assert.equal(previewDocumentHeight({
+      body: { scrollHeight: 1400, offsetHeight: 1200, clientHeight: 800, getBoundingClientRect: () => ({ height: 1300 }) },
+      documentElement: { scrollHeight: 1350, offsetHeight: 1100, clientHeight: 844, getBoundingClientRect: () => ({ height: 1250 }) },
+    }, 844), 1400)
+    assert.equal(previewDocumentHeight({
+      body: { scrollHeight: 500, offsetHeight: 500, clientHeight: 500, getBoundingClientRect: () => ({ height: 500 }) },
+      documentElement: { scrollHeight: 500, offsetHeight: 500, clientHeight: 500, getBoundingClientRect: () => ({ height: 500 }) },
+    }, 844), 844)
+    assert.equal(boundedPreviewDocumentHeight({
+      body: { scrollHeight: 10_000, getBoundingClientRect: () => ({ height: 10_000 }) },
+      documentElement: { scrollHeight: 10_000, getBoundingClientRect: () => ({ height: 10_000 }) },
+    }, 844), 3376)
+    const infiniteListDocument = {
+      body: { scrollHeight: 10_000, innerText: '加载更多', getBoundingClientRect: () => ({ height: 10_000 }) },
+      documentElement: { scrollHeight: 10_000, getBoundingClientRect: () => ({ height: 10_000 }) },
+      querySelector: () => ({ className: 'load-more' }),
+    }
+    assert.equal(isInfiniteListDocument(infiniteListDocument), true)
+    assert.equal(boundedPreviewDocumentHeight(infiniteListDocument, 844), 844)
+    const repeatedListDocument = {
+      body: { scrollHeight: 10_000, innerText: '', getBoundingClientRect: () => ({ height: 10_000 }) },
+      documentElement: { scrollHeight: 10_000, getBoundingClientRect: () => ({ height: 10_000 }) },
+      querySelector: () => null,
+      querySelectorAll: () => [{ children: Array.from({ length: 20 }) }],
+    }
+    assert.equal(isInfiniteListDocument(repeatedListDocument), true)
+    assert.equal(boundedPreviewDocumentHeight(repeatedListDocument, 844), 844)
+    const iconBackground = maskedIconBackground(
+      `url("data:image/svg+xml;utf8,%3Csvg%3E%3Cpath fill='currentColor'/%3E%3C/svg%3E")`,
+      'rgb(79, 167, 87)',
+    )
+    assert.match(iconBackground, /data:image\/svg\+xml/)
+    assert.match(decodeURIComponent(iconBackground), /fill='rgb\(79, 167, 87\)'/)
+    assert.match(thumbnailRevision(pages[0]), /^5:/)
+    const hotspotLayer = { removed: false, remove() { this.removed = true } }
+    materializeMaskedIcons({ querySelector: () => hotspotLayer, querySelectorAll: () => [] })
+    assert.equal(hotspotLayer.removed, false)
+    assert.deepEqual(touchPreviewCache(['home', 'about', 'contact'], 'settings'), ['about', 'contact', 'settings'])
     assert.deepEqual(touchPreviewCache(['home', 'about', 'contact'], 'settings', 3), ['about', 'contact', 'settings'])
     const wheelCalls = []
     forwardWheelToCanvas({
@@ -37,6 +80,10 @@ test('lays out linked pages in layers and limits previews to the viewport', asyn
     )
     assert.equal(thumbnailTierForZoom(49), 'compact')
     assert.equal(thumbnailTierForZoom(50), 'full')
+    assert.notEqual(
+      thumbnailUrl({ previewPath: '/preview/' }, { slot: 'home', revision: 'one', updatedAt: 1 }),
+      thumbnailUrl({ previewPath: '/preview/' }, { slot: 'home', revision: 'one', updatedAt: 2 }),
+    )
     const positions = layoutPages(pages)
 
     assert.deepEqual(positions.get('page-0'), [64, 64])
@@ -49,6 +96,81 @@ test('lays out linked pages in layers and limits previews to the viewport', asyn
     ], new Map([['short', 500], ['long', 900]]))
     assert.deepEqual(variablePositions.get('short'), [64, 64])
     assert.deepEqual(variablePositions.get('long'), [64, 612])
+
+    const elkPositions = await layoutPagesWithElk([
+      { id: 'entry', links: [{ label: 'Shared', to: 'shared' }] },
+      { id: 'other', links: [{ label: 'Shared', to: 'shared' }] },
+      { id: 'shared', links: [] },
+    ], new Map([['entry', 300], ['other', 700], ['shared', 500]]))
+    assert(elkPositions.get('shared')[0] > elkPositions.get('entry')[0])
+    const entryBottom = elkPositions.get('entry')[1] + 300
+    const otherBottom = elkPositions.get('other')[1] + 700
+    assert(entryBottom + 72 <= elkPositions.get('other')[1] || otherBottom + 72 <= elkPositions.get('entry')[1])
+    const cyclePositions = await layoutPagesWithElk([
+      { id: 'cycle-a', links: [{ label: 'B', to: 'cycle-b' }] },
+      { id: 'cycle-b', links: [{ label: 'A', to: 'cycle-a' }] },
+    ])
+    assert.equal(cyclePositions.size, 2)
+    const packedPositions = await layoutPagesWithElk(Array.from({ length: 12 }, (_, index) => ({
+      id: `isolated-${index}`,
+      path: `/isolated/group-${Math.floor(index / 4)}/page-${index}`,
+      links: [],
+    })))
+    assert(new Set([...packedPositions.values()].map(position => position[1])).size > 1)
+    const routePositions = await layoutPagesWithElk([
+      { id: 'machinery', path: '/machinery/index', links: [] },
+      { id: 'farmer', path: '/machinery/farmer/index', links: [] },
+      { id: 'demands', path: '/machinery/farmer/demands/create', links: [] },
+    ])
+    assert(routePositions.get('machinery')[0] < routePositions.get('farmer')[0])
+    assert(routePositions.get('farmer')[0] < routePositions.get('demands')[0])
+
+    const groupedRoutePositions = layoutPagesByRoute([
+      { id: 'machinery-root', path: '/machinery/index', links: [] },
+      { id: 'machinery-home', path: '/machinery/home/index', links: [] },
+      { id: 'machinery-detail', path: '/machinery/orders/index', links: [] },
+      { id: 'machinery-farmer-detail', path: '/machinery/farmer/orders/detail', links: [] },
+      { id: 'inspection-home', path: '/inspection/home/index', links: [] },
+    ], new Map([
+      ['machinery-home', 300],
+      ['machinery-detail', 500],
+      ['machinery-farmer-detail', 700],
+      ['inspection-home', 400],
+    ]))
+    assert(groupedRoutePositions.get('machinery-root')[1] < groupedRoutePositions.get('machinery-home')[1])
+    assert.notEqual(groupedRoutePositions.get('machinery-home')[1], groupedRoutePositions.get('inspection-home')[1])
+    assert.equal(groupedRoutePositions.get('machinery-home')[1], groupedRoutePositions.get('machinery-detail')[1])
+    assert.notEqual(groupedRoutePositions.get('machinery-home')[0], groupedRoutePositions.get('machinery-detail')[0])
+    assert(groupedRoutePositions.get('machinery-home')[1] < groupedRoutePositions.get('machinery-farmer-detail')[1])
+    const machineryChildrenX = ['machinery-home', 'machinery-detail', 'machinery-farmer-detail']
+      .map(id => groupedRoutePositions.get(id)[0])
+    assert(groupedRoutePositions.get('machinery-root')[0] >= Math.min(...machineryChildrenX))
+    assert(groupedRoutePositions.get('machinery-root')[0] <= Math.max(...machineryChildrenX))
+
+    const siblingRoutePositions = layoutPagesByRoute([
+      { id: 'agri-index', path: '/agri-service/index', links: [] },
+      { id: 'agri-advice', path: '/agri-service/advice', links: [] },
+      { id: 'agri-detail', path: '/agri-service/history/detail', links: [] },
+    ])
+    assert.equal(siblingRoutePositions.get('agri-index')[1], siblingRoutePositions.get('agri-advice')[1])
+    assert.notEqual(siblingRoutePositions.get('agri-index')[0], siblingRoutePositions.get('agri-advice')[0])
+    assert(siblingRoutePositions.get('agri-detail')[1] > siblingRoutePositions.get('agri-index')[1])
+
+    const deepRoutePositions = layoutPagesByRoute([
+      { id: 'depth-1', path: '/pages/module/index', links: [] },
+      { id: 'depth-2', path: '/pages/module/second/index', links: [] },
+      { id: 'depth-3', path: '/pages/module/second/third/index', links: [] },
+      { id: 'depth-4', path: '/pages/module/second/third/fourth/index', links: [] },
+    ])
+    assert(deepRoutePositions.get('depth-1')[1] < deepRoutePositions.get('depth-2')[1])
+    assert(deepRoutePositions.get('depth-2')[1] < deepRoutePositions.get('depth-3')[1])
+    assert(deepRoutePositions.get('depth-3')[1] < deepRoutePositions.get('depth-4')[1])
+
+    const pagesPrefixedPositions = layoutPagesByRoute([
+      { id: 'pages-agri', path: '/pages/agri-service/advice', links: [] },
+      { id: 'pages-finance', path: '/pages/finance/home/index', links: [] },
+    ])
+    assert.notEqual(pagesPrefixedPositions.get('pages-agri')[1], pagesPrefixedPositions.get('pages-finance')[1])
 
     const visible = getVisiblePageIds(
       pages,
@@ -133,6 +255,12 @@ test('lays out linked pages in layers and limits previews to the viewport', asyn
       appUrl: '/app/',
       dynamicParams: { '/products/:id': { id: 'demo-product' } },
     }, 'http://localhost', 'hash'), '/app/?__unplugin-pageflow_preview=1#/products/demo-product')
+    assert.equal(resolvePreviewUrl('/products/:id', {
+      enabled: true,
+      previewPath: '/__unplugin-pageflow/',
+      appUrl: '/app/',
+      dynamicParams: { '/products/:id': { id: 'demo-product' } },
+    }, 'http://localhost', 'history', '/products/42?tab=orders'), '/app/products/42?tab=orders&__unplugin-pageflow_preview=1')
   } finally {
     await server.close()
   }
