@@ -24,24 +24,36 @@ export default defineConfig({
         nav: [
           { text: '指南', link: '/zh/guide/getting-started' },
           { text: '框架接入', link: '/zh/integrations/' },
-          { text: '参考', link: '/zh/reference/configuration' },
+          { text: '参考', link: '/zh/reference/compatibility' },
         ],
         sidebar: [
           {
             text: '指南',
             items: [
               { text: '快速开始', link: '/zh/guide/getting-started' },
+              { text: '基本概念', link: '/zh/guide/concepts' },
+              { text: '使用画布', link: '/zh/guide/canvas' },
+              { text: '动态路由', link: '/zh/guide/dynamic-routes' },
+              { text: '页面状态恢复', link: '/zh/guide/state' },
+              { text: '页面测试', link: '/zh/guide/page-tests' },
+              { text: '大型项目与缓存', link: '/zh/guide/large-projects' },
+              { text: '工作原理', link: '/zh/guide/how-it-works' },
+              { text: '故障排查', link: '/zh/guide/troubleshooting' },
+              { text: '常见问题', link: '/zh/guide/faq' },
             ],
           },
           {
             text: '框架接入',
             items: [
-              { text: '支持的框架', link: '/zh/integrations/' },
+              { text: '框架总览', link: '/zh/integrations/' },
+              { text: 'Vite + Vue Router', link: '/zh/integrations/vite-vue' },
+              { text: 'Next.js', link: '/zh/integrations/next' },
             ],
           },
           {
             text: '参考',
             items: [
+              { text: '兼容性', link: '/zh/reference/compatibility' },
               { text: '配置', link: '/zh/reference/configuration' },
               { text: '限制与安全', link: '/zh/reference/limitations' },
             ],
@@ -65,24 +77,36 @@ export default defineConfig({
     nav: [
       { text: 'Guide', link: '/guide/getting-started' },
       { text: 'Integrations', link: '/integrations/' },
-      { text: 'Reference', link: '/reference/configuration' },
+      { text: 'Reference', link: '/reference/compatibility' },
     ],
     sidebar: [
       {
         text: 'Guide',
         items: [
           { text: 'Getting started', link: '/guide/getting-started' },
+          { text: 'Core concepts', link: '/guide/concepts' },
+          { text: 'Using the canvas', link: '/guide/canvas' },
+          { text: 'Dynamic routes', link: '/guide/dynamic-routes' },
+          { text: 'Page state', link: '/guide/state' },
+          { text: 'Page tests', link: '/guide/page-tests' },
+          { text: 'Large projects and caching', link: '/guide/large-projects' },
+          { text: 'How PageFlow works', link: '/guide/how-it-works' },
+          { text: 'Troubleshooting', link: '/guide/troubleshooting' },
+          { text: 'FAQ', link: '/guide/faq' },
         ],
       },
       {
         text: 'Integrations',
         items: [
-          { text: 'Framework integrations', link: '/integrations/' },
+          { text: 'Framework overview', link: '/integrations/' },
+          { text: 'Vite + Vue Router', link: '/integrations/vite-vue' },
+          { text: 'Next.js', link: '/integrations/next' },
         ],
       },
       {
         text: 'Reference',
         items: [
+          { text: 'Compatibility', link: '/reference/compatibility' },
           { text: 'Configuration', link: '/reference/configuration' },
           { text: 'Limitations and safety', link: '/reference/limitations' },
         ],

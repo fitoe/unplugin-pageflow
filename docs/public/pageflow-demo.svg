@@ -1,0 +1,165 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 620" role="img" aria-labelledby="title desc">
+  <title id="title">PageFlow page objects reorganize across groups</title>
+  <desc id="desc">Persistent mobile page objects expand from a product deck, expand a nested supplier deck, collapse through both levels, then reorganize around a focused page while navigation links are drawn.</desc>
+  <defs>
+    <filter id="shadow" x="-30%" y="-20%" width="160%" height="160%">
+      <feDropShadow dx="0" dy="4" stdDeviation="5" flood-color="#172019" flood-opacity=".1"/>
+    </filter>
+    <symbol id="page" viewBox="0 0 76 142">
+      <rect x="1" y="1" width="74" height="140" rx="5" fill="#fff" filter="url(#shadow)"/>
+      <rect x="9" y="11" width="32" height="3" rx="1.5" fill="#89928b"/>
+      <rect x="9" y="19" width="44" height="2" rx="1" fill="#d7ddd8"/>
+      <rect x="8" y="41" width="59" height="14" rx="3" fill="#f0f3f0"/>
+      <rect x="8" y="63" width="27" height="26" rx="3" fill="#e4f1e6"/>
+      <rect x="40" y="63" width="27" height="26" rx="3" fill="#edf0ed"/>
+      <rect x="8" y="98" width="58" height="4" rx="2" fill="#d7ddd8"/>
+      <rect x="8" y="108" width="42" height="3" rx="1.5" fill="#e4e8e4"/>
+      <rect x="8" y="127" width="58" height="7" rx="3.5" fill="#dfe5e0"/>
+    </symbol>
+    <symbol id="pageAlt" viewBox="0 0 76 142">
+      <rect x="1" y="1" width="74" height="140" rx="5" fill="#fff" filter="url(#shadow)"/>
+      <rect x="8" y="10" width="38" height="3" rx="1.5" fill="#89928b"/>
+      <rect x="8" y="18" width="25" height="2" rx="1" fill="#d7ddd8"/>
+      <rect x="8" y="34" width="60" height="29" rx="3" fill="#dff0e2"/>
+      <circle cx="20" cy="48" r="7" fill="#72c27c"/>
+      <rect x="31" y="42" width="29" height="3" rx="1.5" fill="#8ca790"/>
+      <rect x="31" y="50" width="21" height="3" rx="1.5" fill="#c5cec6"/>
+      <g fill="#edf2ed"><rect x="8" y="72" width="27" height="24" rx="3"/><rect x="41" y="72" width="27" height="24" rx="3"/><rect x="8" y="103" width="60" height="24" rx="3"/></g>
+    </symbol>
+    <style>
+      .sans { font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+      .mono { font-family: "SFMono-Regular", Consolas, monospace; }
+      .node { transform-box: view-box; transform-origin: 0 0; }
+      .top { animation: topMove 18s cubic-bezier(.22,1,.36,1) infinite, topDim 18s ease-in-out infinite; }
+      .top.target { animation: topMove 18s cubic-bezier(.22,1,.36,1) infinite, targetOpacity 18s ease-in-out infinite; }
+      .product { animation: productMove 18s cubic-bezier(.22,1,.36,1) infinite, productOpacity 18s ease-in-out infinite; animation-delay: calc(var(--i) * 45ms); }
+      .product.focus-target { animation: productMove 18s cubic-bezier(.22,1,.36,1) infinite, productTargetOpacity 18s ease-in-out infinite; animation-delay: calc(var(--i) * 45ms); }
+      .label { fill: #4a504b; font-size: 7px; }
+      .path { fill: #969c97; font-size: 5px; }
+      .hotspot { opacity: 0; animation: hotspot 18s ease-in-out infinite; }
+      .link { fill: none; stroke: #ff4f9a; stroke-width: 2.2; stroke-linecap: round; stroke-dasharray: 1; stroke-dashoffset: 1; animation: links 18s ease-in-out infinite; }
+      .cursor { opacity: 0; pointer-events: none; animation: cursorMove 18s cubic-bezier(.22,1,.36,1) infinite; }
+      .click-ring { fill: none; stroke: #ff795d; stroke-width: 1.6; opacity: 0; transform-box: fill-box; transform-origin: center; pointer-events: none; }
+      .click-product { animation: clickProduct 18s ease-out infinite; }
+      .click-supplier { animation: clickSupplier 18s ease-out infinite; }
+      .click-home { animation: clickHome 18s ease-out infinite; }
+
+      /* 720 ms expansion/collapse windows inside an 18 s loop. */
+      @keyframes topMove {
+        0%, 10% { transform: translate(var(--ix),var(--iy)) scale(1); }
+        14%, 56% { transform: translate(var(--px),var(--py)) scale(.66); }
+        60%, 70% { transform: translate(var(--ix),var(--iy)) scale(1); }
+        74%, 94% { transform: translate(var(--fx),var(--fy)) scale(var(--fs)); }
+        100% { transform: translate(var(--ix),var(--iy)) scale(1); }
+      }
+      @keyframes productMove {
+        0%, 10% { transform: translate(var(--ix),var(--iy)) scale(1); }
+        14%, 28% { transform: translate(var(--gx),var(--gy)) scale(1); }
+        32%, 44% { transform: translate(var(--sx),var(--sy)) scale(var(--ss)); }
+        48%, 56% { transform: translate(var(--gx),var(--gy)) scale(1); }
+        60%, 70% { transform: translate(var(--ix),var(--iy)) scale(1); }
+        74%, 94% { transform: translate(var(--fx),var(--fy)) scale(var(--fs)); }
+        100% { transform: translate(var(--ix),var(--iy)) scale(1); }
+      }
+      @keyframes topDim {
+        0%, 10%, 60%, 70% { opacity: 1; }
+        14%, 56% { opacity: .14; }
+        74%, 94% { opacity: 0; }
+        100% { opacity: 1; }
+      }
+      @keyframes targetOpacity {
+        0%, 10%, 60%, 70% { opacity: 1; }
+        14%, 56% { opacity: .14; }
+        74%, 94% { opacity: .9; }
+        100% { opacity: 1; }
+      }
+      @keyframes productOpacity {
+        0%, 10%, 60%, 70%, 100% { opacity: var(--stack-opacity); }
+        14%, 28%, 48%, 56% { opacity: var(--group-opacity); }
+        32%, 44% { opacity: var(--supplier-opacity); }
+        74%, 94% { opacity: 0; }
+      }
+      @keyframes productTargetOpacity {
+        0%, 10%, 60%, 70%, 100% { opacity: var(--stack-opacity); }
+        14%, 56% { opacity: var(--group-opacity); }
+        74%, 94% { opacity: .9; }
+      }
+      @keyframes hotspot { 0%, 80%, 94%, 100% { opacity: 0; } 84%, 92% { opacity: 1; } }
+      @keyframes links { 0%, 82% { stroke-dashoffset: 1; opacity: 0; } 88%, 94% { stroke-dashoffset: 0; opacity: 1; } 100% { stroke-dashoffset: 1; opacity: 0; } }
+      @keyframes cursorMove {
+        0%, 4% { opacity: 0; transform: translate(820px,540px); }
+        7%, 11% { opacity: 1; transform: translate(460px,359px); }
+        13%, 22% { opacity: 0; transform: translate(460px,359px); }
+        25%, 29% { opacity: 1; transform: translate(317px,392px); }
+        31%, 65% { opacity: 0; transform: translate(317px,392px); }
+        68%, 71% { opacity: 1; transform: translate(318px,143px); }
+        73%, 100% { opacity: 0; transform: translate(318px,143px); }
+      }
+      @keyframes clickProduct {
+        0%, 7%, 12%, 100% { opacity: 0; transform: scale(.65); }
+        8% { opacity: .9; transform: scale(.65); }
+        10.5% { opacity: 0; transform: scale(1.7); }
+      }
+      @keyframes clickSupplier {
+        0%, 25%, 30%, 100% { opacity: 0; transform: scale(.65); }
+        26% { opacity: .9; transform: scale(.65); }
+        28.5% { opacity: 0; transform: scale(1.7); }
+      }
+      @keyframes clickHome {
+        0%, 68%, 73%, 100% { opacity: 0; transform: scale(.65); }
+        69% { opacity: .9; transform: scale(.65); }
+        71.5% { opacity: 0; transform: scale(1.7); }
+      }
+
+      @media (prefers-reduced-motion: reduce) {
+        * { animation: none !important; }
+        .node { transform: translate(var(--ix),var(--iy)); opacity: 1; }
+      }
+    </style>
+  </defs>
+
+  <!-- Top-level pages. They remain the same objects while being parked at group edges. -->
+  <g class="node top target sans" style="--ix:280px;--iy:72px;--px:56px;--py:260px;--fx:405px;--fy:104px;--fs:2.5">
+    <use href="#pageAlt" width="76" height="142"/><text class="label" y="153">首页</text><text class="mono path" y="161">/pages/index</text>
+    <rect class="hotspot" x="8" y="34" width="60" height="29" rx="3" fill="#ff4f9a" fill-opacity=".12" stroke="#ff4f9a" stroke-width="1.2" vector-effect="non-scaling-stroke"/>
+    <rect class="hotspot" x="8" y="72" width="27" height="24" rx="3" fill="#ff4f9a" fill-opacity=".16" stroke="#ff4f9a" stroke-width="1.2" vector-effect="non-scaling-stroke"/>
+    <rect class="hotspot" x="41" y="72" width="27" height="24" rx="3" fill="#ff4f9a" fill-opacity=".16" stroke="#ff4f9a" stroke-width="1.2" vector-effect="non-scaling-stroke"/>
+    <rect class="hotspot" x="8" y="103" width="60" height="24" rx="3" fill="#ff4f9a" fill-opacity=".1" stroke="#ff4f9a" stroke-width="1.2" vector-effect="non-scaling-stroke"/>
+  </g>
+  <g class="node top target sans" style="--ix:150px;--iy:72px;--px:55px;--py:85px;--fx:260px;--fy:85px;--fs:.9"><use href="#page" width="76" height="142"/><text class="label" y="153">个人中心</text></g>
+  <g class="node top sans" style="--ix:410px;--iy:72px;--px:355px;--py:28px;--fx:360px;--fy:25px;--fs:.6"><use href="#page" width="76" height="142"/><text class="label" y="153">修改密码</text></g>
+  <g class="node top sans" style="--ix:540px;--iy:72px;--px:555px;--py:28px;--fx:600px;--fy:25px;--fs:.6"><use href="#page" width="76" height="142"/><text class="label" y="153">用户登录</text></g>
+  <g class="node top sans" style="--ix:670px;--iy:72px;--px:850px;--py:85px;--fx:830px;--fy:25px;--fs:.6"><use href="#page" width="76" height="142"/><text class="label" y="153">用户注册</text></g>
+  <g class="node top target sans" style="--ix:150px;--iy:300px;--px:55px;--py:420px;--fx:250px;--fy:360px;--fs:.9"><use href="#pageAlt" width="76" height="142"/><text class="label" y="153">惠农服务大厅</text></g>
+  <g class="node top target sans" style="--ix:670px;--iy:300px;--px:850px;--py:420px;--fx:690px;--fy:360px;--fs:.9"><use href="#pageAlt" width="76" height="142"/><text class="label" y="153">供需大厅</text></g>
+  <g class="node top sans" style="--ix:280px;--iy:300px;--px:55px;--py:520px;--fx:225px;--fy:515px;--fs:.6"><use href="#page" width="76" height="142"/><text class="label" y="153">新闻公告</text></g>
+  <g class="node top sans" style="--ix:540px;--iy:300px;--px:850px;--py:255px;--fx:900px;--fy:250px;--fs:.6"><use href="#page" width="76" height="142"/><text class="label" y="153">农技服务</text></g>
+
+  <!-- Product children are already stacked at the product deck coordinate. No object is created on entry. -->
+  <g class="node product focus-target sans" style="--i:0;--stack-opacity:1;--group-opacity:1;--supplier-opacity:.14;--ix:410px;--iy:300px;--gx:270px;--gy:105px;--sx:175px;--sy:80px;--ss:.64;--fx:680px;--fy:85px;--fs:.9"><use href="#pageAlt" width="76" height="142"/><text class="label" y="153">农品服务</text></g>
+  <g class="node product sans" style="--i:1;--stack-opacity:.82;--group-opacity:1;--supplier-opacity:.14;--ix:413px;--iy:297px;--gx:400px;--gy:105px;--sx:175px;--sy:430px;--ss:.64;--fx:0px;--fy:0px;--fs:.5"><use href="#page" width="76" height="142"/><text class="label" y="153">农品地图</text></g>
+  <g class="node product sans" style="--i:2;--stack-opacity:.64;--group-opacity:1;--supplier-opacity:.14;--ix:416px;--iy:294px;--gx:530px;--gy:105px;--sx:750px;--sy:80px;--ss:.64;--fx:0px;--fy:0px;--fs:.5"><use href="#pageAlt" width="76" height="142"/><text class="label" y="153">供需市场</text></g>
+  <g class="node product sans" style="--i:3;--stack-opacity:.48;--group-opacity:1;--supplier-opacity:.14;--ix:419px;--iy:291px;--gx:660px;--gy:105px;--sx:750px;--sy:430px;--ss:.64;--fx:0px;--fy:0px;--fs:.5"><use href="#page" width="76" height="142"/><text class="label" y="153">产品详情</text></g>
+
+  <!-- These four are also product children; at level one they form the supplier deck, then spread from it. -->
+  <g class="node product sans" style="--i:4;--stack-opacity:.32;--group-opacity:1;--supplier-opacity:1;--ix:422px;--iy:288px;--gx:270px;--gy:330px;--sx:335px;--sy:145px;--ss:1.12;--fx:0px;--fy:0px;--fs:.5"><use href="#pageAlt" width="76" height="142"/><text class="label" y="153">供货主页</text></g>
+  <g class="node product sans" style="--i:5;--stack-opacity:0;--group-opacity:.75;--supplier-opacity:1;--ix:422px;--iy:288px;--gx:273px;--gy:327px;--sx:470px;--sy:145px;--ss:1.12;--fx:0px;--fy:0px;--fs:.5"><use href="#page" width="76" height="142"/><text class="label" y="153">供货列表</text></g>
+  <g class="node product sans" style="--i:6;--stack-opacity:0;--group-opacity:.5;--supplier-opacity:1;--ix:422px;--iy:288px;--gx:276px;--gy:324px;--sx:605px;--sy:145px;--ss:1.12;--fx:0px;--fy:0px;--fs:.5"><use href="#page" width="76" height="142"/><text class="label" y="153">新增供货</text></g>
+  <g class="node product sans" style="--i:7;--stack-opacity:0;--group-opacity:.3;--supplier-opacity:1;--ix:422px;--iy:288px;--gx:279px;--gy:321px;--sx:335px;--sy:350px;--ss:1.12;--fx:0px;--fy:0px;--fs:.5"><use href="#pageAlt" width="76" height="142"/><text class="label" y="153">供应商详情</text></g>
+
+  <!-- Focus connections animate after the same page objects finish repositioning. -->
+  <!-- Hotspot center → target-facing page edge. Control handles mirror focus-layout.ts. -->
+  <path class="link" pathLength="1" d="M500 225.25 C444 225.25 384.4 148.9 328.4 148.9"/>
+  <path class="link" pathLength="1" d="M458.75 314 C402.75 314 374.4 423.9 318.4 423.9"/>
+  <path class="link" pathLength="1" d="M541.25 314 C597.25 314 624 148.9 680 148.9"/>
+  <path class="link" pathLength="1" d="M500 391.5 C556 391.5 634 423.9 690 423.9"/>
+
+  <!-- Small click feedback; ring centers match the pointer tip and clicked object. -->
+  <circle class="click-ring click-product" cx="460" cy="359" r="8"/>
+  <circle class="click-ring click-supplier" cx="317" cy="392" r="8"/>
+  <circle class="click-ring click-home" cx="318" cy="143" r="8"/>
+  <g class="cursor">
+    <path d="M0 0v22l6-5 5 10 5-2.5-5-9h9z" fill="#24211f" stroke="#fff" stroke-width="1.4" stroke-linejoin="round"/>
+  </g>
+
+</svg>

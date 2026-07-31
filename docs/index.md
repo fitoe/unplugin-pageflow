@@ -9,6 +9,9 @@ hero:
   name: PageFlow
   text: See every page. Understand every path.
   tagline: Discover routes, preview real pages, and map navigation on one infinite canvas.
+  image:
+    src: /pageflow-demo.svg
+    alt: Animated PageFlow map reorganizing application pages and navigation paths
   actions:
     - theme: brand
       text: Get started
@@ -47,3 +50,24 @@ pnpm add -D unplugin-pageflow
 Add PageFlow to your development configuration, start the application, then open the URL printed by the plugin.
 
 [Read the getting started guide →](/guide/getting-started)
+
+## Explore PageFlow
+
+### Learn the workflow
+
+- [Understand pages, links, hotspots, previews, and route groups](/guide/concepts)
+- [Navigate the infinite canvas](/guide/canvas)
+- [Provide safe values for dynamic routes](/guide/dynamic-routes)
+- [Preserve native controls and application state](/guide/state)
+
+### Connect your development tools
+
+- [Associate and run page tests](/guide/page-tests)
+- [Scale to large projects with bounded rendering and caching](/guide/large-projects)
+- [Learn how route discovery and previews work](/guide/how-it-works)
+
+### Find answers
+
+- [Check framework compatibility](/reference/compatibility)
+- [Troubleshoot previews, routes, navigation, and tests](/guide/troubleshooting)
+- [Read frequently asked questions](/guide/faq)
