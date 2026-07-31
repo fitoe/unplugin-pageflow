@@ -48,7 +48,8 @@ test('serves the unplugin-pageflow client from the configured development route'
     })
     const pageflowPlugin = server.config.plugins.find(plugin => plugin.name === 'unplugin-pageflow')
     assert.equal(typeof pageflowPlugin?.transform, 'function')
-    assert(server.config.server.watch.ignored.some(pattern => String(pattern).includes('/PageFlow/dist/**')))
+    const distPattern = `${resolve('dist').replaceAll('\\', '/')}/**`
+    assert(server.config.server.watch.ignored.includes(distPattern))
     assert(server.config.server.watch.ignored.includes('**/.unplugin-pageflow/cache/**'))
     assert.deepEqual(await pageflowPlugin.handleHotUpdate?.({ file: resolve('dist/client/mount.js') }), [])
     assert.deepEqual(await pageflowPlugin.handleHotUpdate?.({ file: resolve('.unplugin-pageflow/cache/thumbnail.webp') }), [])
