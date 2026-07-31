@@ -1,0 +1,55 @@
+import type { PageFlowApiResult, PageFlowLink } from '../shared/types'
+import {
+  PAGEFLOW_API_RESULT_MESSAGE,
+  PAGEFLOW_HOTSPOT_HOVER_MESSAGE,
+  PAGEFLOW_NAVIGATE_MESSAGE,
+  PAGEFLOW_PAGE_REPORTED_MESSAGE,
+  PAGEFLOW_SCAN_RESULT_MESSAGE,
+} from '../shared/protocol'
+
+export type PreviewMessage =
+  | { type: 'api-result'; result: PageFlowApiResult }
+  | { type: 'page-reported' }
+  | { type: 'hotspot-hover'; targets: string[]; hotspot?: { centerX: number; centerY: number } }
+  | { type: 'scan-result'; path: string; links: PageFlowLink[] }
+  | { type: 'navigate'; to: string; location?: string; hotspot: boolean }
+
+export function decodePreviewMessage(data: unknown): PreviewMessage | undefined {
+  if (!data || typeof data !== 'object') return
+  const message = data as Record<string, any>
+  if (message.type === PAGEFLOW_API_RESULT_MESSAGE) {
+    if (!message.result || !Array.isArray(message.result.fields)) return
+    return { type: 'api-result', result: message.result as PageFlowApiResult }
+  }
+  if (message.type === PAGEFLOW_PAGE_REPORTED_MESSAGE) return { type: 'page-reported' }
+  if (message.type === PAGEFLOW_HOTSPOT_HOVER_MESSAGE) {
+    const targets = Array.isArray(message.targets)
+      ? message.targets.filter((target: unknown): target is string => typeof target === 'string')
+      : []
+    const hotspot = message.hotspot
+    return {
+      type: 'hotspot-hover',
+      targets,
+      hotspot: Number.isFinite(hotspot?.centerX) && Number.isFinite(hotspot?.centerY)
+        ? { centerX: hotspot.centerX, centerY: hotspot.centerY }
+        : undefined,
+    }
+  }
+  if (message.type === PAGEFLOW_SCAN_RESULT_MESSAGE) {
+    if (typeof message.page?.path !== 'string') return
+    return {
+      type: 'scan-result',
+      path: message.page.path,
+      links: Array.isArray(message.page.links) ? message.page.links : [],
+    }
+  }
+  if (message.type === PAGEFLOW_NAVIGATE_MESSAGE) {
+    if (typeof message.to !== 'string') return
+    return {
+      type: 'navigate',
+      to: message.to,
+      location: typeof message.location === 'string' && message.location ? message.location : undefined,
+      hotspot: message.interaction === 'hotspot',
+    }
+  }
+}

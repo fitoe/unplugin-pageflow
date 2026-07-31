@@ -3,6 +3,14 @@ import test from 'node:test'
 import { Window } from 'happy-dom'
 import { createServer } from 'vite'
 
+async function waitFor(predicate, timeout = 1000) {
+  const startedAt = Date.now()
+  while (!predicate()) {
+    if (Date.now() - startedAt >= timeout) throw new Error(`Condition was not met within ${timeout}ms`)
+    await new Promise(resolve => setTimeout(resolve, 10))
+  }
+}
+
 test('discovers Vue Router routes and reports rendered navigation hotspots', async () => {
   const window = new Window({ url: 'http://localhost/?__unplugin-pageflow_preview=1&__unplugin_pageflow_inspect=1' })
   const requests = []
@@ -124,7 +132,6 @@ test('discovers Vue Router routes and reports rendered navigation hotspots', asy
   const server = await createServer({ configFile: false, server: { middlewareMode: true }, appType: 'custom', logLevel: 'silent' })
   try {
     const runtime = await server.ssrLoadModule('/src/runtime/client.ts')
-    const graphClient = await server.ssrLoadModule('/src/client/graph.ts')
     const snapshotClient = await server.ssrLoadModule('/src/client/snapshot.ts')
     await runtime.startPageFlowRuntime({
       enabled: true,
@@ -142,7 +149,7 @@ test('discovers Vue Router routes and reports rendered navigation hotspots', asy
       data: { type: 'unplugin-pageflow:scan-page' },
       origin: 'http://localhost',
     }))
-    await new Promise(resolve => setTimeout(resolve, 20))
+    await waitFor(() => parentMessages.some(item => item.message.type === 'unplugin-pageflow:scan-result'))
     assert.equal(requests.filter(request => request.url.endsWith('/api/page')).length, pageReportsBeforeScan)
     assert(parentMessages.some(item => item.message.type === 'unplugin-pageflow:scan-result'
       && item.message.page.path === '/'
@@ -281,25 +288,6 @@ test('discovers Vue Router routes and reports rendered navigation hotspots', asy
     assert.equal(JSON.parse(requests[0].init.body).routeMode, 'hash')
     assert.deepEqual(JSON.parse(requests[0].init.body).routes.map(route => route.path), ['/', '/about'])
 
-    const scan = graphClient.scanPageLinks({
-      enabled: true,
-      previewPath: '/__unplugin-pageflow/',
-      appUrl: '/',
-      dynamicParams: {},
-      previewRoles: [{ match: '/about/**', role: 'editor' }],
-    }, [{ id: 'about', title: 'About', path: '/about', accent: '#fff', links: [] }], 'hash')
-    const scanFrame = window.document.querySelector('[data-unplugin-pageflow-link-discovery]')
-    assert(scanFrame)
-    assert.equal(scanFrame.hidden, false)
-    assert.equal(scanFrame.style.width, '1280px')
-    assert.equal(scanFrame.src, 'http://localhost/?__unplugin-pageflow_preview=1&__unplugin-pageflow_role=editor#/about')
-    scanFrame.dispatchEvent(new window.Event('load'))
-    window.dispatchEvent(new window.MessageEvent('message', {
-      data: { type: 'unplugin-pageflow:page-reported', path: '/about' },
-      origin: 'http://localhost',
-    }))
-    await scan
-    assert.equal(window.document.querySelector('[data-unplugin-pageflow-link-discovery]'), null)
   } finally {
     await server.close()
     await window.happyDOM.close()

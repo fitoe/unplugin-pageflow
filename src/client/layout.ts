@@ -4,8 +4,6 @@ export const PAGE_CARD_WIDTH = 240
 export const PAGE_CARD_HEIGHT = 256
 export const PAGE_CARD_META_HEIGHT = 68
 export const PAGE_PREVIEW_INSET = 0
-export const PAGE_PREVIEW_WIDTH = 240
-export const PAGE_PREVIEW_HEIGHT = 169
 export const PAGEFLOW_AUTO_PREVIEW_SCALE = 1.25
 
 export interface CanvasTransform {
@@ -117,39 +115,6 @@ export function getRenderablePages(
     visibleCount++
   }
   return pages.filter(page => selectedIds.has(page.id))
-}
-
-export function layoutPages(items: PageFlowPage[], cardHeights = new Map<string, number>()) {
-  const pagesById = new Map(items.map(page => [page.id, page]))
-  const incoming = new Map(items.map(page => [page.id, 0]))
-  items.forEach(page => page.links.forEach(link => {
-    if (incoming.has(link.to)) incoming.set(link.to, incoming.get(link.to)! + 1)
-  }))
-
-  const levels = new Map<string, number>()
-  const queue = items.filter(page => incoming.get(page.id) === 0).map(page => page.id)
-  if (!queue.length && items[0]) queue.push(items[0].id)
-  queue.forEach(id => levels.set(id, 0))
-  while (queue.length) {
-    const id = queue.shift()!
-    const level = levels.get(id)!
-    pagesById.get(id)?.links.forEach(link => {
-      if (!pagesById.has(link.to) || levels.has(link.to)) return
-      levels.set(link.to, level + 1)
-      queue.push(link.to)
-    })
-  }
-  items.forEach(page => {
-    if (!levels.has(page.id)) levels.set(page.id, 0)
-  })
-
-  const offsets = new Map<number, number>()
-  return new Map(items.map(page => {
-    const level = levels.get(page.id)!
-    const y = offsets.get(level) ?? 64
-    offsets.set(level, y + (cardHeights.get(page.id) ?? PAGE_CARD_HEIGHT) + 48)
-    return [page.id, [64 + level * 320, y] as [number, number]]
-  }))
 }
 
 export function layoutPageGrid(items: PageFlowPage[], cardHeights = new Map<string, number>(), columns = 5) {
@@ -417,25 +382,4 @@ export function getVisiblePageIds(
   })
   if (visible.length > maximum) visible.sort((a, b) => a.distance - b.distance).length = maximum
   return new Set(visible.map(page => page.id))
-}
-
-export function getAutoPreviewPageId(
-  pages: PageFlowPage[],
-  positions: Map<string, [number, number]>,
-  viewport: ViewportSize,
-  transform: CanvasTransform,
-  cardHeights = new Map<string, number>(),
-  spatialIndex?: PageSpatialIndex,
-) {
-  if (transform.scaleX < PAGEFLOW_AUTO_PREVIEW_SCALE) return
-  return getVisiblePageIds(
-    pages,
-    positions,
-    viewport,
-    transform,
-    0,
-    cardHeights,
-    1,
-    spatialIndex,
-  ).values().next().value as string | undefined
 }

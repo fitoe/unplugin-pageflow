@@ -1,6 +1,5 @@
-import type { PageFlowGraph, PageFlowPage, PageFlowRouteMode, ResolvedPageFlowOptions } from '../shared/types'
-import { PAGEFLOW_GRAPH_EVENT, PAGEFLOW_PAGE_EVENT, PAGEFLOW_PAGE_REPORTED_MESSAGE } from '../shared/protocol'
-import { resolvePreviewUrl } from './preview'
+import type { PageFlowGraph, PageFlowPage, ResolvedPageFlowOptions } from '../shared/types'
+import { PAGEFLOW_GRAPH_EVENT, PAGEFLOW_PAGE_EVENT } from '../shared/protocol'
 
 export async function fetchPageFlowGraph(config: ResolvedPageFlowOptions) {
   const response = await fetch(`${config.previewPath}api/graph`)
@@ -35,59 +34,4 @@ export function startRouteDiscovery(config: ResolvedPageFlowOptions) {
   frame.setAttribute('data-unplugin-pageflow-discovery', '')
   document.body.append(frame)
   return frame
-}
-
-export async function scanPageLinks(
-  config: ResolvedPageFlowOptions,
-  pages: PageFlowGraph['pages'],
-  routeMode: PageFlowRouteMode = 'history',
-  viewport = { width: 1280, height: 900 },
-) {
-  const frame = document.createElement('iframe')
-  frame.title = 'unplugin-pageflow link discovery'
-  frame.tabIndex = -1
-  frame.setAttribute('aria-hidden', 'true')
-  frame.setAttribute('data-unplugin-pageflow-link-discovery', '')
-  Object.assign(frame.style, {
-    position: 'fixed',
-    left: '-10000px',
-    top: '0',
-    width: `${viewport.width}px`,
-    height: `${viewport.height}px`,
-    border: '0',
-    opacity: '0',
-    pointerEvents: 'none',
-  })
-  document.body.append(frame)
-
-  try {
-    for (const page of pages) {
-      await new Promise<void>(resolve => {
-        let completed = false
-        let timeout: ReturnType<typeof setTimeout> | undefined
-        const finish = () => {
-          if (completed) return
-          completed = true
-          clearTimeout(timeout)
-          window.removeEventListener('message', handleMessage)
-          resolve()
-        }
-        const handleMessage = (event: MessageEvent) => {
-          if (event.origin === window.location.origin
-            && event.data?.type === PAGEFLOW_PAGE_REPORTED_MESSAGE
-            && event.data.path === page.path) finish()
-        }
-        window.addEventListener('message', handleMessage)
-        frame.onload = () => {
-          clearTimeout(timeout)
-          timeout = setTimeout(finish, 2500)
-        }
-        frame.onerror = finish
-        frame.src = resolvePreviewUrl(page.path, config, window.location.origin, routeMode)
-        timeout = setTimeout(finish, 5000)
-      })
-    }
-  } finally {
-    frame.remove()
-  }
 }

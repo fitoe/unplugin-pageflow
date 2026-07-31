@@ -5,8 +5,7 @@ import { createServer } from 'vite'
 test('lays out linked pages in layers and limits previews to the viewport', async () => {
   const server = await createServer({ configFile: false, server: { middlewareMode: true }, appType: 'custom', logLevel: 'silent' })
   try {
-    const { assignOrderedFocusSides, centerPageTransform, collapseRepeatedListLinks, createPageSpatialIndex, createRouteDeckView, getAutoPreviewPageId, getRenderablePages, getVisiblePageIds, layoutPageGrid, layoutPages, layoutPagesByRoute, queryPageSpatialIndex, routeDeckPathForPage } = await server.ssrLoadModule('/src/client/layout.ts')
-    const { layoutPagesWithElk } = await server.ssrLoadModule('/src/client/layout-elk.ts')
+    const { assignOrderedFocusSides, centerPageTransform, collapseRepeatedListLinks, createPageSpatialIndex, createRouteDeckView, getRenderablePages, getVisiblePageIds, layoutPageGrid, layoutPagesByRoute, queryPageSpatialIndex, routeDeckPathForPage } = await server.ssrLoadModule('/src/client/layout.ts')
     const { forwardWheelToCanvas, PAGEFLOW_CANVAS_CONFIG } = await server.ssrLoadModule('/src/client/canvas.ts')
     const { resolvePreviewUrl, touchPreviewCache } = await server.ssrLoadModule('/src/client/preview.ts')
     const { fullThumbnailTiles, thumbnailRevision, thumbnailSlot, thumbnailTierForZoom, thumbnailUrl, visibleThumbnailTiles } = await server.ssrLoadModule('/src/client/thumbnails.ts')
@@ -117,51 +116,7 @@ test('lays out linked pages in layers and limits previews to the viewport', asyn
       thumbnailUrl({ previewPath: '/preview/' }, { slot: 'home', revision: 'one', updatedAt: 1 }),
       thumbnailUrl({ previewPath: '/preview/' }, { slot: 'home', revision: 'one', updatedAt: 2 }),
     )
-    const positions = layoutPages(pages)
-
-    assert.deepEqual(positions.get('page-0'), [64, 64])
-    assert.deepEqual(positions.get('page-1'), [384, 64])
-    assert.deepEqual(positions.get('page-2'), [704, 64])
-
-    const variablePositions = layoutPages([
-      { id: 'short', links: [] },
-      { id: 'long', links: [] },
-    ], new Map([['short', 500], ['long', 900]]))
-    assert.deepEqual(variablePositions.get('short'), [64, 64])
-    assert.deepEqual(variablePositions.get('long'), [64, 612])
-
-    const elkPositions = await layoutPagesWithElk([
-      { id: 'entry', links: [{ label: 'Shared', to: 'shared' }] },
-      { id: 'other', links: [{ label: 'Shared', to: 'shared' }] },
-      { id: 'shared', links: [] },
-    ], new Map([['entry', 300], ['other', 700], ['shared', 500]]))
-    assert(elkPositions.get('shared')[0] > elkPositions.get('entry')[0])
-    const entryBottom = elkPositions.get('entry')[1] + 300
-    const otherBottom = elkPositions.get('other')[1] + 700
-    assert(entryBottom + 72 <= elkPositions.get('other')[1] || otherBottom + 72 <= elkPositions.get('entry')[1])
-    const cyclePositions = await layoutPagesWithElk([
-      { id: 'cycle-a', links: [{ label: 'B', to: 'cycle-b' }] },
-      { id: 'cycle-b', links: [{ label: 'A', to: 'cycle-a' }] },
-    ])
-    assert.equal(cyclePositions.size, 2)
-    const packedPositions = await layoutPagesWithElk(Array.from({ length: 12 }, (_, index) => ({
-      id: `isolated-${index}`,
-      path: `/isolated/group-${Math.floor(index / 4)}/page-${index}`,
-      links: [],
-    })))
-    assert(new Set([...packedPositions.values()].map(position => position[1])).size > 1)
-    const routePositions = await layoutPagesWithElk([
-      { id: 'machinery', path: '/machinery/index', links: [] },
-      { id: 'farmer', path: '/machinery/farmer/index', links: [] },
-      { id: 'demands', path: '/machinery/farmer/demands/create', links: [] },
-    ])
-    assert(routePositions.get('machinery')[0] < routePositions.get('farmer')[0])
-    assert(routePositions.get('farmer')[0] < routePositions.get('demands')[0])
-    const prefixedRoutePositions = await layoutPagesWithElk([
-      { id: 'module', path: '/pages/module/index', links: [] },
-      { id: 'module-child', path: '/pages/module/child/index', links: [] },
-    ])
-    assert(prefixedRoutePositions.get('module')[0] < prefixedRoutePositions.get('module-child')[0])
+    const positions = layoutPageGrid(pages)
 
     const groupedRoutePositions = layoutPagesByRoute([
       { id: 'machinery-root', path: '/machinery/index', links: [] },
@@ -233,6 +188,13 @@ test('lays out linked pages in layers and limits previews to the viewport', asyn
     assert.deepEqual(singletonDeck.directPages.map(page => page.id), ['only-child'])
     assert.equal(singletonDeck.decks.length, 0)
     assert.deepEqual(routeDeckPathForPage([{ id: 'only-child', path: '/pages/single/group/detail', links: [] }], 'only-child'), [])
+    const nestedDeckPages = [
+      { id: 'module-index', path: '/pages/module/index', links: [] },
+      { id: 'orders-index', path: '/pages/module/orders/index', links: [] },
+      { id: 'orders-detail', path: '/pages/module/orders/detail/index', links: [] },
+      { id: 'orders-edit', path: '/pages/module/orders/detail/edit', links: [] },
+    ]
+    assert.deepEqual(routeDeckPathForPage(nestedDeckPages, 'orders-edit'), ['module', 'orders', 'detail'])
     const sortedDeck = createRouteDeckView([
       { id: 'unknown', path: '/pages/service/advice', routeOrder: 0, links: [] },
       { id: 'detail', path: '/pages/service/detail', routeOrder: 5, links: [] },
@@ -273,19 +235,6 @@ test('lays out linked pages in layers and limits previews to the viewport', asyn
     assert(visible.has('page-1'))
     assert(visible.has('page-2'))
     assert(visible.size < pages.length)
-    assert.equal(getAutoPreviewPageId(
-      pages,
-      positions,
-      { width: 1000, height: 700 },
-      { x: 0, y: 0, scaleX: 1, scaleY: 1 },
-    ), undefined)
-    assert.equal(getAutoPreviewPageId(
-      pages,
-      positions,
-      { width: 1000, height: 700 },
-      { x: 0, y: 0, scaleX: 1.25, scaleY: 1.25 },
-    ), 'page-1')
-
     const manyPages = Array.from({ length: 10_000 }, (_, index) => ({
       id: `large-${index}`,
       title: `Large ${index}`,
@@ -293,7 +242,7 @@ test('lays out linked pages in layers and limits previews to the viewport', asyn
       accent: '#ff795d',
       links: [],
     }))
-    const manyPositions = layoutPages(manyPages)
+    const manyPositions = layoutPageGrid(manyPages)
     const manyIndex = createPageSpatialIndex(manyPages, manyPositions)
     assert(queryPageSpatialIndex(manyIndex, { left: 0, top: 0, right: 1000, bottom: 700 }).size < 20)
     const limited = getVisiblePageIds(
@@ -351,6 +300,13 @@ test('lays out linked pages in layers and limits previews to the viewport', asyn
       appUrl: '/app/',
       dynamicParams: { '/products/:id': { id: 'demo-product' } },
     }, 'http://localhost', 'history', '/products/42?tab=orders'), '/app/products/42?tab=orders&__unplugin-pageflow_preview=1')
+    assert.equal(resolvePreviewUrl('/machinery/orders/:id', {
+      enabled: true,
+      previewPath: '/__unplugin-pageflow/',
+      appUrl: '/app/',
+      dynamicParams: {},
+      previewRoles: [{ match: '/machinery/**', role: 'operator' }],
+    }, 'http://localhost', 'history', '/machinery/orders/42?tab=dispatch'), '/app/machinery/orders/42?tab=dispatch&__unplugin-pageflow_preview=1&__unplugin-pageflow_role=operator')
   } finally {
     await server.close()
   }

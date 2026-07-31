@@ -1,7 +1,6 @@
 <script setup lang="ts">
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
-import html2canvas from 'html2canvas-pro'
-import { Leafer, Rect, Text, Group, Image as LeaferImage, MoveEvent, Path, ZoomEvent } from 'leafer-ui'
+import { Leafer, Text, Group, MoveEvent, Path, ZoomEvent } from 'leafer-ui'
 import '@leafer-in/view'
 import '@leafer-in/viewport'
 import type {
@@ -14,33 +13,36 @@ import type {
   ResolvedPageFlowOptions,
 } from './shared/types'
 import { fetchPageFlowGraph, reportPageTitle, startRouteDiscovery, subscribeToPageFlowUpdates } from './client/graph'
+import { planGraphUpdate } from './client/graph-update'
 import { resolvePreviewUrl, touchPreviewCache } from './client/preview'
-import { PAGEFLOW_API_RESULT_MESSAGE, PAGEFLOW_HOTSPOT_HOVER_MESSAGE, PAGEFLOW_NAVIGATE_MESSAGE, PAGEFLOW_PAGE_REPORTED_MESSAGE, PAGEFLOW_SCAN_MESSAGE, PAGEFLOW_SCAN_RESULT_MESSAGE } from './shared/protocol'
+import { PAGEFLOW_SCAN_MESSAGE } from './shared/protocol'
 import { forwardWheelToCanvas, PAGEFLOW_CANVAS_CONFIG, type PageFlowWheelInteraction } from './client/canvas'
-import { boundedPreviewDocumentHeight, materializeMaskedIcons, waitForPreviewReady } from './client/snapshot'
+import { CaptureQueue } from './client/capture-queue'
+import { planNextCapture } from './client/capture-planner'
+import { waitForPreviewReady } from './client/snapshot'
+import { capturePageThumbnails } from './client/snapshot-capture'
 import { ThumbnailResourceCache } from './client/thumbnail-resources'
-import { FocusedPageStateCache, preserveScannedFocusedLinks } from './client/focus-cache'
+import { FocusedPageStateCache } from './client/focus-cache'
+import { createFocusScene } from './client/focus-layout'
+import { createPageCardGroup, createPageDeckGroup } from './client/scene-cards'
+import { SceneNodeCache } from './client/scene-node-cache'
+import { FrameAnimation } from './client/frame-animation'
+import { PreviewFrameRegistry } from './client/preview-frame-registry'
+import { decodePreviewMessage } from './client/preview-message'
+import { focusTargetSetKey, planPageUpdate } from './client/page-update'
 import {
-  canvasToBlob,
-  extractThumbnailTile,
   fetchThumbnailManifest,
   fullThumbnailTiles,
-  resizeThumbnail,
-  saveThumbnail,
   thumbnailRevision,
   thumbnailSlot,
-  thumbnailTileCount,
   thumbnailTierForZoom,
   thumbnailUrl,
   visibleThumbnailTiles,
   type PageFlowPreviewMode,
   type PageFlowThumbnailTier,
-  PAGEFLOW_THUMBNAIL_TILE_HEIGHT,
 } from './client/thumbnails'
 import {
   centerPageTransform,
-  assignOrderedFocusSides,
-  collapseRepeatedListLinks,
   createPageSpatialIndex,
   createRouteDeckView,
   getRenderablePages,
@@ -122,15 +124,11 @@ let connectionLeafer: Leafer | undefined
 let edgeLayer: Group | undefined
 let connectionLayer: Group | undefined
 let cardLayer: Group | undefined
-const cardNodes = new Map<string, { node: Group, signature: string }>()
-const connectionNodes = new Map<string, Path>()
+let cardNodes: SceneNodeCache<Group> | undefined
+let connectionNodes: SceneNodeCache<Path> | undefined
 let viewportFrame = 0
-let flightFrame = 0
-let focusLayoutFrame = 0
 let focusLayoutProgress = 0
 let viewportIdleTimer: ReturnType<typeof setTimeout> | undefined
-let captureScheduleTimer: ReturnType<typeof setTimeout> | undefined
-let captureIdleCallback: number | undefined
 let backgroundCaptureStarted = false
 let backgroundCaptureNotBefore = 0
 const BACKGROUND_CAPTURE_INITIAL_DELAY = 3000
@@ -147,15 +145,11 @@ let initialRevealTimer: ReturnType<typeof setTimeout> | undefined
 const failedPreviewIds = new Set<string>()
 const forcedThumbnailRefreshIds = new Set<string>()
 const manualCaptureIds = new Set<string>()
-const previewFrames = new Map<string, HTMLIFrameElement>()
-const previewPageIdsByWindow = new WeakMap<object, string>()
-const previewImageCleanups = new Map<string, () => void>()
-const previewImageTimers = new Map<string, ReturnType<typeof setTimeout>>()
+const previewFrames = new PreviewFrameRegistry()
 const previewChangeVersions = new Map<string, number>()
 const capturesInProgress = new Set<string>()
 const focusedPageStateCache = new FocusedPageStateCache()
 let focusedLinksScannedPageId: string | undefined
-const captureCompletionWaiters = new Map<string, Set<() => void>>()
 const pendingThumbnailRecords: PageFlowThumbnailManifest = {}
 let captureBatchIds = new Set<string>()
 let focusExitPending = false
@@ -178,10 +172,22 @@ const MAX_DECK_LAYERS = 5
 const PARKED_PAGE_GAP = 180
 const SELECTED_PAGE_SCALE = 1.03
 const thumbnailResourceCache = new ThumbnailResourceCache(160)
+const captureQueue = new CaptureQueue({
+  setTimeout: (callback, delay) => window.setTimeout(callback, delay),
+  clearTimeout: timer => window.clearTimeout(timer),
+  requestIdleCallback: window.requestIdleCallback?.bind(window),
+  cancelIdleCallback: window.cancelIdleCallback?.bind(window),
+})
+const animationHost = {
+  now: () => performance.now(),
+  requestAnimationFrame: (callback: FrameRequestCallback) => requestAnimationFrame(callback),
+  cancelAnimationFrame: (id: number) => cancelAnimationFrame(id),
+}
+const focusAnimation = new FrameAnimation(animationHost)
+const hoverAnimation = new FrameAnimation(animationHost)
+const flightAnimation = new FrameAnimation(animationHost)
 let thumbnailResourceGeneration = 0
-let thumbnailRenderFrame = 0
 let sceneRenderFrame = 0
-let hoverFadeFrame = 0
 let hoverFadeProgress = 0
 const currentPreviewMode = computed(() => previewModes[previewMode.value])
 const maximumMountedPreviews = computed(() => {
@@ -246,139 +252,16 @@ const requiredThumbnailRecords = computed(() => {
   })
   return [...new Map(records.map(record => [record.slot, record])).values()]
 })
-const fallbackFocusScene = computed(() => {
-  const source = pages.value.find(page => page.id === focusedPageId.value)
-  const sourcePosition = source && positions.value.get(source.id)
-  if (!source || !sourcePosition) return
-  const pagesByPath = new Map(pages.value.map(page => [page.path, page]))
-  const targetsById = new Map<string, PageFlowPage>()
-  const linksByTargetId = new Map<string, PageFlowLink[]>()
-  const resolvedLinks = collapseRepeatedListLinks(focusedLinks.value).flatMap(link => {
-    const target = pages.value.find(page => page.id === link.to) ?? pagesByPath.get(link.to)
-    if (!target || target.id === source.id) return []
-    targetsById.set(target.id, target)
-    linksByTargetId.set(target.id, [...(linksByTargetId.get(target.id) ?? []), link])
-    return [{ link, target }]
-  })
-  const targets = [...targetsById.values()]
-  const targetMetrics = targets.map(page => {
-    const links = linksByTargetId.get(page.id) ?? []
-    const hotspots = links.flatMap(link => link.hotspot ? [link.hotspot] : [])
-    const centerX = hotspots.length ? hotspots.reduce((sum, hotspot) => sum + hotspot.centerX, 0) / hotspots.length : 0.5
-    const centerY = hotspots.length ? hotspots.reduce((sum, hotspot) => sum + hotspot.centerY, 0) / hotspots.length : 0.5
-    return { id: page.id, page, centerX, centerY }
-  })
-  const assignedSides = assignOrderedFocusSides(targetMetrics)
-  const sides = {
-    left: assignedSides.left.map(item => item.page),
-    right: assignedSides.right.map(item => item.page),
-    top: assignedSides.top.map(item => item.page),
-    bottom: assignedSides.bottom.map(item => item.page),
-  }
-  const scale = 0.5
-  const gap = 24
-  const ringGap = 36
-  const packLanes = (items: PageFlowPage[]) => {
-    const maximumSpan = 900
-    const lanes: PageFlowPage[][] = [[]]
-    let span = 0
-    items.forEach(page => {
-      const size = pageCardHeight(page.id) * scale
-      if (lanes[lanes.length - 1].length && span + gap + size > maximumSpan) {
-        lanes.push([])
-        span = 0
-      }
-      lanes[lanes.length - 1].push(page)
-      span += (span ? gap : 0) + size
-    })
-    return lanes.filter(lane => lane.length)
-  }
-  const layoutVertical = (side: 'left' | 'right') => packLanes(sides[side]).flatMap((lane, ring) => {
-    const heights = lane.map(page => pageCardHeight(page.id) * scale)
-    const desiredTops = lane.map((page, index) => {
-      const links = linksByTargetId.get(page.id) ?? []
-      const hotspots = links.flatMap(link => link.hotspot ? [link.hotspot] : [])
-      const hotspotY = hotspots.length
-        ? hotspots.reduce((sum, hotspot) => sum + hotspot.centerY, 0) / hotspots.length
-        : 0.5
-      return sourcePosition[1] + hotspotY * pagePreviewHeight(source.id) - heights[index] / 2
-    })
-    const tops: number[] = []
-    desiredTops.forEach((desiredTop, index) => {
-      tops[index] = index ? Math.max(desiredTop, tops[index - 1] + heights[index - 1] + gap) : desiredTop
-    })
-    for (let index = tops.length - 2; index >= 0; index--)
-      tops[index] = Math.min(tops[index], tops[index + 1] - heights[index] - gap)
-    return lane.map((page, index) => {
-      const x = side === 'right'
-        ? sourcePosition[0] + PAGE_CARD_WIDTH + ringGap + ring * (PAGE_CARD_WIDTH * scale + ringGap)
-        : sourcePosition[0] - ringGap - PAGE_CARD_WIDTH * scale - ring * (PAGE_CARD_WIDTH * scale + ringGap)
-      const target = { page, scale, side, x, y: tops[index] } as const
-      return target
-    })
-  })
-  const layoutHorizontal = (side: 'top' | 'bottom') => {
-    const lanes = Array.from({ length: Math.ceil(sides[side].length / 3) }, (_, index) => sides[side].slice(index * 3, index * 3 + 3))
-    let outerOffset = 0
-    return lanes.flatMap(lane => {
-      const width = PAGE_CARD_WIDTH * scale
-      const heights = lane.map(page => pageCardHeight(page.id) * scale)
-      const desiredLefts = lane.map(page => {
-        const metric = targetMetrics.find(item => item.id === page.id)
-        return sourcePosition[0] + (metric?.centerX ?? 0.5) * PAGE_CARD_WIDTH - width / 2
-      })
-      const lefts: number[] = []
-      desiredLefts.forEach((desiredLeft, index) => {
-        lefts[index] = index ? Math.max(desiredLeft, lefts[index - 1] + width + gap) : desiredLeft
-      })
-      for (let index = lefts.length - 2; index >= 0; index--)
-        lefts[index] = Math.min(lefts[index], lefts[index + 1] - width - gap)
-      const laneHeight = Math.max(...heights, 0)
-      const y = side === 'top'
-        ? sourcePosition[1] - ringGap - outerOffset - laneHeight
-        : sourcePosition[1] + pageCardHeight(source.id) + ringGap + outerOffset
-      outerOffset += laneHeight + gap
-      return lane.map((page, index) => ({ page, scale, side, x: lefts[index], y } as const))
-    })
-  }
-  const targetsWithPositions = [
-    ...layoutHorizontal('top'),
-    ...layoutVertical('right'),
-    ...layoutHorizontal('bottom'),
-    ...layoutVertical('left'),
-  ].map(target => {
-    const position = focusedTargetPositions.value[target.page.id]
-    return position ? { ...target, x: position[0], y: position[1] } : target
-  })
-  const positionsById = new Map(targetsWithPositions.map(target => [target.page.id, target]))
-  const connections = resolvedLinks.flatMap(({ link, target }, index) => {
-    const targetPosition = positionsById.get(target.id)
-    if (!targetPosition) return []
-    const sourceHeight = pagePreviewHeight(source.id)
-    const startX = sourcePosition[0] + PAGE_CARD_WIDTH / 2
-      + ((link.hotspot?.centerX ?? 0.5) * PAGE_CARD_WIDTH - PAGE_CARD_WIDTH / 2) * SELECTED_PAGE_SCALE
-    const startY = sourcePosition[1] + sourceHeight / 2
-      + ((link.hotspot?.centerY ?? 0.5) * sourceHeight - sourceHeight / 2) * SELECTED_PAGE_SCALE
-    const horizontal = targetPosition.side === 'left' || targetPosition.side === 'right'
-    const endX = targetPosition.side === 'right' ? targetPosition.x
-      : targetPosition.side === 'left' ? targetPosition.x + PAGE_CARD_WIDTH * targetPosition.scale
-        : targetPosition.x + PAGE_CARD_WIDTH * targetPosition.scale / 2
-    const endY = targetPosition.side === 'bottom' ? targetPosition.y
-      : targetPosition.side === 'top' ? targetPosition.y + pageCardHeight(target.id) * targetPosition.scale
-        : targetPosition.y + pageCardHeight(target.id) * targetPosition.scale / 2
-    const distance = horizontal ? Math.abs(endX - startX) : Math.abs(endY - startY)
-    const handle = Math.max(18, Math.min(56, distance * 0.36))
-    if (horizontal) {
-      const direction = targetPosition.side === 'right' ? 1 : -1
-      return [{ id: `${source.id}:${index}:${target.id}`, targetId: target.id, centerX: link.hotspot?.centerX, centerY: link.hotspot?.centerY, d: `M${startX} ${startY} C${startX + direction * handle} ${startY} ${endX - direction * handle} ${endY} ${endX} ${endY}` }]
-    }
-    const direction = targetPosition.side === 'bottom' ? 1 : -1
-    return [{ id: `${source.id}:${index}:${target.id}`, targetId: target.id, centerX: link.hotspot?.centerX, centerY: link.hotspot?.centerY, d: `M${startX} ${startY} C${startX} ${startY + direction * handle} ${endX} ${endY - direction * handle} ${endX} ${endY}` }]
-  })
-  return { source, sourcePosition, targets: targetsWithPositions, connections }
-})
-
-const focusScene = computed(() => fallbackFocusScene.value)
+const focusScene = computed(() => createFocusScene({
+  pages: pages.value,
+  focusedPageId: focusedPageId.value,
+  links: focusedLinks.value,
+  positions: positions.value,
+  targetPositions: focusedTargetPositions.value,
+  pagePreviewHeight,
+  pageCardHeight,
+  selectedPageScale: SELECTED_PAGE_SCALE,
+}))
 const connectionPaths = computed(() => focusScene.value?.connections ?? [])
 const focusedApiResults = computed(() => focusedPageId.value ? apiResultsByPage.value[focusedPageId.value] ?? [] : [])
 
@@ -396,9 +279,6 @@ const connectionCountsByTarget = computed(() => connectionPaths.value.reduce((co
   counts.set(connection.targetId, (counts.get(connection.targetId) ?? 0) + 1)
   return counts
 }, new Map<string, number>()))
-function focusTargetSetKey(links: PageFlowLink[]) {
-  return [...new Set(links.map(link => link.to))].sort().join('\n')
-}
 const hoveredTargetPageIds = computed(() => {
   const hover = hoveredHotspot.value
   if (!hover) return new Set<string>()
@@ -414,8 +294,7 @@ function setHoveredHotspot(
   const nextActive = Boolean(next)
   hoveredHotspot.value = next
   if (!animate) {
-    cancelAnimationFrame(hoverFadeFrame)
-    hoverFadeFrame = 0
+    hoverAnimation.cancel()
     hoverFadeProgress = nextActive ? 1 : 0
     scheduleCanvasRender()
     return
@@ -424,18 +303,12 @@ function setHoveredHotspot(
     scheduleCanvasRender()
     return
   }
-  cancelAnimationFrame(hoverFadeFrame)
   const from = hoverFadeProgress
   const to = nextActive ? 1 : 0
-  const startedAt = performance.now()
-  const tick = (time: number) => {
-    const elapsed = Math.min(1, (time - startedAt) / 500)
-    hoverFadeProgress = from + (to - from) * (1 - (1 - elapsed) ** 3)
+  hoverAnimation.start(500, progress => {
+    hoverFadeProgress = from + (to - from) * (1 - (1 - progress) ** 3)
     renderCanvasScene()
-    if (elapsed < 1) hoverFadeFrame = requestAnimationFrame(tick)
-    else hoverFadeFrame = 0
-  }
-  hoverFadeFrame = requestAnimationFrame(tick)
+  })
 }
 
 function compactThumbnailRecord(pageId: string) {
@@ -488,12 +361,6 @@ function pageCardHeight(pageId: string) {
 
 function pagePosition(pageId: string) {
   return positions.value.get(pageId) ?? [0, 0]
-}
-
-function routeParts(page: PageFlowPage) {
-  const parts = (page.path || page.id).split(/[/?#]/).filter(Boolean)
-  if (parts[0] === 'pages') parts.shift()
-  return parts
 }
 
 function canvasPagesFor(items: PageFlowPage[], groupPath = routeGroupPath.value) {
@@ -594,7 +461,7 @@ function animateDeckExpansion(path: string[], sourcePageId: string, next: Return
           : [minX + slot * horizontalStep, maxY + PARKED_PAGE_GAP - height * 0.25]
     return [page.id, position]
   }))
-  cancelAnimationFrame(flightFrame)
+  flightAnimation.cancel()
   if (focusedPageId.value) exitFocus(false)
   routeGroupPath.value = path
   parkedPages.value = { ...parkedPages.value, ...Object.fromEntries(siblingPages.map(page => [page.id, page])) }
@@ -618,11 +485,8 @@ function animateDeckExpansion(path: string[], sourcePageId: string, next: Return
   visiblePageIds.value = new Set(next.pages.map(page => page.id))
   renderCanvasScene()
 
-  const startedAt = performance.now()
-  const duration = 720
   viewportInteracting.value = true
-  const animate = (time: number) => {
-    const progress = Math.min(1, (time - startedAt) / duration)
+  flightAnimation.start(720, progress => {
     const cameraProgress = 1 - (1 - progress) ** 3
     positions.value = new Map(next.pages.map((page, index) => {
       const start = starts.get(page.id)!
@@ -659,20 +523,16 @@ function animateDeckExpansion(path: string[], sourcePageId: string, next: Return
     })
     renderCanvasScene()
     syncOverlay(false)
-    if (progress < 1) flightFrame = requestAnimationFrame(animate)
-    else {
-      flightFrame = 0
-      positions.value = next.positions
-      parkedPagePositions.value = { ...parkedPagePositions.value, ...Object.fromEntries(parkedTargets) }
-      parkedPageProgress.value = { ...parkedPageProgress.value, ...Object.fromEntries(siblingPages.map(page => [page.id, 1])) }
-      layer.set(cameraTarget)
-      viewportInteracting.value = false
-      renderCanvasScene()
-      syncOverlay(true)
-      done?.()
-    }
-  }
-  flightFrame = requestAnimationFrame(animate)
+  }, () => {
+    positions.value = next.positions
+    parkedPagePositions.value = { ...parkedPagePositions.value, ...Object.fromEntries(parkedTargets) }
+    parkedPageProgress.value = { ...parkedPageProgress.value, ...Object.fromEntries(siblingPages.map(page => [page.id, 1])) }
+    layer.set(cameraTarget)
+    viewportInteracting.value = false
+    renderCanvasScene()
+    syncOverlay(true)
+    done?.()
+  })
   return true
 }
 
@@ -683,17 +543,14 @@ function animateDeckCollapse(path: string[], next: ReturnType<typeof layoutRoute
   const targetDeck = parentView.decks.find(deck => currentKey === deck.key || currentKey.startsWith(`${deck.key}/`))
   const targetPosition = targetDeck && next.positions.get(targetDeck.representative.id)
   if (!targetDeck || !targetPosition) return false
-  cancelAnimationFrame(flightFrame)
+  flightAnimation.cancel()
   if (focusedPageId.value) exitFocus(false)
   const currentPages = canvasPages.value
   const restoringPages = next.pages.filter(page => parkedPages.value[page.id])
   const restoringStarts = new Map(restoringPages.map(page => [page.id, parkedPagePositions.value[page.id]]))
   const starts = new Map(currentPages.map(page => [page.id, positions.value.get(page.id) ?? targetPosition]))
-  const startedAt = performance.now()
-  const duration = 680
   viewportInteracting.value = true
-  const animate = (time: number) => {
-    const progress = Math.min(1, (time - startedAt) / duration)
+  flightAnimation.start(680, progress => {
     positions.value = new Map(currentPages.map((page, index) => {
       const start = starts.get(page.id)!
       const stackLayer = Math.min(index, MAX_DECK_LAYERS - 1)
@@ -724,24 +581,20 @@ function animateDeckCollapse(path: string[], next: ReturnType<typeof layoutRoute
     }
     renderCanvasScene()
     syncOverlay(false)
-    if (progress < 1) flightFrame = requestAnimationFrame(animate)
-    else {
-      flightFrame = 0
-      routeGroupPath.value = path
-      positions.value = next.positions
-      const keepParked = (id: string) => (parkedPageDepth.value[id] ?? 0) < path.length
-      parkedPages.value = Object.fromEntries(Object.entries(parkedPages.value).filter(([id]) => keepParked(id)))
-      parkedPagePositions.value = Object.fromEntries(Object.entries(parkedPagePositions.value).filter(([id]) => keepParked(id)))
-      parkedPageDepth.value = Object.fromEntries(Object.entries(parkedPageDepth.value).filter(([id]) => keepParked(id)))
-      parkedPageProgress.value = Object.fromEntries(Object.entries(parkedPageProgress.value).filter(([id]) => keepParked(id)))
-      visiblePageIds.value = new Set(next.pages.map(page => page.id))
-      viewportInteracting.value = false
-      renderCanvasScene()
-      syncOverlay(true)
-      done?.()
-    }
-  }
-  flightFrame = requestAnimationFrame(animate)
+  }, () => {
+    routeGroupPath.value = path
+    positions.value = next.positions
+    const keepParked = (id: string) => (parkedPageDepth.value[id] ?? 0) < path.length
+    parkedPages.value = Object.fromEntries(Object.entries(parkedPages.value).filter(([id]) => keepParked(id)))
+    parkedPagePositions.value = Object.fromEntries(Object.entries(parkedPagePositions.value).filter(([id]) => keepParked(id)))
+    parkedPageDepth.value = Object.fromEntries(Object.entries(parkedPageDepth.value).filter(([id]) => keepParked(id)))
+    parkedPageProgress.value = Object.fromEntries(Object.entries(parkedPageProgress.value).filter(([id]) => keepParked(id)))
+    visiblePageIds.value = new Set(next.pages.map(page => page.id))
+    viewportInteracting.value = false
+    renderCanvasScene()
+    syncOverlay(true)
+    done?.()
+  })
   return true
 }
 
@@ -784,7 +637,7 @@ function enterRouteGroup(path: string[], animate = true, sourceDeckPageId?: stri
     routeGroupPath.value = path
     positions.value = next.positions
     visiblePageIds.value = new Set(next.pages.map(page => page.id))
-    renderCanvasScene()
+    scheduleCanvasRender()
   }
   const target = next.pages[0]
   const targetPosition = target && next.positions.get(target.id)
@@ -852,7 +705,7 @@ function syncOverlay(updateVisiblePages = true) {
     visiblePageIds.value = nextVisible
     sceneChanged = true
   }
-  if (sceneChanged) renderCanvasScene()
+  if (sceneChanged) scheduleCanvasRender()
   scheduleNextCapture()
 }
 
@@ -880,56 +733,41 @@ function shouldRenderPreview(pageId: string) {
 }
 
 function cancelScheduledCapture() {
-  clearTimeout(captureScheduleTimer)
-  captureScheduleTimer = undefined
-  if (captureIdleCallback != null && typeof window.cancelIdleCallback === 'function')
-    window.cancelIdleCallback(captureIdleCallback)
-  captureIdleCallback = undefined
+  captureQueue.cancel()
 }
 
 function scheduleNextCapture() {
   if (!thumbnailManifestLoaded.value || capturePreviewId.value || viewportInteracting.value) return
   const hasManualCapture = manualCaptureIds.size > 0
-  if (hasManualCapture && (captureScheduleTimer || captureIdleCallback != null)) cancelScheduledCapture()
-  if (captureScheduleTimer || captureIdleCallback != null) return
+  if (hasManualCapture && captureQueue.scheduled) cancelScheduledCapture()
+  if (captureQueue.scheduled) return
   const delay = hasManualCapture
     ? 0
     : Math.max(
         backgroundCaptureStarted ? BACKGROUND_CAPTURE_INTERVAL : BACKGROUND_CAPTURE_INITIAL_DELAY,
         backgroundCaptureNotBefore - Date.now(),
       )
-  captureScheduleTimer = setTimeout(() => {
-    captureScheduleTimer = undefined
-    const start = () => {
-      captureIdleCallback = undefined
-      startNextCapture()
-    }
-    if (hasManualCapture || typeof window.requestIdleCallback !== 'function') start()
-    else captureIdleCallback = window.requestIdleCallback(start)
-  }, delay)
+  captureQueue.schedule(delay, !hasManualCapture, startNextCapture)
 }
 
 function startNextCapture() {
   if (!thumbnailManifestLoaded.value || capturePreviewId.value || viewportInteracting.value) return
-  const pageIds = new Set(pages.value.map(page => page.id))
-  captureBatchIds = new Set([...captureBatchIds].filter(id => pageIds.has(id)))
-  if (!captureBatchIds.size) {
-    const priorityIds = new Set([livePreviewId.value, focusedPageId.value, ...visiblePageIds.value])
-    captureBatchIds = new Set(pages.value
-      .filter(page => !thumbnailIsCurrent(page) && !failedPreviewIds.has(page.id))
-      .sort((left, right) => Number(priorityIds.has(right.id)) - Number(priorityIds.has(left.id))
-        || (left.routeOrder ?? Number.POSITIVE_INFINITY) - (right.routeOrder ?? Number.POSITIVE_INFINITY))
-      .map(page => page.id))
-  }
-  manualCaptureIds.forEach(id => captureBatchIds.add(id))
-  capturePreviewId.value = [...manualCaptureIds].find(id => captureBatchIds.has(id))
-    ?? captureBatchIds.values().next().value
-  const pageId = capturePreviewId.value
-  if (pageId && !manualCaptureIds.has(pageId)) backgroundCaptureStarted = true
+  const plan = planNextCapture({
+    pages: pages.value,
+    batchIds: captureBatchIds,
+    manualIds: manualCaptureIds,
+    priorityIds: new Set([livePreviewId.value, focusedPageId.value, ...visiblePageIds.value].filter(Boolean) as string[]),
+    failedIds: failedPreviewIds,
+    isCurrent: thumbnailIsCurrent,
+  })
+  captureBatchIds = plan.batchIds
+  capturePreviewId.value = plan.pageId
+  const pageId = plan.pageId
+  if (pageId && !plan.manual) backgroundCaptureStarted = true
   if (pageId) void nextTick(() => {
     const frame = previewFrames.get(pageId)
     if (frame?.contentDocument?.readyState === 'complete')
-      void capturePreview(pageId, frame, manualCaptureIds.has(pageId))
+      void capturePreview(pageId, frame, plan.manual)
   })
 }
 
@@ -941,8 +779,7 @@ function finishCapture(pageId: string) {
     thumbnailManifest.value = { ...thumbnailManifest.value, ...pendingThumbnailRecords }
     Object.keys(pendingThumbnailRecords).forEach(id => delete pendingThumbnailRecords[id])
   }
-  captureCompletionWaiters.get(pageId)?.forEach(resolve => resolve())
-  captureCompletionWaiters.delete(pageId)
+  captureQueue.complete(pageId)
   if (!captureBatchIds.size) {
     requestLayout()
   }
@@ -1002,7 +839,7 @@ function activatePreview(pageId: string, animate = true) {
     apiResultsByPage.value = { ...apiResultsByPage.value, [pageId]: [] }
     focusedPageId.value = pageId
     focusedLinksScannedPageId = cachedLinks ? pageId : undefined
-    cancelAnimationFrame(focusLayoutFrame)
+    focusAnimation.cancel()
     focusLayoutProgress = 0
     focusedLinks.value = cachedLinks ?? []
     setHoveredHotspot(undefined, false)
@@ -1011,7 +848,7 @@ function activatePreview(pageId: string, animate = true) {
     livePreviewCacheIds.value = touchPreviewCache(livePreviewCacheIds.value, pageId)
     forcedThumbnailRefreshIds.add(pageId)
     failedPreviewIds.delete(pageId)
-    renderCanvasScene()
+    scheduleCanvasRender()
     if (!animate) centerFocusedPage(pageId)
     scheduleNextCapture()
     if (cachedLinks) void requestFocusedLayout()
@@ -1058,26 +895,16 @@ function clearFocus() {
   setHoveredHotspot(undefined, false)
   livePreviewId.value = undefined
   focusLayoutProgress = 0
-  renderCanvasScene()
+  scheduleCanvasRender()
 }
 
 function animateFocusLayout(target: 0 | 1, done?: () => void) {
-  cancelAnimationFrame(focusLayoutFrame)
   const from = focusLayoutProgress
-  const startedAt = performance.now()
-  const duration = 360
-  const animate = (time: number) => {
-    const elapsed = Math.min(1, (time - startedAt) / duration)
-    const eased = 1 - (1 - elapsed) ** 3
+  focusAnimation.start(360, progress => {
+    const eased = 1 - (1 - progress) ** 3
     focusLayoutProgress = from + (target - from) * eased
     renderCanvasScene()
-    if (elapsed < 1) focusLayoutFrame = requestAnimationFrame(animate)
-    else {
-      focusLayoutFrame = 0
-      done?.()
-    }
-  }
-  focusLayoutFrame = requestAnimationFrame(animate)
+  }, done)
 }
 
 function exitFocus(animated = true, done?: () => void) {
@@ -1087,26 +914,14 @@ function exitFocus(animated = true, done?: () => void) {
     done?.()
   })
   else {
-    cancelAnimationFrame(focusLayoutFrame)
-    focusLayoutFrame = 0
+    focusAnimation.cancel()
     clearFocus()
     done?.()
   }
 }
 
 function waitForCapture(pageId: string, timeoutMs = 35000) {
-  return new Promise<void>(resolve => {
-    let timer: ReturnType<typeof setTimeout>
-    const done = () => {
-      clearTimeout(timer)
-      captureCompletionWaiters.get(pageId)?.delete(done)
-      resolve()
-    }
-    const waiters = captureCompletionWaiters.get(pageId) ?? new Set<() => void>()
-    waiters.add(done)
-    captureCompletionWaiters.set(pageId, waiters)
-    timer = setTimeout(done, timeoutMs)
-  })
+  return captureQueue.waitFor(pageId, timeoutMs)
 }
 
 function exitFocusAfterSnapshot() {
@@ -1130,23 +945,6 @@ function exitFocusAfterSnapshot() {
     // interaction lock stuck while the background capture remains optional.
     focusExitPending = false
   }, 600)
-}
-
-function refreshPageSnapshot(pageId: string) {
-  cancelScheduledCapture()
-  previewGeneration++
-  capturePreviewId.value = undefined
-  captureBatchIds.clear()
-  manualCaptureIds.clear()
-  capturesInProgress.delete(pageId)
-  active.value = pageId
-  livePreviewId.value = pageId
-  livePreviewCacheIds.value = touchPreviewCache(livePreviewCacheIds.value, pageId)
-  forcedThumbnailRefreshIds.add(pageId)
-  failedPreviewIds.delete(pageId)
-  manualCaptureIds.add(pageId)
-  renderCanvasScene()
-  scheduleNextCapture()
 }
 
 async function copyPagePath(path: string) {
@@ -1184,7 +982,7 @@ async function editGroupName(key: string, fallback: string) {
     if (name) next[key] = name
     else delete next[key]
     groupNames.value = next
-    renderCanvasScene()
+    scheduleCanvasRender()
   } catch {
     status.value = '分组名称保存失败'
   }
@@ -1358,23 +1156,12 @@ function handleFocusTargetPointerUp(event: PointerEvent) {
 
 function setPreviewFrame(pageId: string, element: Element | null) {
   if (element instanceof HTMLIFrameElement) {
-    if (previewFrames.get(pageId) !== element) {
-      const previousWindow = previewFrames.get(pageId)?.contentWindow
-      if (previousWindow) previewPageIdsByWindow.delete(previousWindow)
+    if (previewFrames.set(pageId, element)) {
       loadedPreviewIds.value = new Set([...loadedPreviewIds.value].filter(id => id !== pageId))
       readyPreviewIds.value = new Set([...readyPreviewIds.value].filter(id => id !== pageId))
-      previewFrames.set(pageId, element)
-      if (element.contentWindow) previewPageIdsByWindow.set(element.contentWindow, pageId)
     }
   } else {
-    const previousWindow = previewFrames.get(pageId)?.contentWindow
-    if (previousWindow) previewPageIdsByWindow.delete(previousWindow)
-    previewFrames.delete(pageId)
-    previewImageCleanups.get(pageId)?.()
-    previewImageCleanups.delete(pageId)
-    const timer = previewImageTimers.get(pageId)
-    if (timer) clearTimeout(timer)
-    previewImageTimers.delete(pageId)
+    previewFrames.remove(pageId)
   }
 }
 
@@ -1384,22 +1171,18 @@ function syncPreviewHotspots(pageId: string) {
 }
 
 function observePreviewImages(pageId: string, frame: HTMLIFrameElement) {
-  previewImageCleanups.get(pageId)?.()
   const document = frame.contentDocument
   if (!document) return
   const scheduleRefresh = (resourceChanged = false) => {
     if (pageId !== livePreviewId.value && pageId !== capturePreviewId.value && !manualCaptureIds.has(pageId)) return
     if (!resourceChanged && readyPreviewIds.value.has(pageId)) return
     previewChangeVersions.set(pageId, (previewChangeVersions.get(pageId) ?? 0) + 1)
-    const currentTimer = previewImageTimers.get(pageId)
-    if (currentTimer) clearTimeout(currentTimer)
-    previewImageTimers.set(pageId, setTimeout(() => {
-      previewImageTimers.delete(pageId)
+    previewFrames.debounce(pageId, 750, () => {
       if (previewFrames.get(pageId) !== frame || !frame.isConnected) return
       forcedThumbnailRefreshIds.add(pageId)
       failedPreviewIds.delete(pageId)
       scheduleNextCapture()
-    }, 750))
+    })
   }
   const handleLoad = (event: Event) => {
     if (event.target instanceof frame.contentWindow!.HTMLImageElement && event.target.complete && event.target.naturalWidth)
@@ -1421,7 +1204,7 @@ function observePreviewImages(pageId: string, frame: HTMLIFrameElement) {
     childList: true,
     subtree: true,
   })
-  previewImageCleanups.set(pageId, () => {
+  previewFrames.setCleanup(pageId, () => {
     document.removeEventListener('load', handleLoad, true)
     observer.disconnect()
   })
@@ -1466,66 +1249,18 @@ async function capturePreview(pageId: string, frame: HTMLIFrameElement, ready = 
     if (generation !== previewGeneration) return
     const body = frame.contentDocument?.body
     if (!body || !frame.isConnected) return
-    const mode = currentPreviewMode.value
-    const highResolution = pageId === focusedPageId.value || manualCaptureIds.has(pageId)
-    const fullHeight = previewMode.value === 'mobile'
-      ? mode.height
-      : boundedPreviewDocumentHeight(frame.contentDocument!, mode.height)
-    // uni-app wraps every page in #app/uni-app/uni-page elements. Capturing
-    // that wrapper also captures its reserved top area, which appears as a
-    // blank strip in the home thumbnail. Prefer the actual preview page root.
-    const captureTarget = body.querySelector<HTMLElement>('.home-page.pageflow-preview')
-      // uni-app's page body contains the actual Vue page as its direct child;
-      // #app/uni-app/uni-page wrappers may include a reserved top offset.
-      ?? body.querySelector<HTMLElement>('uni-page-body > *')
-      ?? (body.firstElementChild instanceof HTMLElement ? body.firstElementChild : body)
-    const snapshot = await html2canvas(captureTarget, {
-      backgroundColor: '#fff',
-      height: fullHeight,
-      logging: false,
-      onclone: materializeMaskedIcons,
-      scale: highResolution ? 2 : PAGE_CARD_WIDTH / mode.width,
-      scrollX: 0,
-      scrollY: 0,
-      useCORS: true,
-      width: mode.width,
-      windowHeight: mode.height,
-      windowWidth: mode.width,
+    const records = await capturePageThumbnails({
+      config: props.config,
+      document: frame.contentDocument!,
+      body,
+      pageId,
+      previewMode: previewMode.value,
+      mode: currentPreviewMode.value,
+      revision: pageThumbnailRevision(page),
+      highResolution: pageId === focusedPageId.value || manualCaptureIds.has(pageId),
     })
     if (generation !== previewGeneration) return
-    const displayScale = PAGE_CARD_WIDTH / snapshot.width
-    const displayHeight = Math.round(snapshot.height * displayScale)
-    const compact = resizeThumbnail(snapshot, 96)
-    const compactRecord = await saveThumbnail(props.config, {
-      slot: thumbnailSlot(pageId, previewMode.value, 'compact'),
-      revision: pageThumbnailRevision(page),
-      width: compact.width,
-      height: displayHeight,
-      pageHeight: displayHeight,
-    }, await canvasToBlob(compact, 0.76))
-    pendingThumbnailRecords[compactRecord.slot] = compactRecord
-    compact.width = 0
-    compact.height = 0
-
-    const tileCount = thumbnailTileCount(snapshot)
-    for (let tileIndex = tileCount - 1; tileIndex >= 0; tileIndex--) {
-      const tile = extractThumbnailTile(snapshot, tileIndex)
-      const record = await saveThumbnail(props.config, {
-        slot: thumbnailSlot(pageId, previewMode.value, 'full', tileIndex),
-        revision: pageThumbnailRevision(page),
-        width: tile.width,
-        height: Math.round(tile.height * displayScale),
-        pageHeight: displayHeight,
-        tileCount,
-        tileIndex,
-        tileTop: Math.round(tileIndex * PAGEFLOW_THUMBNAIL_TILE_HEIGHT * displayScale),
-      }, await canvasToBlob(tile, 0.9))
-      pendingThumbnailRecords[record.slot] = record
-      tile.width = 0
-      tile.height = 0
-    }
-    snapshot.width = 0
-    snapshot.height = 0
+    records.forEach(record => { pendingThumbnailRecords[record.slot] = record })
     if ((previewChangeVersions.get(pageId) ?? 0) === changeVersion)
       forcedThumbnailRefreshIds.delete(pageId)
   } catch (error) {
@@ -1579,7 +1314,7 @@ function flyToPage(
   finalTransform?: CanvasTransform,
 ) {
   if (!leafer || !canvas.value || !targetPosition) return
-  cancelAnimationFrame(flightFrame)
+  flightAnimation.cancel()
   const layer = leafer.zoomLayer
   const viewport = { width: canvas.value.clientWidth, height: canvas.value.clientHeight }
   const start: CanvasTransform = {
@@ -1604,8 +1339,6 @@ function flyToPage(
     scaleX: middleScale,
     scaleY: middleScale,
   }
-  const startedAt = performance.now()
-  const duration = 680
   let midpointApplied = false
   viewportInteracting.value = true
   const ease = (value: number) => value < 0.5 ? 4 * value ** 3 : 1 - (-2 * value + 2) ** 3 / 2
@@ -1615,8 +1348,7 @@ function flyToPage(
     scaleX: from.scaleX + (to.scaleX - from.scaleX) * amount,
     scaleY: from.scaleY + (to.scaleY - from.scaleY) * amount,
   })
-  const animate = (time: number) => {
-    const progress = Math.min(1, (time - startedAt) / duration)
+  flightAnimation.start(680, progress => {
     if (progress >= 0.5 && !midpointApplied) {
       midpointApplied = true
       midpoint?.()
@@ -1629,57 +1361,43 @@ function flyToPage(
       : tween(middle, target, ease((progress - 0.5) * 2))
     layer.set(transform)
     syncOverlay(false)
-    if (progress < 1) flightFrame = requestAnimationFrame(animate)
-    else {
-      flightFrame = 0
-      clearTimeout(viewportIdleTimer)
-      viewportInteracting.value = false
-      if (focusedPageId.value === pageId) centerFocusedPage(pageId)
-      syncOverlay(true)
-    }
-  }
-  flightFrame = requestAnimationFrame(animate)
-}
-
-function previewPageIdForSource(source: MessageEventSource | null) {
-  if (!source) return
-  const indexed = previewPageIdsByWindow.get(source)
-  if (indexed) return indexed
-  const matched = [...previewFrames.entries()].find(([, frame]) => frame.contentWindow === source)?.[0]
-  if (matched) previewPageIdsByWindow.set(source, matched)
-  return matched
+  }, () => {
+    clearTimeout(viewportIdleTimer)
+    viewportInteracting.value = false
+    if (focusedPageId.value === pageId) centerFocusedPage(pageId)
+    syncOverlay(true)
+  })
 }
 
 function handlePreviewMessage(event: MessageEvent) {
   if (event.origin !== window.location.origin) return
-  const sourcePageId = previewPageIdForSource(event.source)
-  if (event.data?.type === PAGEFLOW_API_RESULT_MESSAGE) {
-    const result = event.data.result as PageFlowApiResult | undefined
-    if (!sourcePageId || !result || !Array.isArray(result.fields)) return
+  const sourcePageId = previewFrames.pageIdForSource(event.source)
+  const message = decodePreviewMessage(event.data)
+  if (!message) return
+  if (message.type === 'api-result') {
+    if (!sourcePageId) return
     const current = apiResultsByPage.value[sourcePageId] ?? []
     apiResultsByPage.value = {
       ...apiResultsByPage.value,
-      [sourcePageId]: [...current.filter(item => item.id !== result.id), result].slice(-30),
+      [sourcePageId]: [...current.filter(item => item.id !== message.result.id), message.result].slice(-30),
     }
     return
   }
-  if (event.data?.type === PAGEFLOW_PAGE_REPORTED_MESSAGE) {
+  if (message.type === 'page-reported') {
     if (sourcePageId === focusedPageId.value)
       requestAnimationFrame(() => requestFocusedPageScan(sourcePageId))
     return
   }
-  if (event.data?.type === PAGEFLOW_HOTSPOT_HOVER_MESSAGE) {
+  if (message.type === 'hotspot-hover') {
     if (sourcePageId !== focusedPageId.value) return
-    const targets = Array.isArray(event.data.targets) ? event.data.targets.filter((target: unknown) => typeof target === 'string') : []
-    const hotspot = event.data.hotspot
-    setHoveredHotspot(targets.length && Number.isFinite(hotspot?.centerX) && Number.isFinite(hotspot?.centerY)
-      ? { targets, centerX: hotspot.centerX, centerY: hotspot.centerY }
+    setHoveredHotspot(message.targets.length && message.hotspot
+      ? { targets: message.targets, ...message.hotspot }
       : undefined)
     return
   }
-  if (event.data?.type === PAGEFLOW_SCAN_RESULT_MESSAGE) {
-    if (sourcePageId !== focusedPageId.value || event.data.page?.path !== pages.value.find(page => page.id === sourcePageId)?.path) return
-    const nextLinks = Array.isArray(event.data.page.links) ? event.data.page.links : []
+  if (message.type === 'scan-result') {
+    if (sourcePageId !== focusedPageId.value || message.path !== pages.value.find(page => page.id === sourcePageId)?.path) return
+    const nextLinks = message.links
     focusedLinksScannedPageId = sourcePageId
     syncPreviewHotspots(sourcePageId)
     const targetsChanged = focusTargetSetKey(focusedLinks.value) !== focusTargetSetKey(nextLinks)
@@ -1688,88 +1406,60 @@ function handlePreviewMessage(event: MessageEvent) {
     else scheduleCanvasRender()
     return
   }
-  if (event.data?.type !== PAGEFLOW_NAVIGATE_MESSAGE) return
-  const hotspotNavigation = event.data.interaction === 'hotspot'
+  const hotspotNavigation = message.hotspot
   if (!sourcePageId || sourcePageId !== focusedPageId.value || sourcePageId !== livePreviewId.value
     || (!hotspotNavigation && !readyPreviewIds.value.has(sourcePageId))) return
-  const target = pages.value.find(page => page.path === event.data.to)
+  const target = pages.value.find(page => page.path === message.to)
   if (!target) return
-  if (typeof event.data.location === 'string' && event.data.location) {
+  if (message.location) {
     readyPreviewIds.value = new Set([...readyPreviewIds.value].filter(id => id !== target.id))
-    navigationLocations.value = { ...navigationLocations.value, [target.path]: event.data.location }
+    navigationLocations.value = { ...navigationLocations.value, [target.path]: message.location }
     failedPreviewIds.delete(target.id)
   }
   activatePreview(target.id)
 }
 
 function createCardGroup(page: PageFlowPage, x: number, y: number, scale = 1, highlighted = false, compactOnly = false, hideMeta = false) {
-  const previewH = pagePreviewHeight(page.id)
   const compact = compactThumbnailRecord(page.id)
-  const tiles = compactOnly ? (compact ? [compact] : []) : pageThumbnailTiles(page)
-  const group = new Group({ x, y, scaleX: scale, scaleY: scale, hittable: false })
-  group.add(new Rect({
-    width: PAGE_CARD_WIDTH,
-    height: previewH,
-    fill: '#fff',
-    shadow: highlighted
-      ? { x: 0, y: 16, blur: 42, color: '#090a0b78' }
-      : { x: 0, y: 8, blur: 20, color: '#090a0b40' },
-  }))
-  let hasThumbnail = false
-  tiles.forEach(record => {
-    const url = thumbnailSource(record)
-    if (!url) return
-    hasThumbnail = true
-    group.add(new LeaferImage({
-      x: 0,
-      y: record.tileTop ?? 0,
-      width: PAGE_CARD_WIDTH,
-      height: record.tileIndex == null ? record.pageHeight ?? record.height : record.height,
-      url,
-      hittable: false,
-    }))
+  return createPageCardGroup({
+    page,
+    x,
+    y,
+    scale,
+    highlighted,
+    hideMeta,
+    previewHeight: pagePreviewHeight(page.id),
+    tiles: compactOnly ? (compact ? [compact] : []) : pageThumbnailTiles(page),
+    thumbnailSource,
+    copied: copiedPath.value === page.path,
   })
-  if (!hasThumbnail) {
-    group.add(new Text({ x: 16, y: Math.max(16, previewH - 54), width: PAGE_CARD_WIDTH - 32, text: page.title, fill: '#242628', fontSize: 18, fontWeight: 700, textWrap: 'none', textOverflow: 'ellipsis' }))
-    group.add(new Text({ x: 16, y: Math.max(38, previewH - 29), width: PAGE_CARD_WIDTH - 32, text: page.path, fill: '#6f7478', fontFamily: 'DM Mono', fontSize: 10, textWrap: 'none', textOverflow: 'ellipsis' }))
-  }
-  if (!hideMeta) {
-    group.add(new Text({ x: 0, y: previewH + 12, width: PAGE_CARD_WIDTH, text: page.title, fill: '#3f4347', fontSize: 13, fontWeight: 700, textWrap: 'none', textOverflow: 'ellipsis', cursor: 'default' }))
-    group.add(new Text({ x: 0, y: previewH + 38, width: PAGE_CARD_WIDTH - 28, text: copiedPath.value === page.path ? '已复制' : page.path, fill: '#969b9f', fontFamily: 'DM Mono', fontSize: 10, textWrap: 'none', textOverflow: 'ellipsis', cursor: 'pointer' }))
-    group.add(new Text({ x: PAGE_CARD_WIDTH - 20, y: previewH + 36, width: 20, text: '↗', fill: '#6f7478', fontSize: 14, textAlign: 'right', cursor: 'pointer' }))
-  }
-  return group
 }
 
 function createDeckGroup(page: PageFlowPage, x: number, y: number) {
   const deck = routeDeckByPageId.value.get(page.id)!
-  const layerPages = visibleDeckLayerPages(page.id)
-  const group = new Group({ x, y, hittable: false })
-  ;[...layerPages].reverse().forEach((deckPage, index) => {
-    const layer = layerPages.length - index - 1
-    const card = createCardGroup(deckPage, layer * 7, -layer * 7, 1, false, true, true)
-    card.opacity = Math.max(0.36, 1 - layer * 0.16)
-    group.add(card)
+  return createPageDeckGroup({
+    x,
+    y,
+    previewHeight: pagePreviewHeight(page.id),
+    label: groupDisplayName(deck.key, deck.label),
+    count: deck.pages.length,
+    layerPages: visibleDeckLayerPages(page.id),
+    createLayer: (deckPage, layerX, layerY) => createCardGroup(deckPage, layerX, layerY, 1, false, true, true),
   })
-  group.add(new Text({ x: 0, y: pagePreviewHeight(page.id) + 12, width: PAGE_CARD_WIDTH, text: `${groupDisplayName(deck.key, deck.label)} · ${deck.pages.length}`, fill: '#3f4347', fontSize: 13, fontWeight: 700, textWrap: 'none', textOverflow: 'ellipsis', cursor: 'default' }))
-  return group
 }
-
 function renderCanvasScene() {
   if (!leafer) return
   if (!edgeLayer || !cardLayer) {
     edgeLayer = new Group({ hittable: false })
     cardLayer = new Group({ hittable: true, hitChildren: true })
-    cardNodes.clear()
+    cardNodes = new SceneNodeCache(cardLayer)
     leafer.add(cardLayer)
     leafer.add(edgeLayer)
   }
   if (!pages.value.length) {
     edgeLayer.removeAll(true)
-    connectionLayer?.removeAll(true)
-    connectionNodes.clear()
-    cardLayer.removeAll(true)
-    cardNodes.clear()
+    connectionNodes?.clear()
+    cardNodes?.clear()
     if (canvas.value) {
       canvas.value.dataset.renderedPages = '0'
       canvas.value.dataset.renderedEdges = '0'
@@ -1777,7 +1467,7 @@ function renderCanvasScene() {
     cardLayer.add(new Text({ x: 80, y: 90, text: 'Waiting for Vue Router…', fontSize: 20, fill: '#958d82' }))
     return
   }
-  if (!cardNodes.size && cardLayer.children?.length) cardLayer.removeAll(true)
+  if (!cardNodes?.size && cardLayer.children?.length) cardLayer.removeAll(true)
   edgeLayer.removeAll(true)
   const focus = focusScene.value
   const focusTargets = new Map(focus?.targets.map(target => [target.page.id, target]) ?? [])
@@ -1821,11 +1511,7 @@ function renderCanvasScene() {
     return [position[0] + directionX * 1440, position[1] + directionY * 1440]
   }
   const scenePageIds = new Set(scenePages.map(page => page.id))
-  cardNodes.forEach((entry, pageId) => {
-    if (scenePageIds.has(pageId)) return
-    cardLayer!.remove(entry.node, true)
-    cardNodes.delete(pageId)
-  })
+  cardNodes?.retain(scenePageIds)
   scenePages.forEach(page => {
     const basePosition = positions.value.get(page.id) ?? parkedPagePositions.value[page.id] ?? focus?.sourcePosition ?? [0, 0]
     const target = focusTargets.get(page.id)
@@ -1861,21 +1547,14 @@ function renderCanvasScene() {
       focusTargets.has(page.id),
       ...tiles.map(record => `${record.slot}:${thumbnailSource(record) ?? ''}:${record.tileTop ?? 0}:${record.height}`),
     ].join('|')
-    const existing = cardNodes.get(page.id)
-    if (existing?.signature === cardSignature) {
-      existing.node.set({ x: visualX, y: visualY, scaleX: visualScale, scaleY: visualScale, opacity })
-      return
-    }
-    if (existing) cardLayer!.remove(existing.node, true)
-    const group = routeDeckByPageId.value.has(page.id) && !focusTargets.has(page.id)
-      ? createDeckGroup(page, x, y)
-      : createCardGroup(page, visualX, visualY, visualScale, page.id === active.value)
-    if (target) {
-      group.set({ hittable: true, hitChildren: false, cursor: 'move' })
-    }
-    group.opacity = opacity
-    cardLayer!.add(group)
-    cardNodes.set(page.id, { node: group, signature: cardSignature })
+    cardNodes?.upsert(page.id, cardSignature, () => {
+      const group = routeDeckByPageId.value.has(page.id) && !focusTargets.has(page.id)
+        ? createDeckGroup(page, x, y)
+        : createCardGroup(page, visualX, visualY, visualScale, page.id === active.value)
+      if (target) group.set({ hittable: true, hitChildren: false, cursor: 'move' })
+      group.opacity = opacity
+      return group
+    }, group => group.set({ x: visualX, y: visualY, scaleX: visualScale, scaleY: visualScale, opacity }))
   })
   const visibleConnectionIds = new Set<string>()
   if (focus && focusLayoutProgress > 0.85) {
@@ -1887,29 +1566,18 @@ function renderCanvasScene() {
           || (Math.abs((connection.centerX ?? 0.5) - hover.centerX) < 0.002
             && Math.abs((connection.centerY ?? 0.5) - hover.centerY) < 0.002)))
       const opacity = hover && highlighted ? 0.5 + hoverFadeProgress * 0.5 : 0.5
-      const existing = connectionNodes.get(connection.id)
-      if (existing) {
-        existing.set({ path: connection.d, opacity })
-        return
-      }
-      const path = new Path({
-        path: connection.d,
-        stroke: '#ff79b8',
-        strokeWidth: 2,
-        strokeScaleFixed: true,
-        endArrow: 'triangle',
-        opacity,
-        hittable: false,
-      })
-      connectionLayer?.add(path)
-      connectionNodes.set(connection.id, path)
+      connectionNodes?.upsert(connection.id, connection.id, () => new Path({
+          path: connection.d,
+          stroke: '#ff79b8',
+          strokeWidth: 2,
+          strokeScaleFixed: true,
+          endArrow: 'triangle',
+          opacity,
+          hittable: false,
+        }), path => path.set({ path: connection.d, opacity }))
     })
   }
-  connectionNodes.forEach((path, id) => {
-    if (visibleConnectionIds.has(id)) return
-    connectionLayer?.remove(path, true)
-    connectionNodes.delete(id)
-  })
+  connectionNodes?.retain(visibleConnectionIds)
   if (canvas.value) {
     canvas.value.dataset.renderedPages = String(scenePages.length)
     canvas.value.dataset.renderedEdges = String(connectionPaths.value.length)
@@ -1945,6 +1613,7 @@ function draw() {
   if (!connectionLeafer && connectionCanvas.value) {
     connectionLeafer = new Leafer({ ...PAGEFLOW_CANVAS_CONFIG, view: connectionCanvas.value })
     connectionLayer = new Group({ hittable: false })
+    connectionNodes = new SceneNodeCache(connectionLayer)
     connectionLeafer.add(connectionLayer)
   }
   renderCanvasScene()
@@ -1952,59 +1621,56 @@ function draw() {
 }
 
 function applyGraph(nextPages: PageFlowPage[], nextRouteMode: PageFlowRouteMode) {
-  const layoutChanged = pages.value.length !== nextPages.length
-    || pages.value.some((page, index) => page.id !== nextPages[index]?.id || page.path !== nextPages[index]?.path)
-  if (routeMode.value !== nextRouteMode) {
-    routeMode.value = nextRouteMode
-    livePreviewId.value = undefined
-    livePreviewCacheIds.value = []
+  const plan = planGraphUpdate({
+    pages: pages.value,
+    nextPages,
+    routeMode: routeMode.value,
+    nextRouteMode,
+    livePreviewId: livePreviewId.value,
+    livePreviewCacheIds: livePreviewCacheIds.value,
+    focusedPageId: focusedPageId.value,
+    activeId: active.value,
+  })
+  routeMode.value = nextRouteMode
+  livePreviewId.value = plan.livePreviewId
+  livePreviewCacheIds.value = plan.livePreviewCacheIds
+  if (plan.routeModeChanged) {
     focusedPageId.value = undefined
     focusedLinks.value = []
     focusedTargetPositions.value = {}
   }
-  const nextPageIds = new Set(nextPages.map(page => page.id))
-  focusedPageStateCache.retain(nextPageIds)
-  livePreviewCacheIds.value = livePreviewCacheIds.value.filter(id => nextPageIds.has(id))
-  if (livePreviewId.value && !nextPageIds.has(livePreviewId.value)) livePreviewId.value = undefined
-  if (focusedPageId.value && !nextPageIds.has(focusedPageId.value)) exitFocus()
+  focusedPageStateCache.retain(plan.pageIds)
+  if (plan.focusedPageRemoved) exitFocus()
   pages.value = nextPages
-  if (!nextPages.some(page => page.id === active.value)) active.value = nextPages[0]?.id ?? ''
-  status.value = nextPages.length ? 'Routes synced' : 'Waiting for Vue Router…'
+  active.value = plan.activeId
+  status.value = plan.status
   if (nextPages.length) {
     routeDiscoveryFrame?.remove()
     routeDiscoveryFrame = undefined
   }
-  if (layoutChanged) requestLayout(nextPages)
-  else renderCanvasScene()
+  if (plan.layoutChanged) requestLayout(nextPages)
+  else scheduleCanvasRender()
 }
 
 function applyPageUpdate(nextPage: PageFlowPage) {
-  const index = pages.value.findIndex(page => page.id === nextPage.id)
-  if (index < 0) return
-  const currentPage = pages.value[index]
-  const nextFocusedLinks = preserveScannedFocusedLinks(
-    nextPage.id,
-    focusedLinksScannedPageId,
-    focusedLinks.value,
-    nextPage.links,
-  )
-  const focusedLinkGeometryChanged = nextPage.id === focusedPageId.value
-    && JSON.stringify(focusedLinks.value) !== JSON.stringify(nextFocusedLinks)
-  const focusLinksChanged = nextPage.id === focusedPageId.value
-    && focusTargetSetKey(focusedLinks.value) !== focusTargetSetKey(nextFocusedLinks)
-  if (nextPage.id === focusedPageId.value) focusedLinks.value = nextFocusedLinks
-  if (JSON.stringify(currentPage) === JSON.stringify(nextPage)) {
-    if (focusLinksChanged) void requestFocusedLayout()
-    else if (focusedLinkGeometryChanged) renderCanvasScene()
+  const plan = planPageUpdate({
+    pages: pages.value,
+    nextPage,
+    focusedPageId: focusedPageId.value,
+    scannedPageId: focusedLinksScannedPageId,
+    focusedLinks: focusedLinks.value,
+  })
+  if (!plan) return
+  focusedLinks.value = plan.focusedLinks
+  if (!plan.pageChanged) {
+    if (plan.action === 'layout') void requestFocusedLayout()
+    else if (plan.action === 'render') scheduleCanvasRender()
     return
   }
-  const linksChanged = JSON.stringify(currentPage.links) !== JSON.stringify(nextPage.links)
-  const nextPages = [...pages.value]
-  nextPages[index] = nextPage
-  pages.value = nextPages
+  pages.value = plan.pages
   status.value = 'Routes synced'
-  if (focusLinksChanged) void requestFocusedLayout()
-  else if (linksChanged) renderCanvasScene()
+  if (plan.action === 'layout') void requestFocusedLayout()
+  else if (plan.action === 'render') scheduleCanvasRender()
 }
 
 watch(requiredThumbnailRecords, records => {
@@ -2019,16 +1685,13 @@ watch(requiredThumbnailRecords, records => {
     return source ? [[url, source] as const] : []
   }))
   thumbnailResources.value = Object.fromEntries(cachedResources)
-  renderCanvasScene()
+  scheduleCanvasRender()
   void Promise.all(urls.map(async url => {
     try {
       const source = cachedResources.get(url) ?? await thumbnailResourceCache.load(url)
       if (generation === thumbnailResourceGeneration && thumbnailResources.value[url] !== source) {
         thumbnailResources.value = { ...thumbnailResources.value, [url]: source }
-        if (!thumbnailRenderFrame) thumbnailRenderFrame = requestAnimationFrame(() => {
-          thumbnailRenderFrame = 0
-          renderCanvasScene()
-        })
+        scheduleCanvasRender()
       }
       return [url, source] as const
     } catch {
@@ -2038,7 +1701,7 @@ watch(requiredThumbnailRecords, records => {
     if (generation !== thumbnailResourceGeneration) return
     thumbnailResources.value = Object.fromEntries(resources.filter(resource => resource != null))
     thumbnailResourceCache.trim(new Set(urls))
-    renderCanvasScene()
+    scheduleCanvasRender()
     initialResourcesSettled.value = true
     scheduleInitialSceneReveal()
   })
@@ -2128,11 +1791,10 @@ onUnmounted(() => {
   window.removeEventListener('pointerup', handleFocusTargetPointerUp, true)
   window.removeEventListener('pointercancel', handleFocusTargetPointerUp, true)
   cancelAnimationFrame(viewportFrame)
-  cancelAnimationFrame(thumbnailRenderFrame)
   cancelAnimationFrame(sceneRenderFrame)
-  cancelAnimationFrame(hoverFadeFrame)
-  cancelAnimationFrame(flightFrame)
-  cancelAnimationFrame(focusLayoutFrame)
+  hoverAnimation.dispose()
+  flightAnimation.dispose()
+  focusAnimation.dispose()
   clearTimeout(viewportIdleTimer)
   cancelScheduledCapture()
   clearTimeout(copiedPathTimer)
@@ -2140,13 +1802,8 @@ onUnmounted(() => {
   clearTimeout(initialRevealTimer)
   thumbnailResourceGeneration++
   thumbnailResourceCache.dispose()
-  previewFrames.clear()
-  previewImageCleanups.forEach(cleanup => cleanup())
-  previewImageCleanups.clear()
-  previewImageTimers.forEach(timer => clearTimeout(timer))
-  previewImageTimers.clear()
-  captureCompletionWaiters.forEach(waiters => waiters.forEach(resolve => resolve()))
-  captureCompletionWaiters.clear()
+  previewFrames.dispose()
+  captureQueue.dispose()
   routeDiscoveryFrame?.remove()
   stopPageFlowUpdates?.()
   layoutWorker?.terminate()
@@ -2154,9 +1811,9 @@ onUnmounted(() => {
   connectionLeafer?.destroy()
   edgeLayer = undefined
   connectionLayer = undefined
-  connectionNodes.clear()
+  connectionNodes?.clear()
   cardLayer = undefined
-  cardNodes.clear()
+  cardNodes?.clear()
 })
 </script>
 

@@ -8,6 +8,10 @@ importers:
 
   .:
     dependencies:
+      unplugin:
+        specifier: ^2.3.5
+        version: 2.3.11
+    devDependencies:
       '@leafer-in/view':
         specifier: ^2.2.6
         version: 2.2.6(@leafer-in/interface@2.2.6(@leafer-ui/interface@2.2.6)(@leafer/interface@2.2.6))(@leafer-ui/draw@2.2.6)(@leafer-ui/interface@2.2.6)
@@ -17,19 +21,12 @@ importers:
       '@leafer-ui/core':
         specifier: ^2.2.6
         version: 2.2.6
-      elkjs:
-        specifier: ^0.12.0
-        version: 0.12.0
-      html2canvas-pro:
-        specifier: 2.3.2
-        version: 2.3.2
-      leafer-ui:
+      '@leafer/node':
         specifier: ^2.2.6
-        version: 2.2.6
-      unplugin:
-        specifier: ^2.3.5
-        version: 2.3.11
-    devDependencies:
+        version: 2.2.6(@leafer-ui/interface@2.2.6)(@leafer/interface@2.2.6)
+      '@napi-rs/canvas':
+        specifier: ^1.0.3
+        version: 1.0.3
       '@types/node':
         specifier: ^24.0.10
         version: 24.13.3
@@ -42,6 +39,12 @@ importers:
       happy-dom:
         specifier: ^20.11.1
         version: 20.11.1
+      html2canvas-pro:
+        specifier: 2.3.2
+        version: 2.3.2
+      leafer-ui:
+        specifier: ^2.2.6
+        version: 2.2.6
       tsup:
         specifier: ^8.5.1
         version: 8.5.1(postcss@8.5.24)(typescript@5.8.3)
@@ -57,9 +60,6 @@ importers:
       vue-router:
         specifier: ^4.5.1
         version: 4.6.4(vue@3.5.40(typescript@5.8.3))
-      vue-tsc:
-        specifier: ^3.3.8
-        version: 3.3.8(typescript@5.8.3)
 
 packages:
 
@@ -390,11 +390,141 @@ packages:
   '@jridgewell/trace-mapping@0.3.31':
     resolution: {integrity: sha512-zzNR+SdQSDJzc8joaeP8QQoCQr8NuYx2dIIytl1QeBEZHJ9uW6hebsrYgbz8hJwUQao3TWCMtmfV8Nu1twOLAw==}
 
+  '@leafer-in/animate@2.2.6':
+    resolution: {integrity: sha512-9gyNhkvWEkxPuyEqSU2sK5xpzxJiObdza8GZt10pcFnCxQezLOQbZ8JzqXm6glMZSLZ1lSAbKETGppmu3ow3UQ==}
+    peerDependencies:
+      '@leafer-in/color': ^2.2.6
+      '@leafer-in/interface': ^2.2.6
+      '@leafer-ui/draw': ^2.2.6
+      '@leafer-ui/interface': ^2.2.6
+
+  '@leafer-in/arrow@2.2.6':
+    resolution: {integrity: sha512-ufdkJtqsdZZ9A6Ncnl6xFWSfVPoGREg5DstwSl7jp08tacx4QasI9MIqyes6SlB+vJz++YAWeavZPEfh7B3eiA==}
+    peerDependencies:
+      '@leafer-in/interface': ^2.2.6
+      '@leafer-ui/draw': ^2.2.6
+      '@leafer-ui/interface': ^2.2.6
+
+  '@leafer-in/box@2.2.6':
+    resolution: {integrity: sha512-4C8WIPMQH/WtN7J/hZtgLn/PHUGjKopDIPuYMG0s2XB2qxUfDmiP6qTRshdc/Rhkl90FrAej7IMoi35B5ZVzlQ==}
+    peerDependencies:
+      '@leafer-in/interface': ^2.2.6
+      '@leafer-ui/draw': ^2.2.6
+      '@leafer-ui/interface': ^2.2.6
+
+  '@leafer-in/bright@2.2.6':
+    resolution: {integrity: sha512-B0ruXNHBOGAb7HjCcUnv14K3S6uXZnAKPR0wxT+7rHp1oiSOYtp9/LA2n3y8/fOciTFClzPOd2fWo/uKqKaQ9w==}
+    peerDependencies:
+      '@leafer-in/interface': ^2.2.6
+      '@leafer-ui/draw': ^2.2.6
+      '@leafer-ui/interface': ^2.2.6
+
+  '@leafer-in/color@2.2.6':
+    resolution: {integrity: sha512-HkEnmrsjWSAr+V6y1pbt25kskyizML9pifrpe+I4fr4qH6b0xHwXx8TG0ZezQKx775oDOFOMLYlkTl4Twe/FTg==}
+    peerDependencies:
+      '@leafer-in/interface': ^2.2.6
+      '@leafer-ui/draw': ^2.2.6
+      '@leafer-ui/interface': ^2.2.6
+
+  '@leafer-in/corner@2.2.6':
+    resolution: {integrity: sha512-XAUhE6jO+2l3slkAUupCVXfJg6y1IMJvvjtnlZqdIURs3GEYX8V5aO9csxwqj/nnGiYhZaTmmz4OLe9DeuJfWQ==}
+    peerDependencies:
+      '@leafer-in/interface': ^2.2.6
+      '@leafer-ui/draw': ^2.2.6
+      '@leafer-ui/interface': ^2.2.6
+
+  '@leafer-in/editor@2.2.6':
+    resolution: {integrity: sha512-bMuLGDKZdWqdu8zXwtSyBTu+q82CDBSH2bAHgTacWen8Cl00jwFyM1AwAJOHH43+nOOo5IF9TLDLw6LtP5sddw==}
+    peerDependencies:
+      '@leafer-in/interface': ^2.2.6
+      '@leafer-in/resize': ^2.2.6
+      '@leafer-ui/core': ^2.2.6
+      '@leafer-ui/draw': ^2.2.6
+      '@leafer-ui/interface': ^2.2.6
+
+  '@leafer-in/export@2.2.6':
+    resolution: {integrity: sha512-aZEldXw8dQWf++4QgApYWGbRTPRvEQipKS84xJc+R/6HA91GqlXGxcT3cTRRAJAHihzgwx2OaTXGBHfl/i9i2g==}
+    peerDependencies:
+      '@leafer-in/interface': ^2.2.6
+      '@leafer-ui/draw': ^2.2.6
+      '@leafer-ui/interface': ^2.2.6
+
+  '@leafer-in/filter@2.2.6':
+    resolution: {integrity: sha512-cTthK2O03K2V5ODdtc5vJeyGPXXNjXPmsk/3JTuzofnrNuEZTuzf3i2EpswEbzTrbB4qv4L65l+A+TM+/qK+hA==}
+    peerDependencies:
+      '@leafer-in/interface': ^2.2.6
+      '@leafer-ui/draw': ^2.2.6
+      '@leafer-ui/interface': ^2.2.6
+
+  '@leafer-in/find@2.2.6':
+    resolution: {integrity: sha512-8Y/p481VG+QDRLhBvVGyJSlytn3cE19PoYPEGUStALZPXABJ0royycjax1fGAoEv36iKH3ApXgSwAYshdEp6fg==}
+    peerDependencies:
+      '@leafer-in/interface': ^2.2.6
+      '@leafer-ui/draw': ^2.2.6
+      '@leafer-ui/interface': ^2.2.6
+
+  '@leafer-in/flow@2.2.6':
+    resolution: {integrity: sha512-KyA33qiIKoGDlmj0XunUlKOGMaeJ6qnNsNFoHwwlcisHM6gmCu7EzXB4ish9iHsEisZwnHlpDQp6c0cnW8SJsA==}
+    peerDependencies:
+      '@leafer-in/interface': ^2.2.6
+      '@leafer-in/resize': ^2.2.6
+      '@leafer-ui/draw': ^2.2.6
+      '@leafer-ui/interface': ^2.2.6
+
   '@leafer-in/interface@2.2.6':
     resolution: {integrity: sha512-L0Rxr4DOdsTM26WXDXYY6/4jQqkPQUEpU23mHb5eM4Wzt2LFpsrEqIiDCMUsvcf9jAyV3FxeKRoQtHxrSRtAzg==}
     peerDependencies:
       '@leafer-ui/interface': ^2.2.6
       '@leafer/interface': ^2.2.6
+
+  '@leafer-in/motion-path@2.2.6':
+    resolution: {integrity: sha512-OIFQjbzu+iHQOUFypPnLk5gBkKdDic1Cqyg58TDpVbvsDF0wiPHsXpm8YkP+svKc/lfTDfWxJE9IYxwzUba9Jw==}
+    peerDependencies:
+      '@leafer-in/interface': ^2.2.6
+      '@leafer-ui/draw': ^2.2.6
+      '@leafer-ui/interface': ^2.2.6
+
+  '@leafer-in/resize@2.2.6':
+    resolution: {integrity: sha512-lqYf5ush8eD7pUysyvEA3qbQUuk/EA/PohRl2+vwnGncDGEjZGCdrfPEC1rkavRS/Jv/FoOLJ0FCV+WXhTTR5w==}
+    peerDependencies:
+      '@leafer-in/interface': ^2.2.6
+      '@leafer-ui/draw': ^2.2.6
+      '@leafer-ui/interface': ^2.2.6
+
+  '@leafer-in/robot@2.2.6':
+    resolution: {integrity: sha512-OjpkQVZ6FXFw3emlpLJTm+RYzO2fG+v/7n/xfIy6+0gCNq4URb72JtQHwc4iNQTeP70cMl1OMBD7ottede7tzQ==}
+    peerDependencies:
+      '@leafer-in/interface': ^2.2.6
+      '@leafer-ui/draw': ^2.2.6
+      '@leafer-ui/interface': ^2.2.6
+
+  '@leafer-in/scale-fixed@2.2.6':
+    resolution: {integrity: sha512-2pgVtPpP88O0qDKq/T73qE1bvsilJOeYfTTrICuQfLs5E/8XrwVvuDRIYsHErxanoxaOksFIreEcOkw3KdAXHQ==}
+    peerDependencies:
+      '@leafer-in/interface': ^2.2.6
+      '@leafer-ui/draw': ^2.2.6
+      '@leafer-ui/interface': ^2.2.6
+
+  '@leafer-in/scroll@2.2.6':
+    resolution: {integrity: sha512-mz7YBGkpgcslcnna/cERe8GvrJCnlZKzaQbJHTaY0/WixZarakVY1SWrt5OqoXR5FYmTr23WkmtpTkWH9/yehA==}
+    peerDependencies:
+      '@leafer-in/interface': ^2.2.6
+      '@leafer-ui/core': ^2.2.6
+      '@leafer-ui/interface': ^2.2.6
+
+  '@leafer-in/scroller@2.2.6':
+    resolution: {integrity: sha512-+z7ufU5vhsdgzj84+CEly0ywMvxBcgmCKOmzA3uvip26904poek40QtYpu6/16MuZoA7DPOoJS0dLOw3IGouHw==}
+    peerDependencies:
+      '@leafer-in/interface': ^2.2.6
+      '@leafer-ui/core': ^2.2.6
+      '@leafer-ui/interface': ^2.2.6
+
+  '@leafer-in/state@2.2.6':
+    resolution: {integrity: sha512-zsNmRZr3Lq9MzR4Wsqi/1dvqnbXAZ2DWRYghK8UylJTYGvraBFnHrLXRyqoQtpgcNfT83wPQiFK03gcMEdGGzg==}
+    peerDependencies:
+      '@leafer-in/interface': ^2.2.6
+      '@leafer-ui/core': ^2.2.6
+      '@leafer-ui/interface': ^2.2.6
 
   '@leafer-in/view@2.2.6':
     resolution: {integrity: sha512-xN+t237rb6QtB3lHkMI43QqO3WP7VKlgMNcDc51C9MwZ5EK587db2nDtRkIlIrE6ArybcZzqayA+U0YGvflIlQ==}
@@ -458,6 +588,9 @@ packages:
   '@leafer-ui/interface@2.2.6':
     resolution: {integrity: sha512-RdM6X4BeNl4WDIDAo/O+kkUyBnbrBBgz2QMPDY6unnks8DLb4h6a5D7g/L/0nhvBjZp5ooJMVcT4I1uXu3EyUA==}
 
+  '@leafer-ui/node@2.2.6':
+    resolution: {integrity: sha512-BV2p7XbOsqKwm+JyxNxcfyCkufKyj/ER5KU8ljIw5g6n0WrQvm4jMqcoMdR7tnkl800+ztQq3y0xhHp/Ritf8w==}
+
   '@leafer-ui/paint@2.2.6':
     resolution: {integrity: sha512-8Vf9nWXz2trkCliIiRAXJcMmrbdNPbv1I1JRbIfx98Nng2f6I+o5DIsVVyEYKRifGW2enSSTV8YrlJZ/WnHjIQ==}
 
@@ -472,6 +605,9 @@ packages:
 
   '@leafer-ui/web@2.2.6':
     resolution: {integrity: sha512-TGPG+Ep2gU1K0dmVB1NobyYYOrNXn6ocSf6vij8EMJRy8F0SDSj7ozD9w5I0xIRG0iSsmkNvuhddYB+ous+JIA==}
+
+  '@leafer/canvas-node@2.2.6':
+    resolution: {integrity: sha512-mWZ3WcSpH+claG94Cv+rvk7RpFdsDUVWBfnXye823UrRU6MsEthPRSPQ2TiaTpVSes8lDm5iEHprs/d5GMalrg==}
 
   '@leafer/canvas-web@2.2.6':
     resolution: {integrity: sha512-YfU7KU1WB50If/NMJX06UzqcevG66x3bMHeSEE2h98dJTiV2+l+tCYsx/FMayi6kOV0HibjVEPRZ8QvSX1rq7A==}
@@ -506,6 +642,9 @@ packages:
   '@leafer/helper@2.2.6':
     resolution: {integrity: sha512-5kZA1BYJx+kO2zQhyHqKcgc8KaEar6TDPuwZBQ+PE8EiXZWdZuakGEKrJxXyf1KuRk811BcEfvSgD7tmcuaAfA==}
 
+  '@leafer/image-node@2.2.6':
+    resolution: {integrity: sha512-7ggA8GlGqKWNjeJxplsVNaxfPmY9TbOLsxwnuvtISWblxmTfNPXydbspNxexF5jxjyr5Lntgp3cKyPfa/Rr4wQ==}
+
   '@leafer/image-web@2.2.6':
     resolution: {integrity: sha512-dz0POGXQEvCQDXvveYHP+Nzvh5H4USpmoDGchNEyVE06nIjU3pqpPSmn6L++XrbL7UAIl5lrHrSUUDCDGKGrQQ==}
 
@@ -526,6 +665,12 @@ packages:
 
   '@leafer/math@2.2.6':
     resolution: {integrity: sha512-JOTfq4nOT67k6WWwwGNNtqrLmB6PC3gEVktDcTzUl3thqgGB02Lf9loZM50HajZEmpus8GGA1UfGFmKCAW6SxQ==}
+
+  '@leafer/node-core@2.2.6':
+    resolution: {integrity: sha512-vd/OJqVDFRthKWO0os8afP1zPVwcX/INlWRSrXSgtjMjFF5miwgN/brwUVMrsre+c1oG/tLUo+oSdXUEdNrNIQ==}
+
+  '@leafer/node@2.2.6':
+    resolution: {integrity: sha512-t0eKNZ935ihldoPNh8gM4y+FfCF/HAEAKN9hwr20Bc2Vd8OYRDqOeq8W2khPzUv4AnZGh/wGRjpaYvrf4RfiQw==}
 
   '@leafer/partner@2.2.6':
     resolution: {integrity: sha512-LLda4HPubda8Kuc6Tasnr8pghFokvhn3NLQiNB1A5Cxy4+o84USyh7WEliCiBUvYFzE91i6gDE7RCT7s0Cdo8g==}
@@ -550,6 +695,81 @@ packages:
 
   '@leafer/web-core@2.2.6':
     resolution: {integrity: sha512-Xp0eUzsBow5xrSY36vOTLJEMzftD95P4PMHRL9Dlgwtm+r7GolY0EiBz22SshlxUbusIlSiGLBc1eSxDYiVyiw==}
+
+  '@napi-rs/canvas-android-arm64@1.0.3':
+    resolution: {integrity: sha512-7kSCdUhoXiO+AaIMXdBGdtp6EctZNkmF62Rea/BmVQlwKaM3bBhOzyGUzxyxz9dv5vdBfpyAaxhSRSJF4kqK4A==}
+    engines: {node: '>= 10'}
+    cpu: [arm64]
+    os: [android]
+
+  '@napi-rs/canvas-darwin-arm64@1.0.3':
+    resolution: {integrity: sha512-ds14V1BPagLszQyaDTeggny5fNeTCqsUQ5QhFj9VDxSEfzrVxXtdbR0LoFyKa0Siaaw8KvqSk4t7k/WoZJwvbg==}
+    engines: {node: '>= 10'}
+    cpu: [arm64]
+    os: [darwin]
+
+  '@napi-rs/canvas-darwin-x64@1.0.3':
+    resolution: {integrity: sha512-qof3LRAAycmkV2I1izZo9RoSHF8kCQr5O05sFwv0jK8rSdYV6KHVwimo6Qb7RxZj40WHKbLHm5JDaUF0o5XUAA==}
+    engines: {node: '>= 10'}
+    cpu: [x64]
+    os: [darwin]
+
+  '@napi-rs/canvas-linux-arm-gnueabihf@1.0.3':
+    resolution: {integrity: sha512-FU2kKZLmolHA9+KcUA+l1+xH3WTLUUTQDU/kLv9SEUr2TrRPu94aytOeizFJDHPs/QBcw4QL1mCQhetQXYBbag==}
+    engines: {node: '>= 10'}
+    cpu: [arm]
+    os: [linux]
+
+  '@napi-rs/canvas-linux-arm64-gnu@1.0.3':
+    resolution: {integrity: sha512-GVSjntxKeA+/y/ZKf1F+cmUw1WeIkE5aMRPqnZUlBTBvBcrvgWccJAWuYCKPX4QJQwZILIIwhgdAbl51yj6fpA==}
+    engines: {node: '>= 10'}
+    cpu: [arm64]
+    os: [linux]
+    libc: [glibc]
+
+  '@napi-rs/canvas-linux-arm64-musl@1.0.3':
+    resolution: {integrity: sha512-J51oK/axyZ13kxycumSMfLiDZMdWdOVvqDFI28BpuViZHE3A0bQfr8B5vg8YnPEnqLD3BSn1hkdlh2buspEcNQ==}
+    engines: {node: '>= 10'}
+    cpu: [arm64]
+    os: [linux]
+    libc: [musl]
+
+  '@napi-rs/canvas-linux-riscv64-gnu@1.0.3':
+    resolution: {integrity: sha512-CtQgQjoVTX67jS9XuCTtJ40Sl7wRLMguoFnnGnfDmCWf7kzKFZVwj5ynqUOIGKFMSB61ZCuQlwPvVNxYTTseaw==}
+    engines: {node: '>= 10'}
+    cpu: [riscv64]
+    os: [linux]
+    libc: [glibc]
+
+  '@napi-rs/canvas-linux-x64-gnu@1.0.3':
+    resolution: {integrity: sha512-jtfzAHFp+FRaR7zGT4jyCe6wUgAG/dVb5A4Apd8FY9jKarntDfUAlJXscugiH7ZF5kKnu7/lHFk9LaDPcrGEVQ==}
+    engines: {node: '>= 10'}
+    cpu: [x64]
+    os: [linux]
+    libc: [glibc]
+
+  '@napi-rs/canvas-linux-x64-musl@1.0.3':
+    resolution: {integrity: sha512-xTzaUCKUHTY4bCGadeeRZggbRVbGUT1petg7Z8r9AJR2+D9Bqu6nQAgqBGC6D47tA70LjaaaLTrJ7wNY1T74dg==}
+    engines: {node: '>= 10'}
+    cpu: [x64]
+    os: [linux]
+    libc: [musl]
+
+  '@napi-rs/canvas-win32-arm64-msvc@1.0.3':
+    resolution: {integrity: sha512-ktVLuBkI6QVOm5BwO/WbdGwxgeetAMJa7TTmR8qBarXF0OU2NKjvjUtPJAl2y8t+zBRczJl/1VOl9gua6WcK2g==}
+    engines: {node: '>= 10'}
+    cpu: [arm64]
+    os: [win32]
+
+  '@napi-rs/canvas-win32-x64-msvc@1.0.3':
+    resolution: {integrity: sha512-SGhlQ8bDjL1Cz2KnsKMasr/5sTcwG/SZkB6WCJxLsmSm/3aS2C+3p39bA7iZ2/94+NkVDySZfbiGoaSZSFHYxA==}
+    engines: {node: '>= 10'}
+    cpu: [x64]
+    os: [win32]
+
+  '@napi-rs/canvas@1.0.3':
+    resolution: {integrity: sha512-OlI657a5XXvKGFX7kNeIzJ8rO7IXt87Mqu2H8rXE46viAuOfum/JA7ysX7+eBhxNKznT+RCZh418mndlcFX3+w==}
+    engines: {node: '>= 10'}
 
   '@rollup/rollup-android-arm-eabi@4.62.3':
     resolution: {integrity: sha512-c0wdcekXtQvvn5Tsrk/+op/gUArrbWaFduBnTLP2l1cKLSQs4diMWjJw3m6A0DdzT8dAAX95KpkJ3qynCePbmw==}
@@ -708,15 +928,6 @@ packages:
       vite: ^5.0.0 || ^6.0.0
       vue: ^3.2.25
 
-  '@volar/language-core@2.4.28':
-    resolution: {integrity: sha512-w4qhIJ8ZSitgLAkVay6AbcnC7gP3glYM3fYwKV3srj8m494E3xtrCv6E+bWviiK/8hs6e6t1ij1s2Endql7vzQ==}
-
-  '@volar/source-map@2.4.28':
-    resolution: {integrity: sha512-yX2BDBqJkRXfKw8my8VarTyjv48QwxdJtvRgUpNE5erCsgEUdI2DsLbpa+rOQVAJYshY99szEcRDmyHbF10ggQ==}
-
-  '@volar/typescript@2.4.28':
-    resolution: {integrity: sha512-Ja6yvWrbis2QtN4ClAKreeUZPVYMARDYZl9LMEv1iQ1QdepB6wn0jTRxA9MftYmYa4DQ4k/DaSZpFPUfxl8giw==}
-
   '@vue/compiler-core@3.5.40':
     resolution: {integrity: sha512-39E8IgOhTbVDnoJFMKc2DvYnypcZwUqgUhQkccva/0m6FUwtIKSGV7n1hpVmYcFaoRAwf9pBcwnKlCEsN63ZEQ==}
 
@@ -731,9 +942,6 @@ packages:
 
   '@vue/devtools-api@6.6.4':
     resolution: {integrity: sha512-sGhTPMuXqZ1rVOk32RylztWkfXTRhuS7vgAKv0zjqk8gbsHkJ7xfFf+jbySxt7tWObEJwyKaHMikV/WGDiQm8g==}
-
-  '@vue/language-core@3.3.8':
-    resolution: {integrity: sha512-ieGT8jJdhhy0mGzStZhsg/qPw5bQZJg5yF+3+XU6saf4sM7yo9ZXy3h+nCwrm2+b4qS/SypkNdR2jAF3uei9tA==}
 
   '@vue/reactivity@3.5.40':
     resolution: {integrity: sha512-B7ot9UlUZOi1zbq61/LvE88ZLTV8IlajTdiZTAEiDQgrnIMIZoPr9kGw0Zw46ObW62O9+H/Be3kMbfb7kYPQZA==}
@@ -754,9 +962,6 @@ packages:
     resolution: {integrity: sha512-lGq+9yr1/GuAWaVYIHRjvvySG5/4VfKIvC8EWxStPdcDh/Ka7FG3twP6v4d5BkravUilhIAsG4Qj83t02LWUPQ==}
     engines: {node: '>=0.4.0'}
     hasBin: true
-
-  alien-signals@3.2.1:
-    resolution: {integrity: sha512-I8FjmltrfnDFoZedi5CG8DghVYNhzb/Ijluz7tCSJH0xpd0484Kowhbb1XDYOxfJpU1p5wnM2X54dA+IfGyD1g==}
 
   ansi-regex@6.2.2:
     resolution: {integrity: sha512-Bq3SmSpyFHaWjPk8If9yc6svM8c56dB5BAtW4Qbw5jHTwwXXcTLoRMkpDJp6VL0XzlWaCHTXrkFURMYmD0sLqg==}
@@ -829,9 +1034,6 @@ packages:
     peerDependenciesMeta:
       supports-color:
         optional: true
-
-  elkjs@0.12.0:
-    resolution: {integrity: sha512-YZcKynxVxYoKIOEpywEPwCFdg+BTbxQRNf3pbwdDCvc8O3kQD8bmIwSxKU1eOTVc4Xo+VG9Te+575mlfvOrhEQ==}
 
   emoji-regex@10.6.0:
     resolution: {integrity: sha512-toUI84YS5YmxW219erniWD0CIVOo46xGKColeNQRgOzDorgBi1v4D71/OFzgD9GO2UGKIv1C3Sp8DAn0+j5w7A==}
@@ -917,9 +1119,6 @@ packages:
   ms@2.1.3:
     resolution: {integrity: sha512-6FlzubTLZG3J2a/NVCAleEhjzq5oxgHyaCU9yYXvcLsvoVaHJq/s5xXI6/XXP6tz7R9xAOtHnSO/tXtF3WRTlA==}
 
-  muggle-string@0.4.1:
-    resolution: {integrity: sha512-VNTrAak/KhO2i8dqqnqnAHOa3cYBwXEZe9h+D5h/1ZqFSTEFHdM65lR7RoIqq3tBBYavsOXV84NoHXZ0AkPyqQ==}
-
   mz@2.7.0:
     resolution: {integrity: sha512-z81GNO7nnYMEhrGh9LeymoE4+Yr0Wn5McHIZMK5cfQCl+NDX08sCZgUc9/6MHni9IWuFLm1Z3HTCXu2z9fN62Q==}
 
@@ -931,9 +1130,6 @@ packages:
   object-assign@4.1.1:
     resolution: {integrity: sha512-rJgTQnkUnH1sFw8yT6VSU3zD3sWmu6sZhIseY8VX+GRu3P6F7Fu+JNDoXfklElbLJSnc3FUQHVe4cU5hj+BcUg==}
     engines: {node: '>=0.10.0'}
-
-  path-browserify@1.0.1:
-    resolution: {integrity: sha512-b7uo2UCUOYZcnF/3ID0lulOJi/bafxa1xPe7ZPsammBSpjSWQkjNxlt635YGS2MiR9GjvuXCtz2emr3jbsz98g==}
 
   pathe@2.0.3:
     resolution: {integrity: sha512-WUjGcAqP1gQacoQe+OBJsFA7Ld4DyXuUIjZ5cc75cLHvJ7dtNsTugphxIADwspS+AraAUePCKrSVtPLFj/F88w==}
@@ -1114,19 +1310,10 @@ packages:
       terser:
         optional: true
 
-  vscode-uri@3.1.0:
-    resolution: {integrity: sha512-/BpdSx+yCQGnCvecbyXdxHDkuk55/G3xwnC0GqY4gmQ3j+A+g8kzzgB4Nk/SINjqn6+waqw3EgbVF2QKExkRxQ==}
-
   vue-router@4.6.4:
     resolution: {integrity: sha512-Hz9q5sa33Yhduglwz6g9skT8OBPii+4bFn88w6J+J4MfEo4KRRpmiNG/hHHkdbRFlLBOqxN8y8gf2Fb0MTUgVg==}
     peerDependencies:
       vue: ^3.5.0
-
-  vue-tsc@3.3.8:
-    resolution: {integrity: sha512-xXmYlVQpcwJDWyGlqbHrGVOl1h3UOsASymRibrHc+iy9j/UNnOrOn4u+fntHz4D6Cs74RtapeqVV6CzJeg+UlA==}
-    hasBin: true
-    peerDependencies:
-      typescript: '>=5.0.0'
 
   vue@3.5.40:
     resolution: {integrity: sha512-+8PJ4SJXdn/cHGImF4CKdxlWHIN5Dkt7DoufRREM6h6uVCx2m7QxgcEQmmzyOK8A9mcafg7sFbJFYsdFVubTig==}
@@ -1352,10 +1539,122 @@ snapshots:
       '@jridgewell/resolve-uri': 3.1.2
       '@jridgewell/sourcemap-codec': 1.5.5
 
+  '@leafer-in/animate@2.2.6(@leafer-in/color@2.2.6(@leafer-in/interface@2.2.6(@leafer-ui/interface@2.2.6)(@leafer/interface@2.2.6))(@leafer-ui/draw@2.2.6)(@leafer-ui/interface@2.2.6))(@leafer-in/interface@2.2.6(@leafer-ui/interface@2.2.6)(@leafer/interface@2.2.6))(@leafer-ui/draw@2.2.6)(@leafer-ui/interface@2.2.6)':
+    dependencies:
+      '@leafer-in/color': 2.2.6(@leafer-in/interface@2.2.6(@leafer-ui/interface@2.2.6)(@leafer/interface@2.2.6))(@leafer-ui/draw@2.2.6)(@leafer-ui/interface@2.2.6)
+      '@leafer-in/interface': 2.2.6(@leafer-ui/interface@2.2.6)(@leafer/interface@2.2.6)
+      '@leafer-ui/draw': 2.2.6
+      '@leafer-ui/interface': 2.2.6
+
+  '@leafer-in/arrow@2.2.6(@leafer-in/interface@2.2.6(@leafer-ui/interface@2.2.6)(@leafer/interface@2.2.6))(@leafer-ui/draw@2.2.6)(@leafer-ui/interface@2.2.6)':
+    dependencies:
+      '@leafer-in/interface': 2.2.6(@leafer-ui/interface@2.2.6)(@leafer/interface@2.2.6)
+      '@leafer-ui/draw': 2.2.6
+      '@leafer-ui/interface': 2.2.6
+
+  '@leafer-in/box@2.2.6(@leafer-in/interface@2.2.6(@leafer-ui/interface@2.2.6)(@leafer/interface@2.2.6))(@leafer-ui/draw@2.2.6)(@leafer-ui/interface@2.2.6)':
+    dependencies:
+      '@leafer-in/interface': 2.2.6(@leafer-ui/interface@2.2.6)(@leafer/interface@2.2.6)
+      '@leafer-ui/draw': 2.2.6
+      '@leafer-ui/interface': 2.2.6
+
+  '@leafer-in/bright@2.2.6(@leafer-in/interface@2.2.6(@leafer-ui/interface@2.2.6)(@leafer/interface@2.2.6))(@leafer-ui/draw@2.2.6)(@leafer-ui/interface@2.2.6)':
+    dependencies:
+      '@leafer-in/interface': 2.2.6(@leafer-ui/interface@2.2.6)(@leafer/interface@2.2.6)
+      '@leafer-ui/draw': 2.2.6
+      '@leafer-ui/interface': 2.2.6
+
+  '@leafer-in/color@2.2.6(@leafer-in/interface@2.2.6(@leafer-ui/interface@2.2.6)(@leafer/interface@2.2.6))(@leafer-ui/draw@2.2.6)(@leafer-ui/interface@2.2.6)':
+    dependencies:
+      '@leafer-in/interface': 2.2.6(@leafer-ui/interface@2.2.6)(@leafer/interface@2.2.6)
+      '@leafer-ui/draw': 2.2.6
+      '@leafer-ui/interface': 2.2.6
+
+  '@leafer-in/corner@2.2.6(@leafer-in/interface@2.2.6(@leafer-ui/interface@2.2.6)(@leafer/interface@2.2.6))(@leafer-ui/draw@2.2.6)(@leafer-ui/interface@2.2.6)':
+    dependencies:
+      '@leafer-in/interface': 2.2.6(@leafer-ui/interface@2.2.6)(@leafer/interface@2.2.6)
+      '@leafer-ui/draw': 2.2.6
+      '@leafer-ui/interface': 2.2.6
+
+  '@leafer-in/editor@2.2.6(@leafer-in/interface@2.2.6(@leafer-ui/interface@2.2.6)(@leafer/interface@2.2.6))(@leafer-in/resize@2.2.6(@leafer-in/interface@2.2.6(@leafer-ui/interface@2.2.6)(@leafer/interface@2.2.6))(@leafer-ui/draw@2.2.6)(@leafer-ui/interface@2.2.6))(@leafer-ui/core@2.2.6)(@leafer-ui/draw@2.2.6)(@leafer-ui/interface@2.2.6)':
+    dependencies:
+      '@leafer-in/interface': 2.2.6(@leafer-ui/interface@2.2.6)(@leafer/interface@2.2.6)
+      '@leafer-in/resize': 2.2.6(@leafer-in/interface@2.2.6(@leafer-ui/interface@2.2.6)(@leafer/interface@2.2.6))(@leafer-ui/draw@2.2.6)(@leafer-ui/interface@2.2.6)
+      '@leafer-ui/core': 2.2.6
+      '@leafer-ui/draw': 2.2.6
+      '@leafer-ui/interface': 2.2.6
+
+  '@leafer-in/export@2.2.6(@leafer-in/interface@2.2.6(@leafer-ui/interface@2.2.6)(@leafer/interface@2.2.6))(@leafer-ui/draw@2.2.6)(@leafer-ui/interface@2.2.6)':
+    dependencies:
+      '@leafer-in/interface': 2.2.6(@leafer-ui/interface@2.2.6)(@leafer/interface@2.2.6)
+      '@leafer-ui/draw': 2.2.6
+      '@leafer-ui/interface': 2.2.6
+
+  '@leafer-in/filter@2.2.6(@leafer-in/interface@2.2.6(@leafer-ui/interface@2.2.6)(@leafer/interface@2.2.6))(@leafer-ui/draw@2.2.6)(@leafer-ui/interface@2.2.6)':
+    dependencies:
+      '@leafer-in/interface': 2.2.6(@leafer-ui/interface@2.2.6)(@leafer/interface@2.2.6)
+      '@leafer-ui/draw': 2.2.6
+      '@leafer-ui/interface': 2.2.6
+
+  '@leafer-in/find@2.2.6(@leafer-in/interface@2.2.6(@leafer-ui/interface@2.2.6)(@leafer/interface@2.2.6))(@leafer-ui/draw@2.2.6)(@leafer-ui/interface@2.2.6)':
+    dependencies:
+      '@leafer-in/interface': 2.2.6(@leafer-ui/interface@2.2.6)(@leafer/interface@2.2.6)
+      '@leafer-ui/draw': 2.2.6
+      '@leafer-ui/interface': 2.2.6
+
+  '@leafer-in/flow@2.2.6(@leafer-in/interface@2.2.6(@leafer-ui/interface@2.2.6)(@leafer/interface@2.2.6))(@leafer-in/resize@2.2.6(@leafer-in/interface@2.2.6(@leafer-ui/interface@2.2.6)(@leafer/interface@2.2.6))(@leafer-ui/draw@2.2.6)(@leafer-ui/interface@2.2.6))(@leafer-ui/draw@2.2.6)(@leafer-ui/interface@2.2.6)':
+    dependencies:
+      '@leafer-in/interface': 2.2.6(@leafer-ui/interface@2.2.6)(@leafer/interface@2.2.6)
+      '@leafer-in/resize': 2.2.6(@leafer-in/interface@2.2.6(@leafer-ui/interface@2.2.6)(@leafer/interface@2.2.6))(@leafer-ui/draw@2.2.6)(@leafer-ui/interface@2.2.6)
+      '@leafer-ui/draw': 2.2.6
+      '@leafer-ui/interface': 2.2.6
+
   '@leafer-in/interface@2.2.6(@leafer-ui/interface@2.2.6)(@leafer/interface@2.2.6)':
     dependencies:
       '@leafer-ui/interface': 2.2.6
       '@leafer/interface': 2.2.6
+
+  '@leafer-in/motion-path@2.2.6(@leafer-in/interface@2.2.6(@leafer-ui/interface@2.2.6)(@leafer/interface@2.2.6))(@leafer-ui/draw@2.2.6)(@leafer-ui/interface@2.2.6)':
+    dependencies:
+      '@leafer-in/interface': 2.2.6(@leafer-ui/interface@2.2.6)(@leafer/interface@2.2.6)
+      '@leafer-ui/draw': 2.2.6
+      '@leafer-ui/interface': 2.2.6
+
+  '@leafer-in/resize@2.2.6(@leafer-in/interface@2.2.6(@leafer-ui/interface@2.2.6)(@leafer/interface@2.2.6))(@leafer-ui/draw@2.2.6)(@leafer-ui/interface@2.2.6)':
+    dependencies:
+      '@leafer-in/interface': 2.2.6(@leafer-ui/interface@2.2.6)(@leafer/interface@2.2.6)
+      '@leafer-ui/draw': 2.2.6
+      '@leafer-ui/interface': 2.2.6
+
+  '@leafer-in/robot@2.2.6(@leafer-in/interface@2.2.6(@leafer-ui/interface@2.2.6)(@leafer/interface@2.2.6))(@leafer-ui/draw@2.2.6)(@leafer-ui/interface@2.2.6)':
+    dependencies:
+      '@leafer-in/interface': 2.2.6(@leafer-ui/interface@2.2.6)(@leafer/interface@2.2.6)
+      '@leafer-ui/draw': 2.2.6
+      '@leafer-ui/interface': 2.2.6
+
+  '@leafer-in/scale-fixed@2.2.6(@leafer-in/interface@2.2.6(@leafer-ui/interface@2.2.6)(@leafer/interface@2.2.6))(@leafer-ui/draw@2.2.6)(@leafer-ui/interface@2.2.6)':
+    dependencies:
+      '@leafer-in/interface': 2.2.6(@leafer-ui/interface@2.2.6)(@leafer/interface@2.2.6)
+      '@leafer-ui/draw': 2.2.6
+      '@leafer-ui/interface': 2.2.6
+
+  '@leafer-in/scroll@2.2.6(@leafer-in/interface@2.2.6(@leafer-ui/interface@2.2.6)(@leafer/interface@2.2.6))(@leafer-ui/core@2.2.6)(@leafer-ui/interface@2.2.6)':
+    dependencies:
+      '@leafer-in/interface': 2.2.6(@leafer-ui/interface@2.2.6)(@leafer/interface@2.2.6)
+      '@leafer-ui/core': 2.2.6
+      '@leafer-ui/interface': 2.2.6
+
+  '@leafer-in/scroller@2.2.6(@leafer-in/interface@2.2.6(@leafer-ui/interface@2.2.6)(@leafer/interface@2.2.6))(@leafer-ui/core@2.2.6)(@leafer-ui/interface@2.2.6)':
+    dependencies:
+      '@leafer-in/interface': 2.2.6(@leafer-ui/interface@2.2.6)(@leafer/interface@2.2.6)
+      '@leafer-ui/core': 2.2.6
+      '@leafer-ui/interface': 2.2.6
+
+  '@leafer-in/state@2.2.6(@leafer-in/interface@2.2.6(@leafer-ui/interface@2.2.6)(@leafer/interface@2.2.6))(@leafer-ui/core@2.2.6)(@leafer-ui/interface@2.2.6)':
+    dependencies:
+      '@leafer-in/interface': 2.2.6(@leafer-ui/interface@2.2.6)(@leafer/interface@2.2.6)
+      '@leafer-ui/core': 2.2.6
+      '@leafer-ui/interface': 2.2.6
 
   '@leafer-in/view@2.2.6(@leafer-in/interface@2.2.6(@leafer-ui/interface@2.2.6)(@leafer/interface@2.2.6))(@leafer-ui/draw@2.2.6)(@leafer-ui/interface@2.2.6)':
     dependencies:
@@ -1456,6 +1755,18 @@ snapshots:
     dependencies:
       '@leafer/interface': 2.2.6
 
+  '@leafer-ui/node@2.2.6':
+    dependencies:
+      '@leafer-in/export': 2.2.6(@leafer-in/interface@2.2.6(@leafer-ui/interface@2.2.6)(@leafer/interface@2.2.6))(@leafer-ui/draw@2.2.6)(@leafer-ui/interface@2.2.6)
+      '@leafer-in/interface': 2.2.6(@leafer-ui/interface@2.2.6)(@leafer/interface@2.2.6)
+      '@leafer-ui/core': 2.2.6
+      '@leafer-ui/draw': 2.2.6
+      '@leafer-ui/interface': 2.2.6
+      '@leafer-ui/partner': 2.2.6
+      '@leafer/interface': 2.2.6
+      '@leafer/node-core': 2.2.6
+      '@leafer/partner': 2.2.6
+
   '@leafer-ui/paint@2.2.6':
     dependencies:
       '@leafer-ui/draw': 2.2.6
@@ -1488,6 +1799,10 @@ snapshots:
       '@leafer/interface': 2.2.6
       '@leafer/partner': 2.2.6
       '@leafer/web-core': 2.2.6
+
+  '@leafer/canvas-node@2.2.6':
+    dependencies:
+      '@leafer/core': 2.2.6
 
   '@leafer/canvas-web@2.2.6':
     dependencies:
@@ -1576,6 +1891,10 @@ snapshots:
       '@leafer/math': 2.2.6
       '@leafer/platform': 2.2.6
 
+  '@leafer/image-node@2.2.6':
+    dependencies:
+      '@leafer/core': 2.2.6
+
   '@leafer/image-web@2.2.6':
     dependencies:
       '@leafer/core': 2.2.6
@@ -1604,6 +1923,44 @@ snapshots:
   '@leafer/list@2.2.6': {}
 
   '@leafer/math@2.2.6': {}
+
+  '@leafer/node-core@2.2.6':
+    dependencies:
+      '@leafer/canvas-node': 2.2.6
+      '@leafer/core': 2.2.6
+      '@leafer/image-node': 2.2.6
+      '@leafer/interface': 2.2.6
+      '@leafer/partner': 2.2.6
+
+  '@leafer/node@2.2.6(@leafer-ui/interface@2.2.6)(@leafer/interface@2.2.6)':
+    dependencies:
+      '@leafer-in/animate': 2.2.6(@leafer-in/color@2.2.6(@leafer-in/interface@2.2.6(@leafer-ui/interface@2.2.6)(@leafer/interface@2.2.6))(@leafer-ui/draw@2.2.6)(@leafer-ui/interface@2.2.6))(@leafer-in/interface@2.2.6(@leafer-ui/interface@2.2.6)(@leafer/interface@2.2.6))(@leafer-ui/draw@2.2.6)(@leafer-ui/interface@2.2.6)
+      '@leafer-in/arrow': 2.2.6(@leafer-in/interface@2.2.6(@leafer-ui/interface@2.2.6)(@leafer/interface@2.2.6))(@leafer-ui/draw@2.2.6)(@leafer-ui/interface@2.2.6)
+      '@leafer-in/box': 2.2.6(@leafer-in/interface@2.2.6(@leafer-ui/interface@2.2.6)(@leafer/interface@2.2.6))(@leafer-ui/draw@2.2.6)(@leafer-ui/interface@2.2.6)
+      '@leafer-in/bright': 2.2.6(@leafer-in/interface@2.2.6(@leafer-ui/interface@2.2.6)(@leafer/interface@2.2.6))(@leafer-ui/draw@2.2.6)(@leafer-ui/interface@2.2.6)
+      '@leafer-in/color': 2.2.6(@leafer-in/interface@2.2.6(@leafer-ui/interface@2.2.6)(@leafer/interface@2.2.6))(@leafer-ui/draw@2.2.6)(@leafer-ui/interface@2.2.6)
+      '@leafer-in/corner': 2.2.6(@leafer-in/interface@2.2.6(@leafer-ui/interface@2.2.6)(@leafer/interface@2.2.6))(@leafer-ui/draw@2.2.6)(@leafer-ui/interface@2.2.6)
+      '@leafer-in/editor': 2.2.6(@leafer-in/interface@2.2.6(@leafer-ui/interface@2.2.6)(@leafer/interface@2.2.6))(@leafer-in/resize@2.2.6(@leafer-in/interface@2.2.6(@leafer-ui/interface@2.2.6)(@leafer/interface@2.2.6))(@leafer-ui/draw@2.2.6)(@leafer-ui/interface@2.2.6))(@leafer-ui/core@2.2.6)(@leafer-ui/draw@2.2.6)(@leafer-ui/interface@2.2.6)
+      '@leafer-in/export': 2.2.6(@leafer-in/interface@2.2.6(@leafer-ui/interface@2.2.6)(@leafer/interface@2.2.6))(@leafer-ui/draw@2.2.6)(@leafer-ui/interface@2.2.6)
+      '@leafer-in/filter': 2.2.6(@leafer-in/interface@2.2.6(@leafer-ui/interface@2.2.6)(@leafer/interface@2.2.6))(@leafer-ui/draw@2.2.6)(@leafer-ui/interface@2.2.6)
+      '@leafer-in/find': 2.2.6(@leafer-in/interface@2.2.6(@leafer-ui/interface@2.2.6)(@leafer/interface@2.2.6))(@leafer-ui/draw@2.2.6)(@leafer-ui/interface@2.2.6)
+      '@leafer-in/flow': 2.2.6(@leafer-in/interface@2.2.6(@leafer-ui/interface@2.2.6)(@leafer/interface@2.2.6))(@leafer-in/resize@2.2.6(@leafer-in/interface@2.2.6(@leafer-ui/interface@2.2.6)(@leafer/interface@2.2.6))(@leafer-ui/draw@2.2.6)(@leafer-ui/interface@2.2.6))(@leafer-ui/draw@2.2.6)(@leafer-ui/interface@2.2.6)
+      '@leafer-in/interface': 2.2.6(@leafer-ui/interface@2.2.6)(@leafer/interface@2.2.6)
+      '@leafer-in/motion-path': 2.2.6(@leafer-in/interface@2.2.6(@leafer-ui/interface@2.2.6)(@leafer/interface@2.2.6))(@leafer-ui/draw@2.2.6)(@leafer-ui/interface@2.2.6)
+      '@leafer-in/resize': 2.2.6(@leafer-in/interface@2.2.6(@leafer-ui/interface@2.2.6)(@leafer/interface@2.2.6))(@leafer-ui/draw@2.2.6)(@leafer-ui/interface@2.2.6)
+      '@leafer-in/robot': 2.2.6(@leafer-in/interface@2.2.6(@leafer-ui/interface@2.2.6)(@leafer/interface@2.2.6))(@leafer-ui/draw@2.2.6)(@leafer-ui/interface@2.2.6)
+      '@leafer-in/scale-fixed': 2.2.6(@leafer-in/interface@2.2.6(@leafer-ui/interface@2.2.6)(@leafer/interface@2.2.6))(@leafer-ui/draw@2.2.6)(@leafer-ui/interface@2.2.6)
+      '@leafer-in/scroll': 2.2.6(@leafer-in/interface@2.2.6(@leafer-ui/interface@2.2.6)(@leafer/interface@2.2.6))(@leafer-ui/core@2.2.6)(@leafer-ui/interface@2.2.6)
+      '@leafer-in/scroller': 2.2.6(@leafer-in/interface@2.2.6(@leafer-ui/interface@2.2.6)(@leafer/interface@2.2.6))(@leafer-ui/core@2.2.6)(@leafer-ui/interface@2.2.6)
+      '@leafer-in/state': 2.2.6(@leafer-in/interface@2.2.6(@leafer-ui/interface@2.2.6)(@leafer/interface@2.2.6))(@leafer-ui/core@2.2.6)(@leafer-ui/interface@2.2.6)
+      '@leafer-in/view': 2.2.6(@leafer-in/interface@2.2.6(@leafer-ui/interface@2.2.6)(@leafer/interface@2.2.6))(@leafer-ui/draw@2.2.6)(@leafer-ui/interface@2.2.6)
+      '@leafer-in/viewport': 2.2.6(@leafer-in/interface@2.2.6(@leafer-ui/interface@2.2.6)(@leafer/interface@2.2.6))(@leafer-ui/core@2.2.6)(@leafer-ui/interface@2.2.6)
+      '@leafer-ui/core': 2.2.6
+      '@leafer-ui/draw': 2.2.6
+      '@leafer-ui/node': 2.2.6
+    transitivePeerDependencies:
+      - '@leafer-ui/interface'
+      - '@leafer/interface'
 
   '@leafer/partner@2.2.6':
     dependencies:
@@ -1650,6 +2007,53 @@ snapshots:
       '@leafer/image-web': 2.2.6
       '@leafer/interface': 2.2.6
       '@leafer/partner': 2.2.6
+
+  '@napi-rs/canvas-android-arm64@1.0.3':
+    optional: true
+
+  '@napi-rs/canvas-darwin-arm64@1.0.3':
+    optional: true
+
+  '@napi-rs/canvas-darwin-x64@1.0.3':
+    optional: true
+
+  '@napi-rs/canvas-linux-arm-gnueabihf@1.0.3':
+    optional: true
+
+  '@napi-rs/canvas-linux-arm64-gnu@1.0.3':
+    optional: true
+
+  '@napi-rs/canvas-linux-arm64-musl@1.0.3':
+    optional: true
+
+  '@napi-rs/canvas-linux-riscv64-gnu@1.0.3':
+    optional: true
+
+  '@napi-rs/canvas-linux-x64-gnu@1.0.3':
+    optional: true
+
+  '@napi-rs/canvas-linux-x64-musl@1.0.3':
+    optional: true
+
+  '@napi-rs/canvas-win32-arm64-msvc@1.0.3':
+    optional: true
+
+  '@napi-rs/canvas-win32-x64-msvc@1.0.3':
+    optional: true
+
+  '@napi-rs/canvas@1.0.3':
+    optionalDependencies:
+      '@napi-rs/canvas-android-arm64': 1.0.3
+      '@napi-rs/canvas-darwin-arm64': 1.0.3
+      '@napi-rs/canvas-darwin-x64': 1.0.3
+      '@napi-rs/canvas-linux-arm-gnueabihf': 1.0.3
+      '@napi-rs/canvas-linux-arm64-gnu': 1.0.3
+      '@napi-rs/canvas-linux-arm64-musl': 1.0.3
+      '@napi-rs/canvas-linux-riscv64-gnu': 1.0.3
+      '@napi-rs/canvas-linux-x64-gnu': 1.0.3
+      '@napi-rs/canvas-linux-x64-musl': 1.0.3
+      '@napi-rs/canvas-win32-arm64-msvc': 1.0.3
+      '@napi-rs/canvas-win32-x64-msvc': 1.0.3
 
   '@rollup/rollup-android-arm-eabi@4.62.3':
     optional: true
@@ -1743,18 +2147,6 @@ snapshots:
       vite: 5.4.21(@types/node@24.13.3)
       vue: 3.5.40(typescript@5.8.3)
 
-  '@volar/language-core@2.4.28':
-    dependencies:
-      '@volar/source-map': 2.4.28
-
-  '@volar/source-map@2.4.28': {}
-
-  '@volar/typescript@2.4.28':
-    dependencies:
-      '@volar/language-core': 2.4.28
-      path-browserify: 1.0.1
-      vscode-uri: 3.1.0
-
   '@vue/compiler-core@3.5.40':
     dependencies:
       '@babel/parser': 7.29.7
@@ -1787,16 +2179,6 @@ snapshots:
 
   '@vue/devtools-api@6.6.4': {}
 
-  '@vue/language-core@3.3.8':
-    dependencies:
-      '@volar/language-core': 2.4.28
-      '@vue/compiler-dom': 3.5.40
-      '@vue/shared': 3.5.40
-      alien-signals: 3.2.1
-      muggle-string: 0.4.1
-      path-browserify: 1.0.1
-      picomatch: 4.0.5
-
   '@vue/reactivity@3.5.40':
     dependencies:
       '@vue/shared': 3.5.40
@@ -1822,8 +2204,6 @@ snapshots:
   '@vue/shared@3.5.40': {}
 
   acorn@8.18.0: {}
-
-  alien-signals@3.2.1: {}
 
   ansi-regex@6.2.2: {}
 
@@ -1880,8 +2260,6 @@ snapshots:
   debug@4.4.3:
     dependencies:
       ms: 2.1.3
-
-  elkjs@0.12.0: {}
 
   emoji-regex@10.6.0: {}
 
@@ -2015,8 +2393,6 @@ snapshots:
 
   ms@2.1.3: {}
 
-  muggle-string@0.4.1: {}
-
   mz@2.7.0:
     dependencies:
       any-promise: 1.3.0
@@ -2026,8 +2402,6 @@ snapshots:
   nanoid@3.3.16: {}
 
   object-assign@4.1.1: {}
-
-  path-browserify@1.0.1: {}
 
   pathe@2.0.3: {}
 
@@ -2201,18 +2575,10 @@ snapshots:
       '@types/node': 24.13.3
       fsevents: 2.3.3
 
-  vscode-uri@3.1.0: {}
-
   vue-router@4.6.4(vue@3.5.40(typescript@5.8.3)):
     dependencies:
       '@vue/devtools-api': 6.6.4
       vue: 3.5.40(typescript@5.8.3)
-
-  vue-tsc@3.3.8(typescript@5.8.3):
-    dependencies:
-      '@volar/typescript': 2.4.28
-      '@vue/language-core': 3.3.8
-      typescript: 5.8.3
 
   vue@3.5.40(typescript@5.8.3):
     dependencies:
