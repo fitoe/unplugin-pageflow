@@ -1,0 +1,6 @@
+{
+  "name": "pageflow-qwik-city-fixture",
+  "private": true,
+  "type": "module",
+  "scripts": { "dev": "vite --mode ssr" }
+}

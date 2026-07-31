@@ -1,5 +1,10 @@
 export interface PageFlowOptions {
   enabled?: boolean
+  framework?: PageFlowFramework
+  /** Framework integrations use this when their Vite root differs from the project root. */
+  projectRoot?: string
+  /** Routes for plain Vite apps or router integrations without runtime route discovery. */
+  routes?: PageFlowRuntimeRoute[]
   previewPath?: string
   appUrl?: string
   dynamicParams?: Record<string, Record<string, string | number>>
@@ -7,8 +12,12 @@ export interface PageFlowOptions {
   groupNames?: Record<string, string>
 }
 
+export type PageFlowFramework = 'auto' | 'uni-app' | 'vue' | 'nuxt' | 'astro' | 'react-router' | 'sveltekit' | 'solid-start' | 'next' | 'qwik-city' | 'vite'
+
 export interface ResolvedPageFlowOptions {
   enabled: boolean
+  framework: PageFlowFramework
+  routes: PageFlowRuntimeRoute[]
   previewPath: string
   appUrl: string
   dynamicParams: Record<string, Record<string, string | number>>

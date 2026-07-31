@@ -1,12 +1,13 @@
 import type {
   PageFlowRuntimeLink,
-  PageFlowRuntimeRoute,
-  PageFlowRouteMode,
   ResolvedPageFlowOptions,
 } from '../shared/types'
 import { PAGEFLOW_PREVIEW_PARAM } from './index'
 import { startPageFlowDomStatePersistence } from './state'
 import { PAGEFLOW_API_RESULT_MESSAGE, PAGEFLOW_HOTSPOT_HOVER_MESSAGE, PAGEFLOW_NAVIGATE_MESSAGE, PAGEFLOW_NETWORK_EVENT, PAGEFLOW_PAGE_REPORTED_MESSAGE, PAGEFLOW_READY_EVENT, PAGEFLOW_SCAN_MESSAGE, PAGEFLOW_SCAN_RESULT_MESSAGE } from '../shared/protocol'
+import type { PageFlowRouterAdapter } from './adapters/types'
+import { findVueRouterAdapter } from './adapters/vue-router'
+import { findBrowserHistoryAdapter } from './adapters/browser-history'
 
 const apiInspectionEnabled = new URLSearchParams(window.location.search).has('__unplugin_pageflow_inspect')
 
@@ -110,33 +111,6 @@ function trackPreviewRequests() {
   }
 }
 
-interface RouterRecordLike {
-  name?: string | symbol | null
-  path: string
-  meta?: Record<string, unknown>
-  components?: Record<string, unknown>
-}
-
-interface RouterLike {
-  options?: { history?: { base?: string; createHref?(location: string): string } }
-  getRoutes(): RouterRecordLike[]
-  currentRoute?: { value?: { path?: string; fullPath?: string; matched?: RouterRecordLike[] } }
-  resolve?(to: unknown): { path?: string; fullPath?: string; matched?: RouterRecordLike[] }
-  push?(to: unknown): unknown
-  replace?(to: unknown): unknown
-  afterEach?(callback: () => void): () => void
-}
-
-interface VueAppContainer extends Element {
-  __vue_app__?: {
-    config?: {
-      globalProperties?: {
-        $router?: RouterLike
-      }
-    }
-  }
-}
-
 interface VueRenderedElement extends Element {
   __vueParentComponent?: {
     vnode?: { el?: Element; props?: Record<string, unknown> | null }
@@ -157,14 +131,6 @@ interface UniNavigationApi {
   redirectTo?(options: UniNavigationOptions): unknown
   switchTab?(options: UniNavigationOptions): unknown
   reLaunch?(options: UniNavigationOptions): unknown
-}
-
-function findRouter() {
-  const containers = document.querySelectorAll<VueAppContainer>('[data-v-app], #app')
-  for (const container of containers) {
-    const router = container.__vue_app__?.config?.globalProperties?.$router
-    if (router?.getRoutes) return router
-  }
 }
 
 function repairPreviewAssetUrls(config: ResolvedPageFlowOptions) {
@@ -208,35 +174,11 @@ function repairPreviewAssetUrls(config: ResolvedPageFlowOptions) {
   })
 }
 
-function normalizeRoutes(router: RouterLike): PageFlowRuntimeRoute[] {
-  return router.getRoutes().map(route => {
-    const name = route.name == null ? undefined : String(route.name)
-    const metaTitle = route.meta?.title
-    const component = route.components?.default as { __file?: unknown } | (() => unknown) | undefined
-    let componentFile: string | undefined
-    if (component && typeof component === 'object' && typeof component.__file === 'string')
-      componentFile = component.__file.replaceAll('\\', '/')
-    else if (typeof component === 'function')
-      componentFile = component.toString().match(/["']([^"']+\.vue)["']/)?.[1]?.replaceAll('\\', '/')
-    return {
-      id: name ?? route.path,
-      name,
-      path: route.path,
-      title: typeof metaTitle === 'string' ? metaTitle : name ?? route.path,
-      componentFile,
-    }
-  })
-}
-
-async function publishRoutes(router: RouterLike, config: ResolvedPageFlowOptions) {
-  const routeMode: PageFlowRouteMode = router.options?.history?.createHref?.('/').includes('#')
-    || window.location.hash.startsWith('#/')
-    ? 'hash'
-    : 'history'
+async function publishRoutes(router: PageFlowRouterAdapter, config: ResolvedPageFlowOptions) {
   await fetch(`${config.previewPath}api/routes`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ routeMode, routes: normalizeRoutes(router) }),
+    body: JSON.stringify({ routeMode: router.routeMode(), routes: router.routes() }),
   })
 }
 
@@ -250,26 +192,6 @@ function associateProgrammaticElement(element: Element, target: string, location
 }
 let lastClickedElement: Element | null = null
 
-function routePath(router: RouterLike) {
-  const matched = router.currentRoute?.value?.matched
-  return matched?.[matched.length - 1]?.path
-    ?? router.currentRoute?.value?.path
-    ?? window.location.pathname
-}
-
-function targetPath(router: RouterLike, to: unknown) {
-  const resolved = router.resolve?.(to)
-  const matched = resolved?.matched
-  return matched?.[matched.length - 1]?.path ?? resolved?.path
-}
-
-function anchorRoutePath(router: RouterLike, target: URL) {
-  if (target.hash.startsWith('#/')) return target.hash.slice(1)
-  const base = router.options?.history?.base?.replace(/\/$/, '') ?? ''
-  if (base && target.pathname.startsWith(`${base}/`)) return target.pathname.slice(base.length)
-  return target.pathname
-}
-
 function notifyNavigation(to: string, location = to, interaction?: 'hotspot') {
   if (window.parent === window) return
   window.parent.postMessage({
@@ -278,13 +200,6 @@ function notifyNavigation(to: string, location = to, interaction?: 'hotspot') {
     location,
     ...(interaction ? { interaction } : {}),
   }, window.location.origin)
-}
-
-function anchorNavigationLocation(router: RouterLike, target: URL) {
-  if (target.hash.startsWith('#/')) return target.hash.slice(1)
-  const base = router.options?.history?.base?.replace(/\/$/, '') ?? ''
-  const pathname = base && target.pathname.startsWith(`${base}/`) ? target.pathname.slice(base.length) : target.pathname
-  return `${pathname}${target.search}${target.hash}`
 }
 
 const hotspotHoverTargets = new WeakMap<Element, string[]>()
@@ -415,48 +330,7 @@ function hasClickHandler(element: Element) {
   return (element as HTMLElement).onclick != null
 }
 
-function renderedNavigationTargets(element: Element, router: RouterLike) {
-  const component = (element as VueRenderedElement).__vueParentComponent
-  if (!component) return []
-  const sources: string[] = []
-  const handlers = { ...component.vnode?.props, ...component.subTree?.props }
-  Object.entries(handlers ?? {}).forEach(([key, value]) => {
-    if (/^onClick(?:Once|Capture|Passive)*$/i.test(key) && typeof value === 'function') sources.push(value.toString())
-  })
-  let current: VueRenderedElement['__vueParentComponent'] = component
-  for (let depth = 0; current && depth < 4; depth++, current = current.parent) {
-    const listeners = current.vnode?.props ?? {}
-    for (const source of [...sources]) {
-      for (const emitted of source.matchAll(/(?:\$?emit)\s*\(\s*(["'])([^"']+)\1/g)) {
-        const listener = `on${emitted[2].charAt(0).toUpperCase()}${emitted[2].slice(1)}`
-        const candidate = listeners[listener]
-        if (typeof candidate === 'function' && !sources.includes(candidate.toString())) sources.push(candidate.toString())
-      }
-    }
-    const setupState = current.setupState ?? {}
-    for (const source of [...sources]) {
-      for (const identifier of source.matchAll(/\b([A-Za-z_$][\w$]*)\b/g)) {
-        const candidate = setupState[identifier[1]]
-        if (typeof candidate === 'function' && !sources.includes(candidate.toString())) sources.push(candidate.toString())
-      }
-    }
-  }
-  const targets = new Set<string>()
-  const pattern = /\b(?:push|replace|navigateTo|redirectTo|switchTab|reLaunch)\s*\(\s*(?:\{\s*(?:url|path)\s*:\s*)?(["'`])([^"'`$]+)/g
-  sources.forEach(source => {
-    for (const match of source.matchAll(pattern)) {
-      const target = targetPath(router, match[2])
-      if (target) targets.add(target)
-    }
-    for (const match of source.matchAll(/(["'`])(\/[^"'`$]*)/g)) {
-      const target = targetPath(router, match[2])
-      if (target) targets.add(target)
-    }
-  })
-  return [...targets]
-}
-
-function collectLinks(router: RouterLike) {
+function collectLinks(router: PageFlowRouterAdapter) {
   let layer = document.querySelector<HTMLElement>('[data-unplugin-pageflow-hotspot-layer]')
   if (!layer) {
     layer = document.createElement('div')
@@ -479,16 +353,13 @@ function collectLinks(router: RouterLike) {
     const label = anchor.getAttribute('aria-label')?.trim()
       || anchor.textContent?.trim()
       || target.pathname
-    const anchorPath = anchorRoutePath(router, target)
-    const matched = router.resolve?.(anchorPath).matched
-    const routePath = matched?.[matched.length - 1]?.path ?? anchorPath
-    const location = anchorNavigationLocation(router, target)
-    if (!addHotspot(layer, anchor, 'link', [routePath], [location])) return
-    links.push({ label, to: routePath, location, hotspot: hotspotCenter(anchor) })
+    const navigation = router.resolveAnchor(target)
+    if (!addHotspot(layer, anchor, 'link', [navigation.path], [navigation.location])) return
+    links.push({ label, to: navigation.path, location: navigation.location, hotspot: hotspotCenter(anchor) })
   })
   document.querySelectorAll<HTMLElement>('[data-pageflow-to]').forEach(element => {
     const declaredTarget = element.dataset.pageflowTo
-    const to = declaredTarget && targetPath(router, declaredTarget)
+    const to = declaredTarget && router.resolve(declaredTarget)?.path
     if (!to || !addHotspot(layer!, element, 'link', [to], [declaredTarget!])) return
     links.push({ label: element.getAttribute('aria-label')?.trim() || element.textContent?.trim() || to, to, location: declaredTarget, hotspot: hotspotCenter(element) })
   })
@@ -498,7 +369,7 @@ function collectLinks(router: RouterLike) {
     if (element.querySelector('a[href]')) return
     if (element.hasAttribute('data-pageflow-to')) return
     const label = element.getAttribute('aria-label')?.trim() || element.textContent?.trim() || 'Navigation'
-    const targets = renderedNavigationTargets(element, router)
+    const targets = router.renderedNavigationTargets?.(element) ?? []
     // A click handler alone is not a page relationship (checkboxes, inputs,
     // accordions, etc.). Only render an event hotspot after a navigation
     // target has actually been resolved.
@@ -520,10 +391,10 @@ function collectLinks(router: RouterLike) {
   return [...uniqueLinks.values()]
 }
 
-async function publishPage(router: RouterLike, config: ResolvedPageFlowOptions) {
+async function publishPage(router: PageFlowRouterAdapter, config: ResolvedPageFlowOptions) {
   if (!new URLSearchParams(window.location.search).has(PAGEFLOW_PREVIEW_PARAM)) return
   await new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve())))
-  const path = routePath(router)
+  const path = router.currentPath()
   const page = { path, title: document.title, links: collectLinks(router) }
   await fetch(`${config.previewPath}api/page`, {
     method: 'POST',
@@ -535,12 +406,12 @@ async function publishPage(router: RouterLike, config: ResolvedPageFlowOptions) 
   return page
 }
 
-async function scanRenderedPage(router: RouterLike) {
+async function scanRenderedPage(router: PageFlowRouterAdapter) {
   await new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve())))
-  return { path: routePath(router), title: document.title, links: collectLinks(router) }
+  return { path: router.currentPath(), title: document.title, links: collectLinks(router) }
 }
 
-function protectPreviewInteractions(router: RouterLike, config: ResolvedPageFlowOptions) {
+function protectPreviewInteractions(router: PageFlowRouterAdapter, config: ResolvedPageFlowOptions) {
   if (!new URLSearchParams(window.location.search).has(PAGEFLOW_PREVIEW_PARAM)) return
   document.addEventListener('click', event => {
     lastClickedElement = event.target as Element | null
@@ -549,34 +420,28 @@ function protectPreviewInteractions(router: RouterLike, config: ResolvedPageFlow
     if (anchor) {
       event.preventDefault()
       event.stopImmediatePropagation()
-      const target = anchorRoutePath(router, new URL(anchor.href, window.location.href))
-      notifyNavigation(targetPath(router, target) ?? target, anchorNavigationLocation(router, new URL(anchor.href, window.location.href)))
+      const navigation = router.resolveAnchor(new URL(anchor.href, window.location.href))
+      notifyNavigation(navigation.path, navigation.location)
     }
   }, true)
   document.addEventListener('submit', event => event.preventDefault(), true)
 
-  ;(['push', 'replace'] as const).forEach(method => {
-    const original = router[method]
-    if (!original) return
-    router[method] = (to: unknown) => {
-      const target = targetPath(router, to)
+  router.interceptNavigation((navigation, method) => {
+      const target = navigation.path
       if (target) {
         const element = lastClickedElement?.closest('a, button, [role="link"], [role="button"], uni-button, uni-view')
           ?? lastClickedElement
         const label = element?.textContent?.trim() || `${method} ${target}`
-        const resolved = router.resolve?.(to)
-        programmaticLinks.set(`${routePath(router)}:${target}`, {
+        programmaticLinks.set(`${router.currentPath()}:${target}`, {
           label,
           to: target,
-          location: resolved?.fullPath ?? resolved?.path ?? target,
+          location: navigation.location,
           hotspot: element ? hotspotCenter(element) : undefined,
         })
-        if (element) associateProgrammaticElement(element, target, resolved?.fullPath ?? resolved?.path ?? target)
-        if (element) notifyNavigation(target, resolved?.fullPath ?? resolved?.path ?? target)
+        if (element) associateProgrammaticElement(element, target, navigation.location)
+        if (element) notifyNavigation(target, navigation.location)
         void publishPage(router, config)
       }
-      return Promise.resolve()
-    }
   })
 
   const uni = (window as Window & { uni?: UniNavigationApi }).uni
@@ -584,12 +449,12 @@ function protectPreviewInteractions(router: RouterLike, config: ResolvedPageFlow
     if (!uni?.[method]) return
     uni[method] = (options: UniNavigationOptions) => {
       const location = options?.url
-      const target = location && targetPath(router, location)
+      const target = location && router.resolve(location)?.path
       if (target) {
         const element = lastClickedElement?.closest('a, button, [role="link"], [role="button"], uni-button, uni-view')
           ?? lastClickedElement
         const label = element?.textContent?.trim() || `${method} ${target}`
-        programmaticLinks.set(`${routePath(router)}:${target}`, {
+        programmaticLinks.set(`${router.currentPath()}:${target}`, {
           label,
           to: target,
           location,
@@ -609,7 +474,7 @@ function protectPreviewInteractions(router: RouterLike, config: ResolvedPageFlow
   })
 }
 
-function observePage(router: RouterLike, config: ResolvedPageFlowOptions) {
+function observePage(router: PageFlowRouterAdapter, config: ResolvedPageFlowOptions) {
   if (!new URLSearchParams(window.location.search).has(PAGEFLOW_PREVIEW_PARAM)) return
   let timer: ReturnType<typeof setTimeout> | undefined
   const update = () => {
@@ -629,15 +494,17 @@ function observePage(router: RouterLike, config: ResolvedPageFlowOptions) {
 export async function startPageFlowRuntime(config: ResolvedPageFlowOptions) {
   if (!config.enabled) return
 
+  if (config.routes?.length) window.__UNPLUGIN_PAGEFLOW_ROUTES__ = config.routes
+
   trackPreviewRequests()
   repairPreviewAssetUrls(config)
   Object.assign(window, {
     __UNPLUGIN_PAGEFLOW_READY__: () => window.dispatchEvent(new Event(PAGEFLOW_READY_EVENT)),
   })
 
-  let router: RouterLike | undefined
+  let router: PageFlowRouterAdapter | undefined
   for (let attempt = 0; attempt < 50 && !router; attempt++) {
-    router = findRouter()
+    router = findVueRouterAdapter() ?? findBrowserHistoryAdapter()
     if (!router) await new Promise(resolve => setTimeout(resolve, 100))
   }
 
@@ -673,7 +540,7 @@ export async function startPageFlowRuntime(config: ResolvedPageFlowOptions) {
     }, true)
   }
   observePage(router, config)
-  router.afterEach?.(() => {
+  router.onRouteChange(() => {
     if (!previewMode) void publishRoutes(router, config)
     void publishPage(router, config)
   })

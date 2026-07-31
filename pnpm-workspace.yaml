@@ -1,2 +1,6 @@
 allowBuilds:
-  esbuild: set this to true or false
+  '@parcel/watcher': true
+  esbuild: true
+  sharp: true
+overrides:
+  vite-plugin-solid: 2.10.2

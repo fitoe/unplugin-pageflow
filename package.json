@@ -16,11 +16,42 @@
     "./runtime-state": {
       "types": "./dist/runtime/state.d.ts",
       "import": "./dist/runtime/state.js"
+    },
+    "./nuxt": {
+      "types": "./dist/nuxt/index.d.ts",
+      "import": "./dist/nuxt/index.js"
+    },
+    "./astro": {
+      "types": "./dist/astro/index.d.ts",
+      "import": "./dist/astro/index.js"
+    },
+    "./react-router": {
+      "types": "./dist/react-router/index.d.ts",
+      "import": "./dist/react-router/index.js"
+    },
+    "./sveltekit": {
+      "types": "./dist/sveltekit/index.d.ts",
+      "import": "./dist/sveltekit/index.js"
+    },
+    "./solid-start": {
+      "types": "./dist/solid-start/index.d.ts",
+      "import": "./dist/solid-start/index.js"
+    },
+    "./next": {
+      "types": "./dist/next/index.d.ts",
+      "import": "./dist/next/index.js"
+    },
+    "./qwik-city": {
+      "types": "./dist/qwik-city/index.d.ts",
+      "import": "./dist/qwik-city/index.js"
     }
+  },
+  "bin": {
+    "pageflow-next": "./dist/next/index.js"
   },
   "files": [
     "dist",
-    "docs",
+    "docs/demo.png",
     "src/plugin",
     "src/client",
     "src/runtime",
@@ -55,9 +86,12 @@
   ],
   "scripts": {
     "dev": "vite",
-    "dev:plugin": "concurrently -k -n plugin,client \"tsup src/plugin/index.ts src/runtime/client.ts src/runtime/state.ts --format esm --dts --out-dir dist --external unplugin --external vue --external vue-router --tsconfig tsconfig.app.json --watch\" \"vite build --config vite.package.config.ts --watch\"",
+    "docs:dev": "vitepress dev docs",
+    "docs:build": "vitepress build docs",
+    "docs:preview": "vitepress preview docs",
+    "dev:plugin": "concurrently -k -n plugin,client \"tsup src/plugin/index.ts src/runtime/client.ts src/runtime/state.ts src/nuxt/index.ts src/astro/index.ts src/react-router/index.ts src/sveltekit/index.ts src/solid-start/index.ts src/next/index.ts src/qwik-city/index.ts --format esm --dts --splitting false --out-dir dist --external unplugin --external vue --external vue-router --external nuxt/kit --external astro --external next --external vite --tsconfig tsconfig.app.json --watch\" \"vite build --config vite.package.config.ts --watch\"",
     "build": "npm run build:plugin && npm run build:demo",
-    "build:plugin": "tsup src/plugin/index.ts src/runtime/client.ts src/runtime/state.ts --format esm --dts --clean --out-dir dist --external unplugin --external vue --external vue-router --tsconfig tsconfig.app.json && vite build --config vite.package.config.ts",
+    "build:plugin": "tsup src/plugin/index.ts src/runtime/client.ts src/runtime/state.ts src/nuxt/index.ts src/astro/index.ts src/react-router/index.ts src/sveltekit/index.ts src/solid-start/index.ts src/next/index.ts src/qwik-city/index.ts --format esm --dts --splitting false --clean --out-dir dist --external unplugin --external vue --external vue-router --external nuxt/kit --external astro --external next --external vite --tsconfig tsconfig.app.json && node scripts/add-next-shebang.mjs && vite build --config vite.package.config.ts",
     "build:demo": "tsc -b && vite build",
     "build:playground": "vite build --config playground/basic/vite.config.ts",
     "check": "npm test && npm run build && npm run check:package && npm run build:playground && npm run check:production && npm run pack:check",
@@ -66,7 +100,7 @@
     "pack:check": "npm pack --dry-run",
     "prepack": "npm run build:plugin",
     "test": "node --test tests/*.test.mjs",
-    "test:smoke": "node --test tests/capture-planner.test.mjs tests/capture-queue.test.mjs tests/focus-layout.test.mjs tests/frame-animation.test.mjs tests/graph-update.test.mjs tests/layout.test.mjs tests/page-update.test.mjs tests/preview-frame-registry.test.mjs tests/preview-message.test.mjs tests/runtime.test.mjs tests/scene-cards.test.mjs tests/scene-node-cache.test.mjs tests/snapshot-capture.test.mjs tests/state.test.mjs tests/leafer-node.test.mjs",
+    "test:smoke": "node --test tests/browser-history-adapter.test.mjs tests/capture-planner.test.mjs tests/capture-queue.test.mjs tests/focus-layout.test.mjs tests/frame-animation.test.mjs tests/framework-integrations.test.mjs tests/graph-update.test.mjs tests/layout.test.mjs tests/next-integration.test.mjs tests/page-update.test.mjs tests/preview-frame-registry.test.mjs tests/preview-message.test.mjs tests/qwik-city-integration.test.mjs tests/react-router-integration.test.mjs tests/router-adapter.test.mjs tests/runtime.test.mjs tests/scene-cards.test.mjs tests/scene-node-cache.test.mjs tests/snapshot-capture.test.mjs tests/solid-start-integration.test.mjs tests/state.test.mjs tests/sveltekit-integration.test.mjs tests/leafer-node.test.mjs",
     "test:leafer": "node --test tests/leafer-node.test.mjs",
     "playground": "vite --config playground/basic/vite.config.ts",
     "preview": "vite preview"
@@ -75,30 +109,72 @@
     "unplugin": "^2.3.5"
   },
   "peerDependencies": {
+    "@builder.io/qwik": ">=1.10.0",
+    "@builder.io/qwik-city": ">=1.10.0",
+    "astro": ">=5.0.0",
+    "next": ">=15.0.0",
+    "nuxt": ">=3.0.0",
     "vite": "^5.0.0",
     "vue": ">=3.4.0",
     "vue-router": ">=4.0.0"
   },
+  "peerDependenciesMeta": {
+    "astro": {
+      "optional": true
+    },
+    "nuxt": {
+      "optional": true
+    },
+    "next": {
+      "optional": true
+    },
+    "@builder.io/qwik": {
+      "optional": true
+    },
+    "@builder.io/qwik-city": {
+      "optional": true
+    }
+  },
   "overrides": {
+    "vite-plugin-solid": "2.10.2",
     "tsup": {
       "esbuild": "^0.28.1"
     }
   },
   "devDependencies": {
+    "@builder.io/qwik": "1.20.0",
+    "@builder.io/qwik-city": "1.20.0",
     "@leafer-in/view": "^2.2.6",
     "@leafer-in/viewport": "^2.2.6",
     "@leafer-ui/core": "^2.2.6",
     "@leafer/node": "^2.2.6",
     "@napi-rs/canvas": "^1.0.3",
+    "@solidjs/router": "^0.15.3",
+    "@solidjs/start": "1.1.7",
+    "@sveltejs/adapter-auto": "^4.0.0",
+    "@sveltejs/kit": "2.20.0",
+    "@sveltejs/vite-plugin-svelte": "^4.0.4",
     "@types/node": "^24.0.10",
+    "@vitejs/plugin-react": "^4.7.0",
     "@vitejs/plugin-vue": "^5.2.4",
+    "astro": "^7.1.6",
     "concurrently": "^10.0.4",
     "happy-dom": "^20.11.1",
     "html2canvas-pro": "2.3.2",
     "leafer-ui": "^2.2.6",
+    "next": "^16.2.12",
+    "nuxt": "^4.5.1",
+    "react": "^19.2.8",
+    "react-dom": "^19.2.8",
+    "react-router": "^8.3.0",
+    "solid-js": "^1.9.14",
+    "svelte": "^5.56.8",
     "tsup": "^8.5.1",
     "typescript": "~5.8.3",
+    "vinxi": "0.5.7",
     "vite": "^5.0.0",
+    "vite-plugin-solid": "2.10.2",
+    "vitepress": "^1.6.4",
     "vue": "^3.5.17",
     "vue-router": "^4.5.1"
   }

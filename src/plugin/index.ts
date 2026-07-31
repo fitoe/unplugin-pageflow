@@ -1,10 +1,12 @@
 import { createUnplugin } from 'unplugin'
 import type { UnpluginFactory } from 'unplugin'
 import { createHash } from 'node:crypto'
+import { createRequire } from 'node:module'
 import { readFile, readdir, stat, writeFile } from 'node:fs/promises'
+import { readFileSync } from 'node:fs'
 import type { ServerResponse } from 'node:http'
-import { resolve } from 'node:path'
-import { fileURLToPath } from 'node:url'
+import { dirname, resolve } from 'node:path'
+import { fileURLToPath, pathToFileURL } from 'node:url'
 import type {
   PageFlowGraph,
   PageFlowOptions,
@@ -35,6 +37,8 @@ function normalizePreviewPath(path: string) {
 function resolveOptions(options: PageFlowOptions = {}): ResolvedPageFlowOptions {
   return {
     enabled: options.enabled ?? true,
+    framework: options.framework ?? 'auto',
+    routes: options.routes ?? [],
     previewPath: normalizePreviewPath(options.previewPath ?? '/__unplugin-pageflow/'),
     appUrl: options.appUrl ?? '/',
     dynamicParams: options.dynamicParams ?? {},
@@ -57,6 +61,7 @@ async function loadProjectOptions(root: string, options: PageFlowOptions = {}) {
     ...stored,
     ...options,
     dynamicParams: options.dynamicParams ?? stored.dynamicParams,
+    routes: options.routes ?? stored.routes,
     previewRoles: options.previewRoles ?? stored.previewRoles,
     groupNames: options.groupNames ?? stored.groupNames,
   })
@@ -321,23 +326,31 @@ function pageflowHtml(base = '/', styleUrl?: string, versionUrl?: string) {
 
 const factory: UnpluginFactory<PageFlowOptions | undefined> = (options) => {
   const resolved = resolveOptions(options)
-  const runningFromSource = import.meta.url.includes('/src/plugin/')
-  const pluginRoot = resolve(fileURLToPath(new URL('../..', import.meta.url)))
+  let pluginRoot: string
+  try {
+    pluginRoot = resolve(dirname(createRequire(import.meta.url).resolve('unplugin-pageflow')), '../..')
+  } catch {
+    let current = resolve(process.cwd())
+    while (true) {
+      try {
+        if (JSON.parse(readFileSync(resolve(current, 'package.json'), 'utf8')).name === 'unplugin-pageflow') break
+      } catch {}
+      const parent = dirname(current)
+      if (parent === current) {
+        current = resolve(fileURLToPath(new URL('../..', import.meta.url)))
+        break
+      }
+      current = parent
+    }
+    pluginRoot = current
+  }
   const pluginDist = `${normalizeFile(resolve(pluginRoot, 'dist'))}/`
-  const packaged = !runningFromSource || resolve(process.cwd()) !== pluginRoot
-  const clientEntryUrl = new URL(
-    packaged ? runningFromSource ? '../../dist/client/mount.js' : '../client/mount.js' : '../client/mount.ts',
-    import.meta.url,
-  )
-  const clientEntry = toViteFsPath(clientEntryUrl)
-  const clientEntryFile = fileURLToPath(clientEntryUrl)
-  const runtimeEntry = toViteFsPath(new URL(
-    packaged ? runningFromSource ? '../../dist/runtime/client.js' : '../runtime/client.js' : '../runtime/client.ts',
-    import.meta.url,
-  ))
-  const clientStyleFile = packaged
-    ? fileURLToPath(new URL(runningFromSource ? '../../dist/style.css' : '../style.css', import.meta.url))
-    : undefined
+  const moduleFile = normalizeFile(fileURLToPath(import.meta.url))
+  const packaged = moduleFile.includes('/dist/') || resolve(process.cwd()) !== pluginRoot
+  const clientEntryFile = resolve(pluginRoot, packaged ? 'dist/client/mount.js' : 'src/client/mount.ts')
+  const clientEntry = toViteFsPath(pathToFileURL(clientEntryFile))
+  const runtimeEntry = toViteFsPath(pathToFileURL(resolve(pluginRoot, packaged ? 'dist/runtime/client.js' : 'src/runtime/client.ts')))
+  const clientStyleFile = packaged ? resolve(pluginRoot, 'dist/style.css') : undefined
   let graph: PageFlowGraph = { pages: [], routeMode: 'history', version: 0 }
   let routes: PageFlowRuntimeRoute[] = []
   let routeMode: PageFlowRouteMode = 'history'
@@ -384,7 +397,12 @@ const factory: UnpluginFactory<PageFlowOptions | undefined> = (options) => {
           changed = recordSource(await readFile(file, 'utf8'), file) || changed
       }
     }
-    await scan(directory)
+    try {
+      await scan(directory)
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error
+      return
+    }
     if (changed && routes.length) rebuildGraph()
   }
 
@@ -406,6 +424,8 @@ const factory: UnpluginFactory<PageFlowOptions | undefined> = (options) => {
         return `export default ${JSON.stringify(resolved)}`
       if (id === PAGEFLOW_CLIENT_RESOLVED_ID)
         return `import config from '${PAGEFLOW_CONFIG_ID}'; import { mountPageFlow } from '${clientEntry}'; mountPageFlow(document.querySelector('#app'), config)`
+      if (id === PAGEFLOW_RUNTIME_RESOLVED_ID && resolved.framework === 'qwik-city')
+        return `import config from '${PAGEFLOW_CONFIG_ID}'; if (typeof window !== 'undefined') import('${runtimeEntry}').then(({ startPageFlowRuntime }) => startPageFlowRuntime(config))`
       if (id === PAGEFLOW_RUNTIME_RESOLVED_ID)
         return `import config from '${PAGEFLOW_CONFIG_ID}'; import { startPageFlowRuntime } from '${runtimeEntry}'; startPageFlowRuntime(config)`
     },
@@ -446,7 +466,7 @@ const factory: UnpluginFactory<PageFlowOptions | undefined> = (options) => {
       transformIndexHtml: {
         order: 'pre',
         handler(_html, context) {
-          if (!resolved.enabled || context.path.startsWith(resolved.previewPath)) return
+          if (!resolved.enabled || resolved.framework === 'nuxt' || resolved.framework === 'qwik-city' || context.path?.startsWith(resolved.previewPath)) return
           return [{
             tag: 'script',
             attrs: { type: 'module' },
@@ -456,26 +476,27 @@ const factory: UnpluginFactory<PageFlowOptions | undefined> = (options) => {
         },
       },
       async configureServer(server) {
-        if (resolve(server.config.root) !== pluginRoot || packaged) {
+        const projectRoot = resolve(options?.projectRoot ?? server.config.root)
+        if (projectRoot !== pluginRoot || packaged) {
           try {
-            Object.assign(resolved, await loadProjectOptions(server.config.root, options))
+            Object.assign(resolved, await loadProjectOptions(projectRoot, options))
           } catch (error) {
             server.config.logger.warn(`unplugin-pageflow could not read .pageflow: ${error instanceof Error ? error.message : error}`)
           }
         }
         if (!resolved.enabled) return
         try {
-          const uniAppConfig = await readUniAppConfig(server.config.root)
+          const uniAppConfig = await readUniAppConfig(projectRoot)
           uniAppHomePath = uniAppConfig.homePath
           configuredTitlesByPath = uniAppConfig.titlesByPath
           routeOrderByPath = uniAppConfig.routeOrderByPath
         } catch (error) {
           server.config.logger.warn(`unplugin-pageflow could not read pages.json: ${error instanceof Error ? error.message : error}`)
         }
-        void scanVueSources(resolve(server.config.root, 'src')).catch(error =>
+        void Promise.all([resolve(projectRoot, 'src'), resolve(projectRoot, 'app')].map(scanVueSources)).catch(error =>
           server.config.logger.warn(`unplugin-pageflow could not scan Vue sources: ${error instanceof Error ? error.message : error}`),
         )
-        const thumbnailCache = createThumbnailCache(resolve(server.config.root, '.unplugin-pageflow/cache'))
+        const thumbnailCache = createThumbnailCache(resolve(projectRoot, '.unplugin-pageflow/cache'))
         sendGraphUpdate = nextGraph => {
           server.ws.send({ type: 'custom', event: PAGEFLOW_GRAPH_EVENT, data: nextGraph })
           sendEvent(PAGEFLOW_GRAPH_EVENT, nextGraph)
@@ -483,6 +504,10 @@ const factory: UnpluginFactory<PageFlowOptions | undefined> = (options) => {
         sendPageUpdate = page => {
           server.ws.send({ type: 'custom', event: PAGEFLOW_PAGE_EVENT, data: page })
           sendEvent(PAGEFLOW_PAGE_EVENT, page)
+        }
+        if (resolved.routes.length) {
+          routes = resolved.routes
+          rebuildGraph()
         }
 
         server.middlewares.use(async (request, response, next) => {
@@ -505,7 +530,7 @@ const factory: UnpluginFactory<PageFlowOptions | undefined> = (options) => {
               const name = typeof body.name === 'string' ? body.name.trim() : ''
               if (!key || key.length > 300) throw new Error('Invalid group key')
               if (name.length > 80) throw new Error('Group name is too long')
-              const configFile = resolve(server.config.root, '.pageflow')
+              const configFile = resolve(projectRoot, '.pageflow')
               const stored = JSON.parse(stripJsonComments(await readFile(configFile, 'utf8'))) as PageFlowOptions
               const groupNames = { ...(stored.groupNames ?? {}) }
               if (name) groupNames[key] = name

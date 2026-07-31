@@ -3,3 +3,5 @@ dist
 *.tsbuildinfo
 .playwright-mcp/
 .unplugin-pageflow/
+docs/.vitepress/cache/
+docs/.vitepress/dist/

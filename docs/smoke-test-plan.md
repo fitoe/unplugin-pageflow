@@ -28,6 +28,7 @@
 | 节点缓存 | 签名不变复用节点；签名变化替换；离场节点销毁并从场景树删除 | `scene-node-cache.test.mjs` |
 | 动画运行器 | 同类动画只运行一个；新动画取消旧动画；取消后旧完成回调不再执行 | `frame-animation.test.mjs` |
 | 页面发现与热点 | Vue Router、`RouterLink`、uni-app 跳转和事件热点被发现，热点点击只通知画板且保留参数 | `runtime.test.mjs` |
+| 框架路由适配 | Vue Router 的发现、路由表、动态参数、base/hash 地址和程序化导航通过统一适配器输出 | `router-adapter.test.mjs` |
 | 页面状态 | query 与角色间缓存隔离；表单和滚动恢复；密码等敏感字段不保存 | `state.test.mjs` |
 | 插件集成 | 开发路由、pages.json 首页折叠、标题与路由元数据、资源服务可用 | `plugin.test.mjs` |
 | 快照缓存 | 磁盘缓存受大小约束；Object URL 使用 LRU 回收 | `thumbnail-cache.test.mjs`、`thumbnail-resources.test.mjs` |

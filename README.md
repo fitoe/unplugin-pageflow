@@ -1,12 +1,12 @@
 # unplugin-pageflow
 
-> See every Vue page and navigation path on one infinite canvas.
+> See every application page and navigation path on one infinite canvas.
 
 [![CI](https://github.com/fitoe/unplugin-pageflow/actions/workflows/ci.yml/badge.svg)](https://github.com/fitoe/unplugin-pageflow/actions/workflows/ci.yml)
 ![Vite](https://img.shields.io/badge/Vite-5-646CFF?logo=vite&logoColor=white)
 ![Vue](https://img.shields.io/badge/Vue-3.4%2B-42B883?logo=vuedotjs&logoColor=white)
 
-`unplugin-pageflow` is a development-only visual map for Vue Router applications. It discovers routes, renders real pages, highlights navigation hotspots, and draws page relationships—without touching your production bundle.
+`unplugin-pageflow` is a development-only visual map for Vite applications and their routing frameworks. It discovers routes, renders real pages, highlights navigation hotspots, and draws page relationships—without touching your production bundle.
 
 ![unplugin-pageflow demo](./docs/demo.png)
 
@@ -42,6 +42,40 @@ Start Vite as usual:
 
 ```bash
 npm run dev
+```
+
+Nuxt:
+
+```ts
+// nuxt.config.ts
+export default defineNuxtConfig({
+  modules: ['unplugin-pageflow/nuxt'],
+})
+```
+
+Astro:
+
+```ts
+// astro.config.mjs
+import PageFlow from 'unplugin-pageflow/astro'
+import { defineConfig } from 'astro/config'
+
+export default defineConfig({ integrations: [PageFlow()] })
+```
+
+React Router, SvelteKit, SolidStart, and Qwik City expose dedicated adapters:
+
+```ts
+import PageFlow from 'unplugin-pageflow/react-router' // PageFlow(routeObjects)
+import PageFlow from 'unplugin-pageflow/sveltekit'    // plugins: [sveltekit(), ...PageFlow()]
+import PageFlow from 'unplugin-pageflow/solid-start'  // plugins: [...PageFlow(), solid()]
+import PageFlow from 'unplugin-pageflow/qwik-city'    // plugins: [qwikCity(), qwikVite(), PageFlow()]
+```
+
+Next.js uses a development-only same-origin sidecar because current Next releases do not expose Vite plugins:
+
+```bash
+pageflow-next --dir . --host 127.0.0.1 --port 3000
 ```
 
 The CLI prints the preview URL:
@@ -86,8 +120,9 @@ Preview mode blocks anchor navigation and form submission. It does not click con
 
 ## Current scope
 
-- Vite is the fully supported adapter.
-- History-mode Vue Router is the primary supported setup.
+- Vite + Vue Router, uni-app, Nuxt, Astro, React Router, SvelteKit, SolidStart, Next.js, and Qwik City are supported in development mode.
+- Nuxt uses its Vue Router routes and recognizes component navigation events.
+- Astro uses file routes, same-origin anchors, and explicit `data-pageflow-to` targets; island framework internals are intentionally not inspected.
 - Computed programmatic destinations are discovered after the corresponding interaction occurs.
 - Authentication and route-specific state come from the current browser session.
 
@@ -104,7 +139,7 @@ Requires Node.js `>=20.19` and npm `>=10`.
 <details>
 <summary><strong>中文说明</strong></summary>
 
-`unplugin-pageflow` 是一个仅在开发环境运行的 Vue Router 页面流程可视化插件。它会自动发现路由，在无限画布中展示页面，标记页面跳转热区，并绘制页面之间的导航关系；生产构建不会注入 PageFlow 代码。
+`unplugin-pageflow` 是一个仅在开发环境运行的页面流程可视化插件，支持 Vite + Vue Router、uni-app、Nuxt、Astro、React Router、SvelteKit、SolidStart、Next.js 和 Qwik City。它会自动发现路由，在无限画布中展示页面，标记页面跳转热区，并绘制页面之间的导航关系；生产构建不会注入 PageFlow 代码。
 
 ### 安装
 
@@ -128,6 +163,10 @@ export default defineConfig({
 ```bash
 npm run dev
 ```
+
+Nuxt 使用 `modules: ['unplugin-pageflow/nuxt']`；Astro 在 `integrations` 中加入 `PageFlow()`（从 `unplugin-pageflow/astro` 导入）。
+
+React Router、SvelteKit、SolidStart、Qwik City 分别使用对应子路径适配器。Next.js 开发环境使用 `pageflow-next --dir . --port 3000` 启动同源 sidecar；生产构建不使用它。
 
 CLI 会输出预览地址：
 
@@ -176,7 +215,7 @@ onUnmounted(stopPageFlowState)
 
 缓存按页面 URL（包含业务 query/hash）和 PageFlow 角色隔离。不要注册 Token、密码、验证码等敏感信息；密码、文件和验证码输入框也不会被自动缓存。
 
-要求 Node.js `>=20.19`、npm `>=10`。当前以 Vite 和 history 模式 Vue Router 为主要支持范围。
+要求 Node.js `>=20.19`、npm `>=10`。Astro 支持文件路由、同源 `<a>` 和 `data-pageflow-to`；不会依赖 React/Vue/Svelte island 的内部实现。
 
 </details>
 
