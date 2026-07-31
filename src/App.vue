@@ -30,6 +30,8 @@ import { SceneNodeCache } from './client/scene-node-cache'
 import { FrameAnimation } from './client/frame-animation'
 import { PreviewFrameRegistry } from './client/preview-frame-registry'
 import { decodePreviewMessage } from './client/preview-message'
+import { buildApiFieldTree } from './client/api-field-tree'
+import ApiFieldTree from './components/ApiFieldTree.vue'
 import { focusTargetSetKey, planPageUpdate } from './client/page-update'
 import {
   fetchThumbnailManifest,
@@ -105,6 +107,7 @@ const focusedPageId = ref<string>()
 const focusedLinks = ref<PageFlowLink[]>([])
 const apiResultsByPage = ref<Record<string, PageFlowApiResult[]>>({})
 const expandedApiResults = ref(new Set<string>())
+const openApiResultId = ref<string>()
 const panelTab = ref<'api' | 'tests'>('api')
 const focusedPageTests = ref<PageFlowPageTest[]>([])
 const focusedTestsLoading = ref(false)
@@ -356,8 +359,16 @@ function toggleApiResult(id: string) {
   expandedApiResults.value = next
 }
 
+function toggleApiResultPanel(id: string) {
+  openApiResultId.value = openApiResultId.value === id ? undefined : id
+}
+
 function visibleApiFields(result: PageFlowApiResult) {
   return expandedApiResults.value.has(result.id) ? result.fields : result.fields.filter(field => field.used)
+}
+
+function visibleApiFieldTree(result: PageFlowApiResult) {
+  return buildApiFieldTree(visibleApiFields(result))
 }
 const connectionCountsByTarget = computed(() => connectionPaths.value.reduce((counts, connection) => {
   counts.set(connection.targetId, (counts.get(connection.targetId) ?? 0) + 1)
@@ -1978,21 +1989,21 @@ onUnmounted(() => {
           </button>
         </div>
         <div v-if="panelTab === 'api' && focusedApiResults.length" class="api-panel-list">
-          <section v-for="result in focusedApiResults" :key="result.id" class="api-result">
-            <div class="api-result-summary">
+          <section v-for="result in focusedApiResults" :key="result.id" class="api-result" :class="{ open: openApiResultId === result.id }">
+            <button type="button" class="api-result-summary" :aria-expanded="openApiResultId === result.id" @click="toggleApiResultPanel(result.id)">
               <span class="api-method">{{ result.method }}</span>
               <code>{{ result.url }}</code>
               <small :class="{ error: result.status >= 400 }">{{ result.status }} · {{ result.duration }}ms</small>
-            </div>
-            <div v-if="visibleApiFields(result).length" class="api-fields">
-              <div v-for="field in visibleApiFields(result)" :key="field.path" class="api-field" :class="{ unused: !field.used }">
-                <code>{{ field.path }}</code><span>{{ field.value }}</span>
-              </div>
-            </div>
-            <div v-else class="api-empty">页面暂未展示返回字段</div>
-            <button v-if="result.fields.some(field => !field.used)" type="button" class="api-expand" @click="toggleApiResult(result.id)">
-              {{ expandedApiResults.has(result.id) ? '收起未使用字段' : `展开 ${result.fields.filter(field => !field.used).length} 个未使用字段` }}
             </button>
+            <div v-if="openApiResultId === result.id" class="api-result-content">
+              <div v-if="visibleApiFields(result).length" class="api-fields">
+                <ApiFieldTree :nodes="visibleApiFieldTree(result)" />
+              </div>
+              <div v-else class="api-empty">页面暂未展示返回字段</div>
+              <button v-if="result.fields.some(field => !field.used)" type="button" class="api-expand" @click="toggleApiResult(result.id)">
+                {{ expandedApiResults.has(result.id) ? '收起未使用字段' : `展开 ${result.fields.filter(field => !field.used).length} 个未使用字段` }}
+              </button>
+            </div>
           </section>
         </div>
         <div v-else-if="panelTab === 'api'" class="api-panel-waiting">等待页面接口响应…</div>
