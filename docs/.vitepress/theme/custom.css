@@ -1,0 +1,418 @@
+:root {
+  --vp-c-brand-1: #5b5cf0;
+  --vp-c-brand-2: #4d4ee0;
+  --vp-c-brand-3: #4546cf;
+  --vp-c-brand-soft: rgba(91, 92, 240, 0.12);
+}
+
+.pageflow-home {
+  --pf-ink: #101936;
+  --pf-muted: #59627a;
+  --pf-line: rgba(16, 25, 54, 0.11);
+  max-width: 1440px;
+  margin: 0 auto;
+  color: var(--pf-ink);
+}
+
+.VPPage:has(.pageflow-home) {
+  background:
+    linear-gradient(rgba(91, 92, 240, 0.035) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(91, 92, 240, 0.035) 1px, transparent 1px),
+    radial-gradient(circle at 42% 24%, rgba(115, 91, 255, 0.11), transparent 28%);
+  background-size: 48px 48px, 48px 48px, auto;
+}
+
+.pageflow-home a {
+  text-decoration: none;
+}
+
+.pf-hero {
+  display: grid;
+  grid-template-columns: minmax(360px, 0.82fr) minmax(560px, 1.35fr);
+  gap: 68px;
+  align-items: center;
+  min-height: 690px;
+  padding: 76px 32px 58px;
+}
+
+.pf-eyebrow {
+  display: inline-flex;
+  align-items: center;
+  gap: 9px;
+  margin-bottom: 28px;
+  color: var(--vp-c-brand-1);
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.pf-eyebrow span {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: currentColor;
+  box-shadow: 0 0 0 5px var(--vp-c-brand-soft);
+}
+
+.pf-hero h1 {
+  margin: 0;
+  color: var(--pf-ink);
+  font-size: clamp(48px, 5vw, 78px);
+  font-weight: 740;
+  letter-spacing: -0.055em;
+  line-height: 0.98;
+}
+
+.pf-hero h1 em {
+  color: var(--vp-c-brand-1);
+  font-style: normal;
+}
+
+.pf-lead {
+  max-width: 570px;
+  margin: 30px 0 0;
+  color: var(--pf-muted);
+  font-size: 19px;
+  line-height: 1.72;
+}
+
+.pf-actions {
+  display: flex;
+  gap: 12px;
+  margin-top: 34px;
+}
+
+.pf-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 48px;
+  padding: 0 20px;
+  border: 1px solid var(--pf-line);
+  border-radius: 10px;
+  color: var(--pf-ink) !important;
+  font-size: 14px;
+  font-weight: 700;
+  transition: transform 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease;
+}
+
+.pf-button:hover {
+  transform: translateY(-2px);
+  border-color: rgba(91, 92, 240, 0.35);
+  box-shadow: 0 10px 28px rgba(36, 38, 100, 0.11);
+}
+
+.pf-button-primary {
+  gap: 24px;
+  border-color: var(--vp-c-brand-1);
+  background: var(--vp-c-brand-1);
+  color: #fff !important;
+}
+
+.pf-signals {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 18px;
+  margin-top: 30px;
+  color: #70788d;
+  font-size: 12px;
+}
+
+.pf-signals span::before {
+  content: '✓';
+  margin-right: 6px;
+  color: var(--vp-c-brand-1);
+  font-weight: 800;
+}
+
+.pf-product {
+  overflow: hidden;
+  border: 1px solid rgba(16, 25, 54, 0.13);
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.9);
+  box-shadow: 0 30px 80px rgba(42, 43, 100, 0.14), 0 2px 8px rgba(16, 25, 54, 0.06);
+}
+
+.pf-window-bar {
+  display: grid;
+  grid-template-columns: 84px 1fr auto;
+  align-items: center;
+  height: 48px;
+  padding: 0 16px;
+  border-bottom: 1px solid var(--pf-line);
+  color: #656d81;
+  font-size: 12px;
+}
+
+.pf-window-bar b {
+  padding: 4px 8px;
+  border-radius: 999px;
+  background: #e7f8ef;
+  color: #148653;
+  font-size: 10px;
+}
+
+.pf-dots {
+  display: flex;
+  gap: 6px;
+}
+
+.pf-dots i {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: #ff6359;
+}
+
+.pf-dots i:nth-child(2) { background: #ffbd2e; }
+.pf-dots i:nth-child(3) { background: #28c941; }
+
+.pf-product-body {
+  display: grid;
+  grid-template-columns: 112px 1fr;
+  min-height: 510px;
+}
+
+.pf-product aside {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 18px 10px;
+  border-right: 1px solid var(--pf-line);
+  color: #7b8293;
+  font-size: 11px;
+}
+
+.pf-product aside strong,
+.pf-product aside span {
+  padding: 8px 10px;
+  border-radius: 7px;
+}
+
+.pf-product aside strong {
+  background: var(--vp-c-brand-soft);
+  color: var(--vp-c-brand-1);
+}
+
+.pf-product aside small {
+  margin-top: auto;
+  padding: 12px 10px;
+  border-top: 1px solid var(--pf-line);
+  color: #59627a;
+  line-height: 1.7;
+}
+
+.pf-canvas {
+  display: flex;
+  align-items: center;
+  padding: 18px;
+  background-image: radial-gradient(rgba(91, 92, 240, 0.17) 0.8px, transparent 0.8px);
+  background-size: 18px 18px;
+}
+
+.pf-canvas img {
+  width: 100%;
+  filter: saturate(0.92);
+}
+
+.pf-frameworks {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 24px;
+  margin: 0 32px;
+  padding: 22px 28px;
+  border: 1px solid var(--pf-line);
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.72);
+  color: #60697d;
+  font-size: 13px;
+}
+
+.pf-frameworks a {
+  color: var(--pf-ink);
+  font-weight: 650;
+}
+
+.pf-framework-label {
+  color: #81889a;
+  font-weight: 500;
+}
+
+.pf-section {
+  display: grid;
+  grid-template-columns: 0.8fr 1.5fr;
+  gap: 90px;
+  padding: 120px 32px;
+}
+
+.pf-section-heading > span,
+.pf-install > div > span {
+  color: var(--vp-c-brand-1);
+  font-size: 12px;
+  font-weight: 750;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.pf-section h2,
+.pf-install h2 {
+  margin: 14px 0 22px;
+  color: var(--pf-ink);
+  font-size: clamp(36px, 4vw, 56px);
+  letter-spacing: -0.045em;
+  line-height: 1.04;
+}
+
+.pf-section-heading p {
+  color: var(--pf-muted);
+  font-size: 15px;
+  line-height: 1.75;
+}
+
+.pf-features {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  border-top: 1px solid var(--pf-line);
+}
+
+.pf-features article {
+  padding: 28px 24px 10px;
+  border-left: 1px solid var(--pf-line);
+}
+
+.pf-features b {
+  color: var(--vp-c-brand-1);
+  font-size: 11px;
+  letter-spacing: 0.1em;
+}
+
+.pf-features h3 {
+  margin: 48px 0 12px;
+  color: var(--pf-ink);
+  font-size: 18px;
+}
+
+.pf-features p {
+  margin: 0;
+  color: var(--pf-muted);
+  font-size: 14px;
+  line-height: 1.7;
+}
+
+.pf-install {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  align-items: center;
+  gap: 60px;
+  margin: 0 32px 80px;
+  padding: 54px 60px;
+  border-radius: 20px;
+  background: #111936;
+}
+
+.pf-install h2 {
+  margin-bottom: 0;
+  color: #fff;
+}
+
+.pf-install-command {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 20px;
+}
+
+.pf-install-command code {
+  width: 100%;
+  padding: 18px 20px;
+  border: 1px solid rgba(255, 255, 255, 0.13);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.07);
+  color: #f5f6ff;
+  font-size: 14px;
+  white-space: nowrap;
+}
+
+.pf-install-command code i {
+  margin-right: 8px;
+  color: #8d8eff;
+  font-style: normal;
+}
+
+.pf-install-command a {
+  color: #b9baff;
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.dark .pageflow-home {
+  --pf-ink: #f2f3ff;
+  --pf-muted: #aeb4c7;
+  --pf-line: rgba(223, 226, 255, 0.12);
+}
+
+.dark .VPPage:has(.pageflow-home) {
+  background:
+    linear-gradient(rgba(130, 132, 255, 0.035) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(130, 132, 255, 0.035) 1px, transparent 1px),
+    radial-gradient(circle at 42% 24%, rgba(91, 92, 240, 0.13), transparent 28%);
+  background-size: 48px 48px, 48px 48px, auto;
+}
+
+.dark .pf-product,
+.dark .pf-frameworks {
+  background: rgba(25, 27, 43, 0.9);
+}
+
+.dark .pf-canvas img { opacity: 0.9; }
+
+@media (max-width: 1100px) {
+  .pf-hero {
+    grid-template-columns: 1fr;
+    padding-top: 70px;
+  }
+
+  .pf-hero-copy { max-width: 720px; }
+  .pf-product-body { min-height: 460px; }
+  .pf-section { grid-template-columns: 1fr; gap: 48px; }
+}
+
+@media (max-width: 760px) {
+  .pf-hero {
+    gap: 46px;
+    min-height: auto;
+    padding: 54px 20px 42px;
+  }
+
+  .pf-hero h1 { font-size: clamp(42px, 13vw, 58px); }
+  .pf-lead { font-size: 16px; }
+  .pf-actions { flex-direction: column; align-items: stretch; }
+  .pf-button { width: 100%; }
+  .pf-product-body { grid-template-columns: 1fr; min-height: auto; }
+  .pf-product aside { display: none; }
+  .pf-canvas { min-height: 310px; padding: 10px; }
+
+  .pf-frameworks {
+    justify-content: flex-start;
+    flex-wrap: wrap;
+    margin: 0 20px;
+    padding: 20px;
+  }
+
+  .pf-framework-label { flex-basis: 100%; }
+  .pf-section { padding: 88px 20px; }
+  .pf-features { grid-template-columns: 1fr; }
+  .pf-features article { padding: 24px 20px 30px; border-bottom: 1px solid var(--pf-line); }
+  .pf-features h3 { margin-top: 28px; }
+
+  .pf-install {
+    grid-template-columns: 1fr;
+    gap: 34px;
+    margin: 0 20px 50px;
+    padding: 38px 24px;
+  }
+
+  .pf-install-command code { overflow-x: auto; font-size: 12px; }
+}
