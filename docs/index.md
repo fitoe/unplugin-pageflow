@@ -2,13 +2,13 @@
 layout: home
 
 title: PageFlow
-titleTemplate: See every page. Understand every path.
-description: Discover application routes, render real pages, and map navigation on one infinite canvas.
+titleTemplate: Your product lives between pages
+description: Turn routes, real screens, navigation paths, and page tests into one living product map.
 
 hero:
   name: PageFlow
-  text: See every page. Understand every path.
-  tagline: Discover routes, preview real pages, and map navigation on one infinite canvas.
+  text: Your product lives between pages.
+  tagline: A route table tells you where screens exist—not how the experience holds together. PageFlow maps real pages, navigation paths, and page tests on one living canvas.
   image:
     src: /pageflow-demo.svg
     alt: Animated PageFlow map reorganizing application pages and navigation paths
@@ -21,25 +21,31 @@ hero:
       link: https://github.com/fitoe/unplugin-pageflow
 
 features:
-  - icon: 🗺️
-    title: See every page
-    details: Discover application routes and arrange them on a zoomable infinite canvas.
-  - icon: 🖼️
-    title: Preview the real UI
-    details: Inspect real pages through same-origin previews instead of static wireframes.
-  - icon: 🔗
-    title: Understand navigation
-    details: Find navigation hotspots and draw the relationships between pages.
-  - icon: 🧩
-    title: Framework integrations
-    details: Use PageFlow with Vue, React, Nuxt, Next.js, Astro, SvelteKit, SolidStart, and Qwik City.
-  - icon: 🧪
-    title: Connect page tests
-    details: Associate routes with unit, component, and end-to-end tests.
-  - icon: 🛡️
-    title: Development only
-    details: Keep the PageFlow runtime out of production builds.
+  - icon: 🧭
+    title: Stop reconstructing the product
+    details: Replace tabs, router configs, and tribal knowledge with one navigable view of the application.
+  - icon: ◫
+    title: Work from the real interface
+    details: Inspect same-origin page previews—not screenshots that drift away from the code.
+  - icon: ⤳
+    title: Expose broken journeys
+    details: Make navigation hotspots and page relationships visible before fragmented flows reach users.
+  - icon: ◈
+    title: Make complexity legible
+    details: Collapse deep route trees into groups, then move from the whole product to one focused flow.
+  - icon: ✓
+    title: Put tests where they matter
+    details: See unit, component, and end-to-end tests in the context of the pages they protect.
+  - icon: ⏻
+    title: Leave production untouched
+    details: Explore the product in development without shipping the PageFlow runtime to users.
 ---
+
+## A route table is not a product map
+
+As an application grows, its real structure disappears across router files, framework conventions, redirects, tabs, and team memory. Static flowcharts fall behind. Screenshots lose their connection to the code. The expensive gaps are usually not inside a page—they are between pages.
+
+PageFlow rebuilds that missing context from the running application, giving engineers and product teams a shared view of what exists, how users move, and where confidence is thin.
 
 ## Start in minutes
 

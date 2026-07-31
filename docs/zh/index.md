@@ -2,13 +2,13 @@
 layout: home
 
 title: PageFlow
-titleTemplate: 看见每个页面，理解每条路径
-description: 自动发现应用路由、预览真实页面，并在无限画布上梳理导航关系。
+titleTemplate: 产品体验，藏在页面之间
+description: 将路由、真实页面、导航路径和页面测试汇聚成一张持续更新的产品地图。
 
 hero:
   name: PageFlow
-  text: 看见每个页面，理解每条路径。
-  tagline: 自动发现路由、预览真实页面，并在一张无限画布上追踪应用中的导航关系。
+  text: 产品体验，藏在页面之间。
+  tagline: 路由表只能告诉你页面在哪里，却无法说明整个体验如何连成一体。PageFlow 将真实页面、导航路径和页面测试汇聚到一张持续更新的画布上。
   image:
     src: /pageflow-demo.svg
     alt: PageFlow 动画展示应用页面重组及导航路径
@@ -21,25 +21,31 @@ hero:
       link: https://github.com/fitoe/unplugin-pageflow
 
 features:
-  - icon: 🗺️
-    title: 看见每个页面
-    details: 自动发现应用路由，并将它们排列在可缩放的无限画布上。
-  - icon: 🖼️
-    title: 预览真实界面
-    details: 直接查看同源页面预览，不再依赖静态线框图。
-  - icon: 🔗
-    title: 理解导航关系
-    details: 识别导航热点，展示页面之间的连接关系。
-  - icon: 🧩
-    title: 支持多种框架
-    details: 接入 Vue、React、Nuxt、Next.js、Astro、SvelteKit、SolidStart 和 Qwik City。
-  - icon: 🧪
-    title: 关联页面测试
-    details: 将路由与单元测试、组件测试和端到端测试关联起来。
-  - icon: 🛡️
-    title: 仅限开发环境
-    details: PageFlow 运行时代码不会进入生产构建。
+  - icon: 🧭
+    title: 不再靠大脑拼产品
+    details: 把散落在标签页、路由配置和团队经验里的结构，变成一张可浏览的应用全景。
+  - icon: ◫
+    title: 始终面对真实界面
+    details: 直接检查同源页面预览，而不是依赖注定会与代码脱节的截图。
+  - icon: ⤳
+    title: 让断裂的流程现形
+    details: 在问题抵达用户之前，看见导航热点、页面关系和体验中的空白地带。
+  - icon: ◈
+    title: 让复杂度重新可读
+    details: 将深层路由折叠成页面组，从产品全局顺畅进入一条具体流程。
+  - icon: ✓
+    title: 把测试放回业务语境
+    details: 在页面旁查看保护它的单元测试、组件测试和端到端测试。
+  - icon: ⏻
+    title: 只理解产品，不打扰生产
+    details: PageFlow 仅在开发环境运行，不会把可视化运行时交付给最终用户。
 ---
+
+## 路由表，不是产品地图
+
+应用一旦变大，真实结构就会消失在路由文件、框架约定、重定向、标签页和团队记忆里。流程图很快过期，截图逐渐与代码失联。真正昂贵的问题往往不在某个页面内部，而在页面与页面之间。
+
+PageFlow 从正在运行的应用中重建这些上下文，让工程和产品团队共同看见：系统里有什么、用户如何移动，以及哪些路径仍缺少信心。
 
 ## 几分钟即可开始
 
