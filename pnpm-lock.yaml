@@ -20,9 +20,9 @@ importers:
       elkjs:
         specifier: ^0.12.0
         version: 0.12.0
-      html2canvas:
-        specifier: ^1.4.1
-        version: 1.4.1
+      html2canvas-pro:
+        specifier: 2.3.2
+        version: 2.3.2
       leafer-ui:
         specifier: ^2.2.6
         version: 2.2.6
@@ -886,9 +886,9 @@ packages:
     resolution: {integrity: sha512-XSt8tMzbW9ymE7687xztkO1ckR7qJNQ3LywY9vlYGhGi3zXrGBHuUo2Cl1ztZaICW+1eAGdkLbj6iwVqDT33kg==}
     engines: {node: '>=20.0.0'}
 
-  html2canvas@1.4.1:
-    resolution: {integrity: sha512-fPU6BHNpsyIhr8yyMpTLLxAbkaK8ArIBcmZIRiBLiDhjeqvXolaEmDGmELFuX9I4xDcaKKcJl+TKZLqruBbmWA==}
-    engines: {node: '>=8.0.0'}
+  html2canvas-pro@2.3.2:
+    resolution: {integrity: sha512-lYFaxtQM8exYVAtXmjdx8cjkw+/2GycRvSTcr2M2MuxXKuYlWe77+KFKuY92y/tzkvzA8XZTQIDlqoVZDB+mqQ==}
+    engines: {node: '>=16.0.0'}
 
   joycon@3.1.1:
     resolution: {integrity: sha512-34wB/Y7MW7bzjKRjUKTa46I2Z7eV62Rkhva+KkopW7Qvv/OSWBqvkSY7vusOPrNuZcUG3tApvdVgNB8POj3SPw==}
@@ -1976,7 +1976,7 @@ snapshots:
       - bufferutil
       - utf-8-validate
 
-  html2canvas@1.4.1:
+  html2canvas-pro@2.3.2:
     dependencies:
       css-line-break: 2.1.0
       text-segmentation: 1.0.3

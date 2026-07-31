@@ -158,3 +158,7 @@ PageFlow.vite({
 要求 Node.js `>=20.19`、npm `>=10`。当前以 Vite 和 history 模式 Vue Router 为主要支持范围。
 
 </details>
+
+## 发布
+
+更新 `package.json` 中的版本并推送到 `master` 或 `main` 后，GitHub Actions 会运行完整检查，并在 npm 尚无该版本时自动发布。仓库需要配置一个名为 `NPM_TOKEN` 的 Actions secret；Token 应使用 npm granular access token，并允许发布该包。

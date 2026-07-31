@@ -75,6 +75,7 @@ export function maskedIconBackground(maskImage: string, color: string) {
 }
 
 export function materializeMaskedIcons(document: Document) {
+  document.querySelector('[data-unplugin-pageflow-hotspot-layer]')?.remove()
   document.querySelectorAll<HTMLElement>('[class*="i-"], [style*="mask"]').forEach(element => {
     const style = document.defaultView?.getComputedStyle(element)
     if (!style) return
@@ -128,7 +129,7 @@ function waitForDomQuiet(frame: HTMLIFrameElement, quietMs: number, timeoutMs: n
 function activeFiniteAnimations(document: Document) {
   if (typeof document.getAnimations !== 'function') return []
   return document.getAnimations().filter(animation => {
-    if (animation.playState !== 'running' && animation.playState !== 'pending') return false
+    if (animation.playState !== 'running' && !animation.pending) return false
     const timing = animation.effect?.getComputedTiming()
     return Number.isFinite(timing?.endTime)
   })

@@ -1,0 +1,8 @@
+{
+  "enabled": true,
+  "previewPath": "/__unplugin-pageflow/",
+  "appUrl": "/",
+  "dynamicParams": {},
+  "previewRoles": [],
+  "groupNames": {}
+}

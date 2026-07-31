@@ -1,0 +1,59 @@
+name: Publish to npm
+
+on:
+  push:
+    branches: [master, main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: npm-publish-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+          registry-url: https://registry.npmjs.org
+      - run: pnpm install --frozen-lockfile
+
+      - name: Check whether this version is already published
+        id: version
+        shell: bash
+        run: |
+          package_name=$(node -p "require('./package.json').name")
+          package_version=$(node -p "require('./package.json').version")
+          set +e
+          output=$(npm view "$package_name@$package_version" version --json 2>&1)
+          status=$?
+          set -e
+
+          if [ "$status" -eq 0 ]; then
+            echo "publish=false" >> "$GITHUB_OUTPUT"
+            echo "$package_name@$package_version is already published; skipping."
+          elif printf '%s' "$output" | grep -q 'E404'; then
+            echo "publish=true" >> "$GITHUB_OUTPUT"
+            echo "$package_name@$package_version will be published."
+          else
+            printf '%s\n' "$output" >&2
+            exit "$status"
+          fi
+
+      - name: Verify package
+        if: steps.version.outputs.publish == 'true'
+        run: pnpm run check
+
+      - name: Publish package
+        if: steps.version.outputs.publish == 'true'
+        run: npm publish
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}

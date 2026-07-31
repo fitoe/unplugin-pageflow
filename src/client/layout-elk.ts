@@ -29,6 +29,7 @@ export async function layoutPagesWithElk(items: PageFlowPage[], cardHeights = ne
       height: cardHeights.get(page.id) ?? PAGE_CARD_HEIGHT,
     })
     const segments = (page.path ?? page.id).split('/').filter(Boolean)
+    if (segments[0] === 'pages') segments.shift()
     let parent = rootDirectory
     segments.slice(0, -1).forEach((_, index) => {
       const path = `/${segments.slice(0, index + 1).join('/')}`

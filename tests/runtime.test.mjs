@@ -62,6 +62,24 @@ test('discovers Vue Router routes and reports rendered navigation hotspots', asy
   link.getBoundingClientRect = () => ({ left: 20, top: 30, width: 100, height: 24 })
   container.append(link)
 
+  const navigator = window.document.createElement('uni-navigator')
+  navigator.getBoundingClientRect = () => ({ left: 20, top: 215, width: 100, height: 32 })
+  navigator.__vueParentComponent = {
+    vnode: { el: navigator, props: { onClick: () => undefined } },
+  }
+  const navigatorLink = window.document.createElement('a')
+  navigatorLink.href = '/app/about'
+  navigatorLink.textContent = 'Nested service'
+  navigatorLink.getBoundingClientRect = navigator.getBoundingClientRect
+  navigator.append(navigatorLink)
+  container.append(navigator)
+
+  const declaredTarget = window.document.createElement('button')
+  declaredTarget.textContent = 'Declared target'
+  declaredTarget.dataset.pageflowTo = '/about'
+  declaredTarget.getBoundingClientRect = () => ({ left: 20, top: 55, width: 120, height: 28 })
+  container.append(declaredTarget)
+
   const image = window.document.createElement('img')
   image.src = './static/example.png'
   container.append(image)
@@ -119,6 +137,17 @@ test('discovers Vue Router routes and reports rendered navigation hotspots', asy
     assert.equal(typeof window.__UNPLUGIN_PAGEFLOW_PENDING_REQUESTS__, 'function')
     assert.equal(image.src, 'http://localhost/static/example.png')
 
+    const pageReportsBeforeScan = requests.filter(request => request.url.endsWith('/api/page')).length
+    window.dispatchEvent(new window.MessageEvent('message', {
+      data: { type: 'unplugin-pageflow:scan-page' },
+      origin: 'http://localhost',
+    }))
+    await new Promise(resolve => setTimeout(resolve, 20))
+    assert.equal(requests.filter(request => request.url.endsWith('/api/page')).length, pageReportsBeforeScan)
+    assert(parentMessages.some(item => item.message.type === 'unplugin-pageflow:scan-result'
+      && item.message.page.path === '/'
+      && item.message.page.links.some(link => link.label === 'Declared target' && link.to === '/about')))
+
     const previewFrame = window.document.createElement('iframe')
     window.document.body.append(previewFrame)
     previewFrame.contentDocument.body.textContent = 'Rendered preview'
@@ -143,6 +172,8 @@ test('discovers Vue Router routes and reports rendered navigation hotspots', asy
       title: '',
       links: [
         { label: 'About us', to: '/about', hotspot: { centerX: 0.068359375, centerY: 0.0546875 } },
+        { label: 'Nested service', to: '/about', hotspot: { centerX: 0.068359375, centerY: 0.30078125 } },
+        { label: 'Declared target', to: '/about', hotspot: { centerX: 0.078125, centerY: 0.08984375 } },
         { label: 'Declared action', to: '/about', hotspot: { centerX: 0.078125, centerY: 0.09895833333333333 } },
         { label: 'Helper action', to: '/about', hotspot: { centerX: 0.078125, centerY: 0.15104166666666666 } },
         { label: 'Select role', to: '/about', hotspot: { centerX: 0.078125, centerY: 0.2552083333333333 } },
@@ -159,10 +190,14 @@ test('discovers Vue Router routes and reports rendered navigation hotspots', asy
     assert.equal(JSON.parse(titledPage.init.body).title, 'Rendered home')
     assert.equal(requests.some(request => request.url.endsWith('/api/routes')), false)
     assert(parentMessages.some(item => item.message.type === 'unplugin-pageflow:page-reported' && item.message.path === '/'))
-    assert.equal(window.document.querySelectorAll('[data-unplugin-pageflow-hotspot]').length, 5)
-    assert.equal(window.document.querySelector('[data-unplugin-pageflow-hotspot="link"]').style.background, 'rgba(255, 92, 168, 0.18)')
-    assert.equal(window.document.querySelector('[data-unplugin-pageflow-hotspot="event"]').style.background, 'rgba(101, 191, 255, 0.18)')
+    assert.equal(window.document.querySelectorAll('[data-unplugin-pageflow-hotspot]').length, 7)
+    assert.equal([...window.document.querySelectorAll('[data-unplugin-pageflow-hotspot="event"]')]
+      .some(element => element.style.top === '215px'), false)
+    assert.equal(window.document.querySelector('[data-unplugin-pageflow-hotspot="link"]').style.background, 'rgba(255, 92, 168, 0.2)')
+    assert.equal(window.document.querySelector('[data-unplugin-pageflow-hotspot="event"]').style.background, 'rgba(101, 191, 255, 0.2)')
+    assert.equal(window.document.querySelector('[data-unplugin-pageflow-hotspot="link"]').style.opacity, '0.5')
     assert.equal(window.document.querySelector('[data-unplugin-pageflow-hotspot="link"]').dataset.unpluginPageflowTargets, '/about')
+    assert.equal(window.document.querySelector('[data-unplugin-pageflow-hotspot="link"]').style.pointerEvents, 'auto')
     assert.equal(window.document.querySelector('[data-unplugin-pageflow-hotspot="event"]').dataset.unpluginPageflowTargets, '')
 
     link.click()
@@ -170,6 +205,10 @@ test('discovers Vue Router routes and reports rendered navigation hotspots', asy
     assert(parentMessages.some(item => item.message.type === 'unplugin-pageflow:navigate'
       && item.message.to === '/about'
       && item.message.location === '/about'))
+    const hotspotNavigationCount = parentMessages.filter(item => item.message.type === 'unplugin-pageflow:navigate').length
+    window.document.querySelector('[data-unplugin-pageflow-hotspot="link"]').dispatchEvent(new window.PointerEvent('pointerdown', { bubbles: true }))
+    assert.equal(parentMessages.filter(item => item.message.type === 'unplugin-pageflow:navigate').length, hotspotNavigationCount + 1)
+    assert.equal(parentMessages.findLast(item => item.message.type === 'unplugin-pageflow:navigate').message.interaction, 'hotspot')
 
     const uniButton = window.document.createElement('button')
     uniButton.textContent = 'Open about with uni'
@@ -184,9 +223,8 @@ test('discovers Vue Router routes and reports rendered navigation hotspots', asy
 
     const wheel = new window.WheelEvent('wheel', { cancelable: true, clientX: 40, clientY: 50, deltaY: 120 })
     window.dispatchEvent(wheel)
-    assert.equal(wheel.defaultPrevented, true)
-    assert(parentMessages.some(item => item.message.type === 'unplugin-pageflow:wheel'
-      && item.message.deltaY === 120))
+    assert.equal(wheel.defaultPrevented, false)
+    assert.equal(parentMessages.some(item => item.message.type === 'unplugin-pageflow:wheel'), false)
 
     const button = window.document.createElement('button')
     button.textContent = 'Open about'
@@ -198,7 +236,7 @@ test('discovers Vue Router routes and reports rendered navigation hotspots', asy
 
     const latestPage = [...requests].reverse().find(request => request.url.endsWith('/api/page'))
     assert(JSON.parse(latestPage.init.body).links.some(item => item.label === 'Open about' && item.to === '/about'))
-    assert.equal(window.document.querySelector('[data-unplugin-pageflow-hotspot="event"]').style.background, 'rgba(101, 191, 255, 0.18)')
+    assert.equal(window.document.querySelector('[data-unplugin-pageflow-hotspot="event"]').style.background, 'rgba(101, 191, 255, 0.2)')
     assert.deepEqual(parentMessages.find(item => item.message.type === 'unplugin-pageflow:navigate' && item.message.to === '/about'), {
       message: { type: 'unplugin-pageflow:navigate', to: '/about', location: '/about' },
       origin: 'http://localhost',

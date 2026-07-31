@@ -5,12 +5,13 @@ import { createServer } from 'vite'
 test('lays out linked pages in layers and limits previews to the viewport', async () => {
   const server = await createServer({ configFile: false, server: { middlewareMode: true }, appType: 'custom', logLevel: 'silent' })
   try {
-    const { centerPageTransform, createPageSpatialIndex, getAutoPreviewPageId, getRenderablePages, getVisiblePageIds, layoutPages, layoutPagesByRoute, queryPageSpatialIndex } = await server.ssrLoadModule('/src/client/layout.ts')
+    const { assignOrderedFocusSides, centerPageTransform, collapseRepeatedListLinks, createPageSpatialIndex, createRouteDeckView, getAutoPreviewPageId, getRenderablePages, getVisiblePageIds, layoutPageGrid, layoutPages, layoutPagesByRoute, queryPageSpatialIndex, routeDeckPathForPage } = await server.ssrLoadModule('/src/client/layout.ts')
     const { layoutPagesWithElk } = await server.ssrLoadModule('/src/client/layout-elk.ts')
     const { forwardWheelToCanvas, PAGEFLOW_CANVAS_CONFIG } = await server.ssrLoadModule('/src/client/canvas.ts')
     const { resolvePreviewUrl, touchPreviewCache } = await server.ssrLoadModule('/src/client/preview.ts')
     const { fullThumbnailTiles, thumbnailRevision, thumbnailSlot, thumbnailTierForZoom, thumbnailUrl, visibleThumbnailTiles } = await server.ssrLoadModule('/src/client/thumbnails.ts')
     const { boundedPreviewDocumentHeight, isInfiniteListDocument, maskedIconBackground, materializeMaskedIcons, previewDocumentHeight } = await server.ssrLoadModule('/src/client/snapshot.ts')
+    const { FocusedPageStateCache, preserveScannedFocusedLinks } = await server.ssrLoadModule('/src/client/focus-cache.ts')
     const pages = Array.from({ length: 30 }, (_, index) => ({
       id: `page-${index}`,
       title: `Page ${index}`,
@@ -18,6 +19,28 @@ test('lays out linked pages in layers and limits previews to the viewport', asyn
       accent: '#ff795d',
       links: index < 2 ? [{ label: 'Next', to: `page-${index + 1}` }] : [],
     }))
+    assert.equal(collapseRepeatedListLinks([0.2, 0.4, 0.6, 0.8].map((centerY, index) => ({
+      label: `Row ${index}`,
+      to: '/detail',
+      hotspot: { centerX: 0.5, centerY },
+    }))).length, 1)
+    assert.equal(collapseRepeatedListLinks([0.2, 0.8].map((centerY, index) => ({
+      label: `Independent ${index}`,
+      to: '/detail',
+      hotspot: { centerX: index, centerY },
+    }))).length, 2)
+    const focusCache = new FocusedPageStateCache()
+    focusCache.set(pages[0], [{ label: 'Next', to: 'page-1', hotspot: { centerX: 0.2, centerY: 0.3 } }], { 'page-1': [12, 34] })
+    const cachedFocus = focusCache.get(pages[0])
+    assert.deepEqual(cachedFocus?.positions, { 'page-1': [12, 34] })
+    cachedFocus.positions['page-1'][0] = 99
+    assert.deepEqual(focusCache.get(pages[0])?.positions, { 'page-1': [12, 34] })
+    assert.equal(focusCache.get({ ...pages[0], revision: 'changed' }), undefined)
+    focusCache.retain(new Set(['page-1']))
+    assert.equal(focusCache.get(pages[0]), undefined)
+    const scannedLinks = [{ label: 'Runtime link', to: 'page-2' }]
+    assert.equal(preserveScannedFocusedLinks('page-0', 'page-0', scannedLinks, []), scannedLinks)
+    assert.deepEqual(preserveScannedFocusedLinks('page-0', undefined, scannedLinks, []), [])
     assert.equal(PAGEFLOW_CANVAS_CONFIG.type, 'viewport')
     assert.deepEqual(PAGEFLOW_CANVAS_CONFIG.zoom, { min: 0.05, max: 32 })
     assert.equal(PAGEFLOW_CANVAS_CONFIG.wheel.zoomMode, true)
@@ -62,10 +85,10 @@ test('lays out linked pages in layers and limits previews to the viewport', asyn
     )
     assert.match(iconBackground, /data:image\/svg\+xml/)
     assert.match(decodeURIComponent(iconBackground), /fill='rgb\(79, 167, 87\)'/)
-    assert.match(thumbnailRevision(pages[0]), /^5:/)
+    assert.match(thumbnailRevision(pages[0]), /^9:/)
     const hotspotLayer = { removed: false, remove() { this.removed = true } }
     materializeMaskedIcons({ querySelector: () => hotspotLayer, querySelectorAll: () => [] })
-    assert.equal(hotspotLayer.removed, false)
+    assert.equal(hotspotLayer.removed, true)
     assert.deepEqual(touchPreviewCache(['home', 'about', 'contact'], 'settings'), ['about', 'contact', 'settings'])
     assert.deepEqual(touchPreviewCache(['home', 'about', 'contact'], 'settings', 3), ['about', 'contact', 'settings'])
     const wheelCalls = []
@@ -124,6 +147,11 @@ test('lays out linked pages in layers and limits previews to the viewport', asyn
     ])
     assert(routePositions.get('machinery')[0] < routePositions.get('farmer')[0])
     assert(routePositions.get('farmer')[0] < routePositions.get('demands')[0])
+    const prefixedRoutePositions = await layoutPagesWithElk([
+      { id: 'module', path: '/pages/module/index', links: [] },
+      { id: 'module-child', path: '/pages/module/child/index', links: [] },
+    ])
+    assert(prefixedRoutePositions.get('module')[0] < prefixedRoutePositions.get('module-child')[0])
 
     const groupedRoutePositions = layoutPagesByRoute([
       { id: 'machinery-root', path: '/machinery/index', links: [] },
@@ -171,6 +199,58 @@ test('lays out linked pages in layers and limits previews to the viewport', asyn
       { id: 'pages-finance', path: '/pages/finance/home/index', links: [] },
     ])
     assert.notEqual(pagesPrefixedPositions.get('pages-agri')[1], pagesPrefixedPositions.get('pages-finance')[1])
+
+    const configuredRoutePositions = layoutPagesByRoute([
+      { id: 'alphabetical-first', path: '/pages/alpha/index', routeOrder: 1, links: [] },
+      { id: 'configured-first', path: '/pages/zeta/index', routeOrder: 0, links: [] },
+    ])
+
+    const rootDecks = createRouteDeckView([
+      { id: 'home', path: '/pages/index', links: [] },
+      { id: 'advice', path: '/pages/agri-service/advice', links: [] },
+      { id: 'case', path: '/pages/agri-service/cases/detail', links: [] },
+      { id: 'login', path: '/pages/login', links: [] },
+    ])
+    assert.deepEqual(rootDecks.directPages.map(page => page.id), ['home', 'login'])
+    assert.deepEqual(rootDecks.decks.map(deck => [deck.label, deck.pages.length]), [['agri-service', 2]])
+    assert.deepEqual(routeDeckPathForPage(rootDecks.decks[0].pages.concat(rootDecks.directPages), 'case'), ['agri-service'])
+    const serviceDeck = createRouteDeckView(rootDecks.decks[0].pages, ['agri-service'])
+    assert.deepEqual(serviceDeck.directPages.map(page => page.id), ['case', 'advice'])
+    assert.equal(serviceDeck.decks.length, 0)
+    const singletonDeck = createRouteDeckView([
+      { id: 'only-child', path: '/pages/single/group/detail', links: [] },
+    ])
+    assert.deepEqual(singletonDeck.directPages.map(page => page.id), ['only-child'])
+    assert.equal(singletonDeck.decks.length, 0)
+    assert.deepEqual(routeDeckPathForPage([{ id: 'only-child', path: '/pages/single/group/detail', links: [] }], 'only-child'), [])
+    const sortedDeck = createRouteDeckView([
+      { id: 'unknown', path: '/pages/service/advice', routeOrder: 0, links: [] },
+      { id: 'detail', path: '/pages/service/detail', routeOrder: 5, links: [] },
+      { id: 'create', path: '/pages/service/create', routeOrder: 4, links: [] },
+      { id: 'search', path: '/pages/service/search', routeOrder: 3, links: [] },
+      { id: 'list-later', path: '/pages/service/list', routeOrder: 2, links: [] },
+      { id: 'home', path: '/pages/service/index', routeOrder: 1, links: [] },
+      { id: 'history', path: '/pages/service/history', routeOrder: 6, links: [] },
+      { id: 'mine', path: '/pages/service/mine', routeOrder: 7, links: [] },
+      { id: 'list-earlier', path: '/pages/service/listing', routeOrder: 0, links: [] },
+    ], ['service'])
+    assert.deepEqual(sortedDeck.directPages.map(page => page.id), [
+      'home', 'list-earlier', 'list-later', 'search', 'create', 'detail', 'history', 'mine', 'unknown',
+    ])
+    const deckGrid = layoutPageGrid([...rootDecks.directPages, ...rootDecks.decks.map(deck => deck.representative)], new Map(), 2)
+    assert(deckGrid.get('login')[0] > deckGrid.get('home')[0])
+    assert(deckGrid.get(rootDecks.decks[0].representative.id)[1] > deckGrid.get('home')[1])
+    const focusSides = assignOrderedFocusSides([
+      { id: 'left-low', centerX: 0.1, centerY: 0.8 },
+      { id: 'right', centerX: 0.9, centerY: 0.5 },
+      { id: 'left-high', centerX: 0.15, centerY: 0.2 },
+    ])
+    assert.deepEqual(focusSides.left.map(item => item.id), ['left-high', 'left-low'])
+    assert.deepEqual(focusSides.right.map(item => item.id), ['right'])
+    const overflowSides = assignOrderedFocusSides(Array.from({ length: 6 }, (_, index) => ({ id: `item-${index}`, centerX: 0.5, centerY: index / 5 })))
+    assert(overflowSides.left.length + overflowSides.right.length >= 4)
+    assert(overflowSides.top.length + overflowSides.bottom.length <= 2)
+    assert(configuredRoutePositions.get('configured-first')[1] < configuredRoutePositions.get('alphabetical-first')[1])
 
     const visible = getVisiblePageIds(
       pages,

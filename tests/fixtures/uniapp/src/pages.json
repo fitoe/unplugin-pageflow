@@ -1,0 +1,12 @@
+{
+  // The first page is the uni-app home page.
+  "pages": [
+    { "path": "pages/index", "style": { "navigationBarTitleText": "Fixture home" } },
+    { "path": "pages/login", "style": { "navigationBarTitleText": "Fixture login" } },
+    { "path": "pages/untitled", "style": { "navigationStyle": "custom" } }
+  ],
+  "subPackages": [{
+    "root": "pages/product",
+    "pages": [{ "path": "index", "style": { "navigationBarTitleText": "Fixture product" } }]
+  }]
+}

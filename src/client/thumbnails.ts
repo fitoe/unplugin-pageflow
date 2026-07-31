@@ -9,7 +9,7 @@ import type { CanvasTransform, ViewportSize } from './layout'
 export type PageFlowPreviewMode = 'mobile' | 'tablet' | 'pc'
 export type PageFlowThumbnailTier = 'compact' | 'full'
 export const PAGEFLOW_THUMBNAIL_TILE_HEIGHT = 512
-const PAGEFLOW_THUMBNAIL_CAPTURE_VERSION = 5
+const PAGEFLOW_THUMBNAIL_CAPTURE_VERSION = 9
 
 export function thumbnailTierForZoom(zoomPercent: number): PageFlowThumbnailTier {
   return zoomPercent < 50 ? 'compact' : 'full'
@@ -66,11 +66,11 @@ export async function saveThumbnail(
   return response.json() as Promise<PageFlowThumbnailRecord>
 }
 
-export function canvasToBlob(canvas: HTMLCanvasElement) {
+export function canvasToBlob(canvas: HTMLCanvasElement, quality = 0.9) {
   return new Promise<Blob>((resolve, reject) => canvas.toBlob(
     blob => blob ? resolve(blob) : reject(new Error('Failed to encode thumbnail')),
     'image/webp',
-    0.76,
+    quality,
   ))
 }
 

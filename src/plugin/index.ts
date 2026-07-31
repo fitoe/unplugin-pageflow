@@ -1,7 +1,7 @@
 import { createUnplugin } from 'unplugin'
 import type { UnpluginFactory } from 'unplugin'
 import { createHash } from 'node:crypto'
-import { readFile, readdir, stat } from 'node:fs/promises'
+import { readFile, readdir, stat, writeFile } from 'node:fs/promises'
 import type { ServerResponse } from 'node:http'
 import { resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -39,39 +39,139 @@ function resolveOptions(options: PageFlowOptions = {}): ResolvedPageFlowOptions 
     appUrl: options.appUrl ?? '/',
     dynamicParams: options.dynamicParams ?? {},
     previewRoles: options.previewRoles ?? [],
+    groupNames: options.groupNames ?? {},
   }
+}
+
+async function loadProjectOptions(root: string, options: PageFlowOptions = {}) {
+  const file = resolve(root, '.pageflow')
+  let stored: PageFlowOptions = {}
+  try {
+    stored = JSON.parse(stripJsonComments(await readFile(file, 'utf8'))) as PageFlowOptions
+  } catch (error) {
+    const code = (error as NodeJS.ErrnoException).code
+    if (code !== 'ENOENT') throw error
+    await writeFile(file, `${JSON.stringify(resolveOptions(options), null, 2)}\n`, { flag: 'wx' })
+  }
+  return resolveOptions({
+    ...stored,
+    ...options,
+    dynamicParams: options.dynamicParams ?? stored.dynamicParams,
+    previewRoles: options.previewRoles ?? stored.previewRoles,
+    groupNames: options.groupNames ?? stored.groupNames,
+  })
+}
+
+function stripJsonComments(source: string) {
+  let result = ''
+  let inString = false
+  let quote = ''
+  let escaped = false
+  for (let index = 0; index < source.length; index++) {
+    const character = source[index]
+    const next = source[index + 1]
+    if (inString) {
+      result += character
+      if (escaped) escaped = false
+      else if (character === '\\') escaped = true
+      else if (character === quote) inString = false
+    } else if (character === '"' || character === "'") {
+      inString = true
+      quote = character
+      result += character
+    } else if (character === '/' && next === '/') {
+      while (index + 1 < source.length && source[index + 1] !== '\n') index++
+    } else if (character === '/' && next === '*') {
+      index += 2
+      while (index + 1 < source.length && !(source[index] === '*' && source[index + 1] === '/')) index++
+      index++
+    } else result += character
+  }
+  return result
+}
+
+async function readUniAppConfig(root: string) {
+  for (const file of [resolve(root, 'src/pages.json'), resolve(root, 'pages.json')]) {
+    try {
+      type PageConfig = { path?: unknown, style?: { navigationBarTitleText?: unknown } }
+      type SubPackageConfig = { root?: unknown, pages?: PageConfig[] }
+      const config = JSON.parse(stripJsonComments(await readFile(file, 'utf8'))) as {
+        pages?: PageConfig[]
+        subPackages?: SubPackageConfig[]
+        subpackages?: SubPackageConfig[]
+      }
+      const normalizePath = (path: string) => `/${path.replace(/^\/+|\/+$/g, '')}`
+      const titlesByPath = new Map<string, string>()
+      const routeOrderByPath = new Map<string, number>()
+      const addPage = (page: PageConfig, packageRoot = '') => {
+        if (typeof page.path !== 'string' || !page.path.trim()) return
+        const path = normalizePath(`${packageRoot}/${page.path}`)
+        routeOrderByPath.set(path, routeOrderByPath.size)
+        const title = page.style?.navigationBarTitleText
+        if (typeof title === 'string' && title.trim())
+          titlesByPath.set(path, title.trim())
+      }
+      config.pages?.forEach(page => addPage(page))
+      ;[...(config.subPackages ?? []), ...(config.subpackages ?? [])].forEach(pkg => {
+        const packageRoot = typeof pkg.root === 'string' ? pkg.root : ''
+        pkg.pages?.forEach(page => addPage(page, packageRoot))
+      })
+      const home = config.pages?.[0]?.path
+      return {
+        homePath: typeof home === 'string' && home.trim() ? normalizePath(home) : undefined,
+        titlesByPath,
+        routeOrderByPath,
+      }
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error
+    }
+  }
+  return { homePath: undefined, titlesByPath: new Map<string, string>(), routeOrderByPath: new Map<string, number>() }
 }
 
 function createGraph(
   routes: PageFlowRuntimeRoute[],
   reportedPages: Map<string, PageFlowRuntimePage>,
   staticLinksByFile: Map<string, PageFlowRuntimeLink[]>,
+  configuredTitlesByPath: Map<string, string>,
+  routeOrderByPath: Map<string, number>,
   sourceRevisionsByFile: Map<string, string>,
   version: number,
   routeMode: PageFlowRouteMode,
+  uniAppHomePath?: string,
 ): PageFlowGraph {
   const sourceEntryForPath = <T>(entries: Map<string, T>, path: string) => {
     const suffix = `/src${path}.vue`
     return [...entries.entries()].find(([file]) => file.endsWith(suffix))?.[1]
   }
+  const hasRootRoute = routes.some(route => route.path === '/')
+  const hiddenHomePath = hasRootRoute ? uniAppHomePath : undefined
   const seenPaths = new Set<string>()
   const pages: PageFlowPage[] = routes
-    .filter(route => route.path && !seenPaths.has(route.path) && seenPaths.add(route.path))
-    .map((route, index) => ({
-      id: route.id,
-      title: reportedPages.get(route.path)?.title || route.title,
-      path: route.path,
-      revision: route.componentFile
-        ? [...sourceRevisionsByFile.entries()].find(([file]) => file === route.componentFile || file.endsWith(route.componentFile!))?.[1] ?? route.path
-        : sourceEntryForPath(sourceRevisionsByFile, route.path) ?? route.path,
-      accent: ACCENTS[index % ACCENTS.length],
-      links: [],
-    }))
+    .filter(route => route.path && route.path !== hiddenHomePath && !seenPaths.has(route.path) && seenPaths.add(route.path))
+    .map((route, index) => {
+      const configuredPath = route.path === '/' && hiddenHomePath ? hiddenHomePath : route.path
+      const configuredTitle = configuredTitlesByPath.get(configuredPath)
+      const configuredPage = routeOrderByPath.has(configuredPath)
+      return {
+        id: route.id,
+        title: configuredTitle ?? (configuredPage ? '' : reportedPages.get(route.path)?.title || route.title),
+        path: route.path,
+        routeOrder: routeOrderByPath.get(route.path)
+          ?? (route.path === '/' && hiddenHomePath ? routeOrderByPath.get(hiddenHomePath) : undefined),
+        revision: route.componentFile
+          ? [...sourceRevisionsByFile.entries()].find(([file]) => file === route.componentFile || file.endsWith(route.componentFile!))?.[1] ?? route.path
+          : sourceEntryForPath(sourceRevisionsByFile, route.path) ?? route.path,
+        accent: ACCENTS[index % ACCENTS.length],
+        links: [],
+      }
+    })
   const idsByPath = new Map(pages.map(page => [page.path, page.id]))
   const routesById = new Map(routes.map(route => [route.id, route]))
 
   const resolveTarget = (path: string) => {
     const normalizedPath = path.split(/[?#]/, 1)[0]
+    if (normalizedPath === hiddenHomePath) return idsByPath.get('/')
     const exact = idsByPath.get(normalizedPath)
     if (exact) return exact
     const targetSegments = normalizedPath.split('/')
@@ -236,6 +336,9 @@ const factory: UnpluginFactory<PageFlowOptions | undefined> = (options) => {
   let graph: PageFlowGraph = { pages: [], routeMode: 'history', version: 0 }
   let routes: PageFlowRuntimeRoute[] = []
   let routeMode: PageFlowRouteMode = 'history'
+  let uniAppHomePath: string | undefined
+  let configuredTitlesByPath = new Map<string, string>()
+  let routeOrderByPath = new Map<string, number>()
   const reportedPages = new Map<string, PageFlowRuntimePage>()
   const staticLinksByFile = new Map<string, PageFlowRuntimeLink[]>()
   const sourceRevisionsByFile = new Map<string, string>()
@@ -244,7 +347,7 @@ const factory: UnpluginFactory<PageFlowOptions | undefined> = (options) => {
   let sendPageUpdate: ((page: PageFlowPage) => void) | undefined
 
   const rebuildGraph = (updatedPath?: string) => {
-    graph = createGraph(routes, reportedPages, staticLinksByFile, sourceRevisionsByFile, graph.version + 1, routeMode)
+    graph = createGraph(routes, reportedPages, staticLinksByFile, configuredTitlesByPath, routeOrderByPath, sourceRevisionsByFile, graph.version + 1, routeMode, uniAppHomePath)
     if (updatedPath) {
       const page = graph.pages.find(item => item.path === updatedPath)
       if (page) sendPageUpdate?.(page)
@@ -315,6 +418,7 @@ const factory: UnpluginFactory<PageFlowOptions | undefined> = (options) => {
                 ...(ignored == null ? [] : Array.isArray(ignored) ? ignored : [ignored]),
                 `${pluginDist}**`,
                 '**/.unplugin-pageflow/cache/**',
+                '**/.pageflow',
               ],
             },
           },
@@ -336,8 +440,23 @@ const factory: UnpluginFactory<PageFlowOptions | undefined> = (options) => {
           }]
         },
       },
-      configureServer(server) {
+      async configureServer(server) {
+        if (resolve(server.config.root) !== pluginRoot || packaged) {
+          try {
+            Object.assign(resolved, await loadProjectOptions(server.config.root, options))
+          } catch (error) {
+            server.config.logger.warn(`unplugin-pageflow could not read .pageflow: ${error instanceof Error ? error.message : error}`)
+          }
+        }
         if (!resolved.enabled) return
+        try {
+          const uniAppConfig = await readUniAppConfig(server.config.root)
+          uniAppHomePath = uniAppConfig.homePath
+          configuredTitlesByPath = uniAppConfig.titlesByPath
+          routeOrderByPath = uniAppConfig.routeOrderByPath
+        } catch (error) {
+          server.config.logger.warn(`unplugin-pageflow could not read pages.json: ${error instanceof Error ? error.message : error}`)
+        }
         void scanVueSources(resolve(server.config.root, 'src')).catch(error =>
           server.config.logger.warn(`unplugin-pageflow could not scan Vue sources: ${error instanceof Error ? error.message : error}`),
         )
@@ -362,6 +481,32 @@ const factory: UnpluginFactory<PageFlowOptions | undefined> = (options) => {
           const thumbnailPath = `${resolved.previewPath}api/thumbnail`
           const stylePath = `${resolved.previewPath}style.css`
           const clientVersionPath = `${resolved.previewPath}api/client-version`
+          const groupNamePath = `${resolved.previewPath}api/group-name`
+
+          if (pathname === groupNamePath && request.method === 'POST') {
+            try {
+              const body = await readJson(request)
+              const key = typeof body.key === 'string' ? body.key.trim() : ''
+              const name = typeof body.name === 'string' ? body.name.trim() : ''
+              if (!key || key.length > 300) throw new Error('Invalid group key')
+              if (name.length > 80) throw new Error('Group name is too long')
+              const configFile = resolve(server.config.root, '.pageflow')
+              const stored = JSON.parse(stripJsonComments(await readFile(configFile, 'utf8'))) as PageFlowOptions
+              const groupNames = { ...(stored.groupNames ?? {}) }
+              if (name) groupNames[key] = name
+              else delete groupNames[key]
+              stored.groupNames = groupNames
+              await writeFile(configFile, `${JSON.stringify(stored, null, 2)}\n`)
+              resolved.groupNames = groupNames
+              response.setHeader('Content-Type', 'application/json; charset=utf-8')
+              response.end(JSON.stringify({ key, name }))
+            } catch (error) {
+              response.statusCode = 400
+              response.setHeader('Content-Type', 'application/json; charset=utf-8')
+              response.end(JSON.stringify({ error: error instanceof Error ? error.message : 'Invalid request' }))
+            }
+            return
+          }
 
           if (pathname === clientVersionPath && request.method === 'GET') {
             const files = [clientEntryFile, clientStyleFile].filter((file): file is string => Boolean(file))

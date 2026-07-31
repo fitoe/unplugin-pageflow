@@ -1,4 +1,4 @@
-import type { PageFlowPage } from '../shared/types'
+import type { PageFlowLink, PageFlowPage } from '../shared/types'
 
 export const PAGE_CARD_WIDTH = 240
 export const PAGE_CARD_HEIGHT = 256
@@ -152,15 +152,82 @@ export function layoutPages(items: PageFlowPage[], cardHeights = new Map<string,
   }))
 }
 
+export function layoutPageGrid(items: PageFlowPage[], cardHeights = new Map<string, number>(), columns = 5) {
+  const gapX = 88
+  const gapY = 96
+  const rowTops: number[] = [64]
+  const rowHeights: number[] = []
+  return new Map(items.map((page, index) => {
+    const row = Math.floor(index / columns)
+    const column = index % columns
+    if (rowTops[row] == null) rowTops[row] = rowTops[row - 1] + (rowHeights[row - 1] ?? PAGE_CARD_HEIGHT) + gapY
+    rowHeights[row] = Math.max(rowHeights[row] ?? 0, cardHeights.get(page.id) ?? PAGE_CARD_HEIGHT)
+    return [page.id, [64 + column * (PAGE_CARD_WIDTH + gapX), rowTops[row]] as [number, number]]
+  }))
+}
+
+export interface FocusSideItem {
+  id: string
+  centerX: number
+  centerY: number
+}
+
+export function collapseRepeatedListLinks(links: PageFlowLink[]) {
+  const byTarget = new Map<string, PageFlowLink[]>()
+  links.forEach(link => byTarget.set(link.to, [...(byTarget.get(link.to) ?? []), link]))
+  const collapsedTargets = new Map<string, PageFlowLink>()
+  byTarget.forEach((targetLinks, target) => {
+    const hotspots = targetLinks.flatMap(link => link.hotspot ? [link.hotspot] : [])
+    if (hotspots.length < 3) return
+    const xValues = hotspots.map(hotspot => hotspot.centerX)
+    const yValues = hotspots.map(hotspot => hotspot.centerY)
+    if (Math.max(...xValues) - Math.min(...xValues) > 0.2 || Math.max(...yValues) - Math.min(...yValues) < 0.12) return
+    collapsedTargets.set(target, [...targetLinks]
+      .filter(link => link.hotspot)
+      .sort((left, right) => left.hotspot!.centerY - right.hotspot!.centerY)[Math.floor(hotspots.length / 2)])
+  })
+  const emitted = new Set<string>()
+  return links.filter(link => {
+    const representative = collapsedTargets.get(link.to)
+    if (!representative) return true
+    if (link !== representative || emitted.has(link.to)) return false
+    emitted.add(link.to)
+    return true
+  })
+}
+
+export function assignOrderedFocusSides<T extends FocusSideItem>(items: T[]) {
+  const sides: { left: T[], right: T[], top: T[], bottom: T[] } = { left: [], right: [], top: [], bottom: [] }
+  const horizontalCapacity = Math.max(4, Math.ceil(items.length * 0.4))
+  ;[...items]
+    .sort((left, right) => Math.abs(right.centerX - 0.5) - Math.abs(left.centerX - 0.5) || left.centerY - right.centerY)
+    .forEach(item => {
+      const costs = {
+        left: item.centerX + sides.left.length * 0.16 + (sides.left.length >= horizontalCapacity ? 10 : 0),
+        right: 1 - item.centerX + sides.right.length * 0.16 + (sides.right.length >= horizontalCapacity ? 10 : 0),
+        top: item.centerY + 0.6 + sides.top.length * 0.16,
+        bottom: 1 - item.centerY + 0.6 + sides.bottom.length * 0.16,
+      }
+      const side = (Object.keys(costs) as Array<keyof typeof costs>)
+        .reduce((best, candidate) => costs[candidate] < costs[best] ? candidate : best, 'left')
+      sides[side].push(item)
+    })
+  sides.left.sort((left, right) => left.centerY - right.centerY)
+  sides.right.sort((left, right) => left.centerY - right.centerY)
+  sides.top.sort((left, right) => left.centerX - right.centerX)
+  sides.bottom.sort((left, right) => left.centerX - right.centerX)
+  return sides
+}
+
 export function layoutPagesByRoute(items: PageFlowPage[], cardHeights = new Map<string, number>()) {
   const columnGap = 100
   const rowGap = 120
   const treeGap = 200
-  const root: RouteTreeNode = { key: '', depth: -1, pages: [], children: new Map() }
+  const root: RouteTreeNode = { key: '', depth: -1, order: Number.POSITIVE_INFINITY, pages: [], children: new Map() }
   items.forEach(page => insertRoutePage(root, page))
   const positions = new Map<string, [number, number]>()
   let treeTop = 64
-  ;[...root.children.values()].sort((left, right) => left.key.localeCompare(right.key)).forEach(tree => {
+  ;[...root.children.values()].sort(compareRouteNodes).forEach(tree => {
     const rowHeights = new Map<number, number>()
     collectTreePages(tree).forEach(page => {
       const depth = routeSegments(page).length - 1
@@ -172,7 +239,7 @@ export function layoutPagesByRoute(items: PageFlowPage[], cardHeights = new Map<
       rowTops.set(depth, nextRowTop)
       nextRowTop += (rowHeights.get(depth) ?? 0) + rowGap
     }
-    const sortedChildren = (node: RouteTreeNode) => [...node.children.values()].sort((left, right) => left.key.localeCompare(right.key))
+    const sortedChildren = (node: RouteTreeNode) => [...node.children.values()].sort(compareRouteNodes)
     const widths = new Map<RouteTreeNode, number>()
     const measure = (node: RouteTreeNode): number => {
       const children = sortedChildren(node)
@@ -195,7 +262,8 @@ export function layoutPagesByRoute(items: PageFlowPage[], cardHeights = new Map<
       const center = left + nodeWidth / 2
       const pagesWidth = node.pages.length * PAGE_CARD_WIDTH + Math.max(0, node.pages.length - 1) * columnGap
       node.pages
-        .sort((left, right) => (left.path || left.id).localeCompare(right.path || right.id))
+        .sort((left, right) => (left.routeOrder ?? Number.POSITIVE_INFINITY) - (right.routeOrder ?? Number.POSITIVE_INFINITY)
+          || (left.path || left.id).localeCompare(right.path || right.id))
         .forEach((page, index) => positions.set(page.id, [center - pagesWidth / 2 + index * (PAGE_CARD_WIDTH + columnGap), rowTops.get(node.depth) ?? treeTop]))
       return center
     }
@@ -205,9 +273,70 @@ export function layoutPagesByRoute(items: PageFlowPage[], cardHeights = new Map<
   return positions
 }
 
+export interface RouteDeck {
+  key: string
+  label: string
+  pages: PageFlowPage[]
+  representative: PageFlowPage
+}
+
+function compareDeckPages(left: PageFlowPage, right: PageFlowPage) {
+  const priority = (page: PageFlowPage) => {
+    const name = pageRouteParts(page).at(-1)?.toLowerCase() ?? ''
+    if (/^(index|home)$/.test(name)) return 0
+    if (/^(list|listing)$/.test(name)) return 1
+    if (/^(search|filter)$/.test(name)) return 2
+    if (/^(create|add|new|publish|edit|fill|form)$/.test(name)) return 3
+    if (/^(detail|show|view)$/.test(name)) return 4
+    if (/^(history|record|records|order|orders|log|logs)$/.test(name)) return 5
+    if (/^(mine|profile|setting|settings)$/.test(name)) return 6
+    return 7
+  }
+  return priority(left) - priority(right)
+    || (left.routeOrder ?? Number.POSITIVE_INFINITY) - (right.routeOrder ?? Number.POSITIVE_INFINITY)
+    || (left.path || left.id).localeCompare(right.path || right.id)
+}
+
+export function createRouteDeckView(items: PageFlowPage[], groupPath: string[] = []) {
+  const directPages: PageFlowPage[] = []
+  const grouped = new Map<string, PageFlowPage[]>()
+  items.forEach(page => {
+    const segments = pageRouteParts(page)
+    if (!groupPath.every((segment, index) => segments[index] === segment)) return
+    const remaining = segments.slice(groupPath.length)
+    if (remaining.length <= 1) directPages.push(page)
+    else grouped.set(remaining[0], [...(grouped.get(remaining[0]) ?? []), page])
+  })
+  const decks = [...grouped.entries()].flatMap(([label, unsortedDeckPages]) => {
+    const deckPages = [...unsortedDeckPages].sort(compareDeckPages)
+    if (deckPages.length === 1) {
+      directPages.push(deckPages[0])
+      return []
+    }
+    return [{
+    key: [...groupPath, label].join('/'),
+    label,
+    pages: deckPages,
+    representative: deckPages[0],
+    }]
+  }).sort((left, right) => compareDeckPages(left.representative, right.representative))
+  directPages.sort(compareDeckPages)
+  return { directPages, decks }
+}
+
+export function routeDeckPathForPage(items: PageFlowPage[], pageId: string) {
+  const path: string[] = []
+  while (true) {
+    const deck = createRouteDeckView(items, path).decks.find(item => item.pages.some(page => page.id === pageId))
+    if (!deck) return path
+    path.push(deck.label)
+  }
+}
+
 interface RouteTreeNode {
   key: string
   depth: number
+  order: number
   pages: PageFlowPage[]
   children: Map<string, RouteTreeNode>
 }
@@ -218,19 +347,29 @@ function insertRoutePage(root: RouteTreeNode, page: PageFlowPage) {
   segments.forEach((segment, depth) => {
     let child = node.children.get(segment)
     if (!child) {
-      child = { key: segment, depth, pages: [], children: new Map() }
+      child = { key: segment, depth, order: page.routeOrder ?? Number.POSITIVE_INFINITY, pages: [], children: new Map() }
       node.children.set(segment, child)
     }
+    child.order = Math.min(child.order, page.routeOrder ?? Number.POSITIVE_INFINITY)
     node = child
   })
   node.pages.push(page)
 }
 
+function compareRouteNodes(left: RouteTreeNode, right: RouteTreeNode) {
+  return left.order - right.order || left.key.localeCompare(right.key)
+}
+
 function routeSegments(page: PageFlowPage) {
-  const segments = (page.path || page.id).split(/[/?#]/).filter(Boolean)
-  if (segments[0] === 'pages') segments.shift()
+  const segments = pageRouteParts(page)
   segments.pop()
   if (!segments.length) segments.push('/')
+  return segments
+}
+
+function pageRouteParts(page: PageFlowPage) {
+  const segments = (page.path || page.id).split(/[/?#]/).filter(Boolean)
+  if (segments[0] === 'pages') segments.shift()
   return segments
 }
 

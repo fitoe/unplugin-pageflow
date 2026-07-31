@@ -37,6 +37,10 @@
     "url": "https://github.com/fitoe/unplugin-pageflow/issues"
   },
   "homepage": "https://github.com/fitoe/unplugin-pageflow#readme",
+  "publishConfig": {
+    "access": "public",
+    "registry": "https://registry.npmjs.org"
+  },
   "keywords": [
     "vue",
     "vite",
@@ -66,7 +70,7 @@
     "@leafer-in/viewport": "^2.2.6",
     "@leafer-ui/core": "^2.2.6",
     "elkjs": "^0.12.0",
-    "html2canvas": "^1.4.1",
+    "html2canvas-pro": "2.3.2",
     "leafer-ui": "^2.2.6",
     "unplugin": "^2.3.5"
   },

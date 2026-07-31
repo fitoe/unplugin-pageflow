@@ -5,10 +5,12 @@ import type {
   ResolvedPageFlowOptions,
 } from '../shared/types'
 import { PAGEFLOW_PREVIEW_PARAM } from './index'
-import { PAGEFLOW_NAVIGATE_MESSAGE, PAGEFLOW_NETWORK_EVENT, PAGEFLOW_PAGE_REPORTED_MESSAGE, PAGEFLOW_READY_EVENT, PAGEFLOW_WHEEL_MESSAGE } from '../shared/protocol'
+import { PAGEFLOW_HOTSPOT_HOVER_MESSAGE, PAGEFLOW_NAVIGATE_MESSAGE, PAGEFLOW_NETWORK_EVENT, PAGEFLOW_PAGE_REPORTED_MESSAGE, PAGEFLOW_READY_EVENT, PAGEFLOW_SCAN_MESSAGE, PAGEFLOW_SCAN_RESULT_MESSAGE } from '../shared/protocol'
 
 interface PageFlowWindow extends Window {
   __UNPLUGIN_PAGEFLOW_PENDING_REQUESTS__?: () => number
+  __UNPLUGIN_PAGEFLOW_SCAN_BOUND__?: boolean
+  __UNPLUGIN_PAGEFLOW_SCROLL_SCAN_BOUND__?: boolean
 }
 
 function trackPreviewRequests() {
@@ -197,9 +199,14 @@ function anchorRoutePath(router: RouterLike, target: URL) {
   return target.pathname
 }
 
-function notifyNavigation(to: string, location = to) {
+function notifyNavigation(to: string, location = to, interaction?: 'hotspot') {
   if (window.parent === window) return
-  window.parent.postMessage({ type: PAGEFLOW_NAVIGATE_MESSAGE, to, location }, window.location.origin)
+  window.parent.postMessage({
+    type: PAGEFLOW_NAVIGATE_MESSAGE,
+    to,
+    location,
+    ...(interaction ? { interaction } : {}),
+  }, window.location.origin)
 }
 
 function anchorNavigationLocation(router: RouterLike, target: URL) {
@@ -209,24 +216,50 @@ function anchorNavigationLocation(router: RouterLike, target: URL) {
   return `${pathname}${target.search}${target.hash}`
 }
 
-function forwardPreviewWheel() {
+const hotspotHoverTargets = new WeakMap<Element, string[]>()
+const hotspotOverlaysByElement = new WeakMap<Element, Set<HTMLElement>>()
+let hoveredHotspotElement: Element | undefined
+let hotspotHoverDelegationBound = false
+
+function notifyHotspotHover(element?: Element) {
+  const activeOverlays = element ? hotspotOverlaysByElement.get(element) : undefined
+  document.querySelectorAll<HTMLElement>('[data-unplugin-pageflow-hotspot]').forEach(overlay => {
+    overlay.style.opacity = !element ? '0.5' : activeOverlays?.has(overlay) ? '1' : '0.25'
+  })
   if (window.parent === window) return
-  window.addEventListener('wheel', event => {
-    event.preventDefault()
-    window.parent.postMessage({
-      type: PAGEFLOW_WHEEL_MESSAGE,
-      clientX: event.clientX,
-      clientY: event.clientY,
-      deltaMode: event.deltaMode,
-      deltaX: event.deltaX,
-      deltaY: event.deltaY,
-      deltaZ: event.deltaZ,
-      ctrlKey: event.ctrlKey,
-      shiftKey: event.shiftKey,
-      altKey: event.altKey,
-      metaKey: event.metaKey,
-    }, window.location.origin)
-  }, { passive: false })
+  const targets = element ? hotspotHoverTargets.get(element) ?? [] : []
+  window.parent.postMessage(targets.length ? {
+    type: PAGEFLOW_HOTSPOT_HOVER_MESSAGE,
+    targets,
+    hotspot: hotspotCenter(element!),
+  } : { type: PAGEFLOW_HOTSPOT_HOVER_MESSAGE }, window.location.origin)
+}
+
+function hotspotElementFrom(target: EventTarget | null) {
+  let element = target instanceof Element ? target : undefined
+  while (element && !hotspotHoverTargets.has(element)) element = element.parentElement ?? undefined
+  return element
+}
+
+function bindHotspotHoverDelegation() {
+  if (hotspotHoverDelegationBound) return
+  hotspotHoverDelegationBound = true
+  document.addEventListener('pointermove', event => {
+    const element = hotspotElementFrom(event.target)
+    if (element === hoveredHotspotElement) return
+    hoveredHotspotElement = element
+    notifyHotspotHover(element)
+  }, true)
+  document.addEventListener('pointerleave', () => {
+    if (!hoveredHotspotElement) return
+    hoveredHotspotElement = undefined
+    notifyHotspotHover()
+  }, true)
+}
+
+function bindHotspotHover(element: Element, targets: string[]) {
+  hotspotHoverTargets.set(element, targets)
+  bindHotspotHoverDelegation()
 }
 
 function addHotspot(layer: HTMLElement, element: Element, type: 'link' | 'event', targets: string[]) {
@@ -235,31 +268,60 @@ function addHotspot(layer: HTMLElement, element: Element, type: 'link' | 'event'
   const overlay = document.createElement('div')
   overlay.setAttribute('data-unplugin-pageflow-hotspot', type)
   overlay.setAttribute('data-unplugin-pageflow-targets', targets.join('\n'))
-  const color = type === 'link' ? '#ff5ca8' : '#65bfff'
-  const background = type === 'link' ? 'rgba(255, 92, 168, 0.18)' : 'rgba(101, 191, 255, 0.18)'
+  const background = type === 'link' ? 'rgba(255, 92, 168, 0.2)' : 'rgba(101, 191, 255, 0.2)'
+  const border = type === 'link' ? 'rgba(255, 92, 168, 0.2)' : 'rgba(101, 191, 255, 0.2)'
   Object.assign(overlay.style, {
     position: 'absolute',
     left: `${rect.left + window.scrollX}px`,
     top: `${rect.top + window.scrollY}px`,
     width: `${rect.width}px`,
     height: `${rect.height}px`,
-    border: `2px solid ${color}`,
     background,
+    border: `1px solid ${border}`,
     boxSizing: 'border-box',
-    pointerEvents: 'none',
+    pointerEvents: targets.length ? 'auto' : 'none',
+    cursor: targets.length ? 'pointer' : 'default',
+    opacity: '0.5',
+    transition: 'opacity 500ms ease-out',
   })
   layer.append(overlay)
+  const overlays = hotspotOverlaysByElement.get(element) ?? new Set<HTMLElement>()
+  overlays.add(overlay)
+  hotspotOverlaysByElement.set(element, overlays)
+  if (targets.length) {
+    hotspotHoverTargets.set(overlay, targets)
+    hotspotOverlaysByElement.set(overlay, new Set([overlay]))
+    let pointerNavigationAt = 0
+    const navigate = (event: Event) => {
+      event.preventDefault()
+      event.stopImmediatePropagation()
+      notifyNavigation(targets[0], targets[0], 'hotspot')
+    }
+    overlay.addEventListener('pointerdown', event => {
+      pointerNavigationAt = performance.now()
+      navigate(event)
+    })
+    overlay.addEventListener('click', event => {
+      if (performance.now() - pointerNavigationAt < 500) {
+        event.preventDefault()
+        event.stopImmediatePropagation()
+        return
+      }
+      navigate(event)
+    })
+  }
+  bindHotspotHover(element, targets)
   return true
 }
 
 function hotspotCenter(element: Element) {
   const rect = element.getBoundingClientRect()
   const root = document.documentElement
-  const width = Math.max(1, root.scrollWidth, window.innerWidth)
-  const height = Math.max(1, root.scrollHeight, window.innerHeight)
+  const width = Math.max(1, root.clientWidth, window.innerWidth)
+  const height = Math.max(1, root.clientHeight, window.innerHeight)
   return {
-    centerX: (rect.left + window.scrollX + rect.width / 2) / width,
-    centerY: (rect.top + window.scrollY + rect.height / 2) / height,
+    centerX: (rect.left + rect.width / 2) / width,
+    centerY: (rect.top + rect.height / 2) / height,
   }
 }
 
@@ -322,6 +384,7 @@ function collectLinks(router: RouterLike) {
     Object.assign(layer.style, {
       position: 'absolute',
       inset: '0',
+      display: 'none',
       pointerEvents: 'none',
       zIndex: '2147483647',
     })
@@ -342,9 +405,17 @@ function collectLinks(router: RouterLike) {
     if (!addHotspot(layer, anchor, 'link', [routePath])) return
     links.push({ label, to: routePath, hotspot: hotspotCenter(anchor) })
   })
+  document.querySelectorAll<HTMLElement>('[data-pageflow-to]').forEach(element => {
+    const declaredTarget = element.dataset.pageflowTo
+    const to = declaredTarget && targetPath(router, declaredTarget)
+    if (!to || !addHotspot(layer!, element, 'link', [to])) return
+    links.push({ label: element.getAttribute('aria-label')?.trim() || element.textContent?.trim() || to, to, hotspot: hotspotCenter(element) })
+  })
   document.body.querySelectorAll('*').forEach(element => {
     if (element.closest('[data-unplugin-pageflow-hotspot-layer]') || !hasClickHandler(element)) return
     if (element.closest('a[href]')) return
+    if (element.querySelector('a[href]')) return
+    if (element.hasAttribute('data-pageflow-to')) return
     const label = element.getAttribute('aria-label')?.trim() || element.textContent?.trim() || 'Navigation'
     const targets = renderedNavigationTargets(element, router)
     const type = targets.length ? 'link' : 'event'
@@ -352,21 +423,37 @@ function collectLinks(router: RouterLike) {
     const hotspot = hotspotCenter(element)
     targets.forEach(to => links.push({ label, to, hotspot }))
   })
-  programmaticElements.forEach((targets, element) => addHotspot(layer!, element, 'link', [...targets]))
-  return links
+  programmaticElements.forEach((targets, element) => {
+    if (element.closest('a[href], [data-pageflow-to]')) return
+    addHotspot(layer!, element, 'link', [...targets])
+  })
+  const uniqueLinks = new Map<string, PageFlowRuntimeLink>()
+  links.forEach(link => {
+    const centerX = link.hotspot?.centerX.toFixed(4) ?? 'none'
+    const centerY = link.hotspot?.centerY.toFixed(4) ?? 'none'
+    uniqueLinks.set(`${link.to}:${centerX}:${centerY}`, link)
+  })
+  return [...uniqueLinks.values()]
 }
 
 async function publishPage(router: RouterLike, config: ResolvedPageFlowOptions) {
   if (!new URLSearchParams(window.location.search).has(PAGEFLOW_PREVIEW_PARAM)) return
   await new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve())))
   const path = routePath(router)
+  const page = { path, title: document.title, links: collectLinks(router) }
   await fetch(`${config.previewPath}api/page`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ path, title: document.title, links: collectLinks(router) }),
+    body: JSON.stringify(page),
   })
   if (window.parent !== window)
     window.parent.postMessage({ type: PAGEFLOW_PAGE_REPORTED_MESSAGE, path }, window.location.origin)
+  return page
+}
+
+async function scanRenderedPage(router: RouterLike) {
+  await new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve())))
+  return { path: routePath(router), title: document.title, links: collectLinks(router) }
 }
 
 function protectPreviewInteractions(router: RouterLike, config: ResolvedPageFlowOptions) {
@@ -377,6 +464,7 @@ function protectPreviewInteractions(router: RouterLike, config: ResolvedPageFlow
     const anchor = lastClickedElement?.closest<HTMLAnchorElement>('a[href]')
     if (anchor) {
       event.preventDefault()
+      event.stopImmediatePropagation()
       const target = anchorRoutePath(router, new URL(anchor.href, window.location.href))
       notifyNavigation(targetPath(router, target) ?? target, anchorNavigationLocation(router, new URL(anchor.href, window.location.href)))
     }
@@ -469,10 +557,34 @@ export async function startPageFlowRuntime(config: ResolvedPageFlowOptions) {
 
   if (!router) return
   const previewMode = new URLSearchParams(window.location.search).has(PAGEFLOW_PREVIEW_PARAM)
-  if (previewMode) forwardPreviewWheel()
   protectPreviewInteractions(router, config)
   if (!previewMode) await publishRoutes(router, config)
   await publishPage(router, config)
+  const runtimeWindow = window as PageFlowWindow
+  if (!runtimeWindow.__UNPLUGIN_PAGEFLOW_SCAN_BOUND__) {
+    runtimeWindow.__UNPLUGIN_PAGEFLOW_SCAN_BOUND__ = true
+    window.addEventListener('message', event => {
+      if (event.origin !== window.location.origin || event.data?.type !== PAGEFLOW_SCAN_MESSAGE) return
+      void scanRenderedPage(router!).then(page => {
+        if (window.parent !== window)
+          window.parent.postMessage({ type: PAGEFLOW_SCAN_RESULT_MESSAGE, page }, window.location.origin)
+      })
+    })
+  }
+  if (previewMode && !runtimeWindow.__UNPLUGIN_PAGEFLOW_SCROLL_SCAN_BOUND__) {
+    runtimeWindow.__UNPLUGIN_PAGEFLOW_SCROLL_SCAN_BOUND__ = true
+    let scrollTimer: ReturnType<typeof setTimeout> | undefined
+    document.addEventListener('scroll', () => {
+      clearTimeout(scrollTimer)
+      scrollTimer = setTimeout(() => {
+        scrollTimer = undefined
+        void scanRenderedPage(router!).then(page => {
+          if (window.parent !== window)
+            window.parent.postMessage({ type: PAGEFLOW_SCAN_RESULT_MESSAGE, page }, window.location.origin)
+        })
+      }, 32)
+    }, true)
+  }
   observePage(router, config)
   router.afterEach?.(() => {
     if (!previewMode) void publishRoutes(router, config)

@@ -134,3 +134,55 @@ test('serves the unplugin-pageflow client from the configured development route'
     await server.close()
   }
 })
+
+test('collapses the configured uni-app home into the root route', async () => {
+  const server = await createServer({
+    root: resolve('tests/fixtures/uniapp'),
+    configFile: resolve('vite.config.ts'),
+    logLevel: 'silent',
+    server: { host: '127.0.0.1', port: 0 },
+  })
+
+  await server.listen()
+  try {
+    const address = server.httpServer?.address()
+    assert(address && typeof address === 'object')
+    const origin = `http://127.0.0.1:${address.port}`
+    const response = await fetch(`${origin}/__unplugin-pageflow/api/routes`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        routeMode: 'hash',
+        routes: [
+          { id: 'root', path: '/', title: 'Root' },
+          { id: 'uni-home', path: '/pages/index', title: 'Uni home' },
+          { id: 'login', path: '/pages/login', title: 'Login' },
+          { id: 'untitled', path: '/pages/untitled', title: '/pages/untitled' },
+          { id: 'product', path: '/pages/product/index', title: 'Product' },
+          { id: 'menu', path: '/menu', title: 'Menu', componentFile: 'src/menu.vue' },
+        ],
+      }),
+    })
+    const plugin = server.config.plugins.find(item => item.name === 'unplugin-pageflow')
+    await plugin.transform("uni.switchTab({ url: '/pages/index' })", 'src/menu.vue')
+    const graph = await (await fetch(`${origin}/__unplugin-pageflow/api/graph`)).json()
+
+    assert.equal(response.status, 204)
+    assert.deepEqual(graph.pages.map(page => page.path), ['/', '/pages/login', '/pages/untitled', '/pages/product/index', '/menu'])
+    assert.equal(graph.pages.find(page => page.id === 'root').title, 'Fixture home')
+    assert.equal(graph.pages.find(page => page.id === 'login').title, 'Fixture login')
+    assert.equal(graph.pages.find(page => page.id === 'product').title, 'Fixture product')
+    assert.equal(graph.pages.find(page => page.id === 'untitled').title, '')
+    assert.deepEqual(graph.pages.filter(page => page.routeOrder != null).map(page => [page.path, page.routeOrder]), [
+      ['/', 0],
+      ['/pages/login', 1],
+      ['/pages/untitled', 2],
+      ['/pages/product/index', 3],
+    ])
+    assert.deepEqual(graph.pages.find(page => page.id === 'menu').links, [
+      { label: 'switchTab /pages/index', to: 'root' },
+    ])
+  } finally {
+    await server.close()
+  }
+})

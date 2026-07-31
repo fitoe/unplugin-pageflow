@@ -4,6 +4,7 @@ export interface PageFlowOptions {
   appUrl?: string
   dynamicParams?: Record<string, Record<string, string | number>>
   previewRoles?: Array<{ match: string; role: string }>
+  groupNames?: Record<string, string>
 }
 
 export interface ResolvedPageFlowOptions {
@@ -12,6 +13,7 @@ export interface ResolvedPageFlowOptions {
   appUrl: string
   dynamicParams: Record<string, Record<string, string | number>>
   previewRoles: Array<{ match: string; role: string }>
+  groupNames: Record<string, string>
 }
 
 export interface PageFlowRuntimeRoute {
@@ -46,6 +48,7 @@ export interface PageFlowPage {
   id: string
   title: string
   path: string
+  routeOrder?: number
   revision?: string
   accent: string
   links: PageFlowLink[]

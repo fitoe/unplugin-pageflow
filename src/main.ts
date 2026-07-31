@@ -5,4 +5,6 @@ mountPageFlow(document.querySelector('#app'), {
   previewPath: '/',
   appUrl: '/',
   dynamicParams: {},
+  previewRoles: [],
+  groupNames: {},
 })

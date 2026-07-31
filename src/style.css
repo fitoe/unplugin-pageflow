@@ -25,6 +25,8 @@ header {
 .brand span { margin-right: 7px; color: #ff795d; }
 .crumb { font: 10px 'DM Mono'; color: #858a8e; }
 .crumb span { margin: 0 8px; color: #555a5e; }
+.crumb button { padding: 0; border: 0; color: #b9bdc0; background: none; font: inherit; cursor: pointer; }
+.crumb button:hover { color: #fff; }
 .mode {
   padding: 3px 7px;
   border: 1px solid #474b4f;
@@ -58,9 +60,11 @@ header {
 
 .workspace { position: absolute; inset: 46px 0 28px; overflow: hidden; overscroll-behavior: none; touch-action: none; }
 .workspace > .canvas,
-.workspace > .preview-overlay { opacity: 0; }
+.workspace > .preview-overlay,
+.workspace > .connection-canvas { opacity: 0; }
 .workspace.scene-ready > .canvas,
-.workspace.scene-ready > .preview-overlay { opacity: 1; transition: opacity 120ms ease-out; }
+.workspace.scene-ready > .preview-overlay,
+.workspace.scene-ready > .connection-canvas { opacity: 1; transition: opacity 120ms ease-out; }
 .workspace:not(.scene-ready)::after {
   position: absolute;
   top: 50%;
@@ -74,12 +78,14 @@ header {
   position: absolute;
   inset: 0;
   touch-action: none;
-  background-color: #242628;
-  background-image: radial-gradient(#3a3d40 1px, transparent 1px);
+  background-color: #eef0f2;
+  background-image: radial-gradient(#cfd4d8 1px, transparent 1px);
   background-size: 24px 24px;
 }
 
 .preview-overlay { position: absolute; inset: 0; overflow: hidden; overscroll-behavior: none; pointer-events: none; touch-action: none; }
+.connection-canvas { position: absolute; inset: 0; z-index: 3; overflow: hidden; pointer-events: none; }
+.connection-canvas canvas { pointer-events: none !important; }
 .preview-world { position: absolute; inset: 0; transform-origin: 0 0; }
 .page-preview {
   position: absolute;
