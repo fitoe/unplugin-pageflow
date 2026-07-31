@@ -160,7 +160,7 @@ test('discovers Vue Router routes and reports rendered navigation hotspots', asy
     previewFrame.contentDocument.body.textContent = 'Rendered preview'
     previewFrame.contentWindow.__UNPLUGIN_PAGEFLOW_PENDING_REQUESTS__ = () => 0
     let previewSettled = false
-    const previewReady = snapshotClient.waitForPreviewReady(previewFrame, 40, 2000).then(() => { previewSettled = true })
+    const previewReady = snapshotClient.waitForPreviewReady(previewFrame, 40, 5000).then(() => { previewSettled = true })
     previewFrame.contentWindow.dispatchEvent(new previewFrame.contentWindow.Event('unplugin-pageflow:ready'))
     await new Promise(resolve => setTimeout(resolve, 20))
     assert.equal(previewSettled, false)

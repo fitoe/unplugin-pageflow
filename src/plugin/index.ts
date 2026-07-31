@@ -1,6 +1,7 @@
 import { createUnplugin } from 'unplugin'
 import type { UnpluginFactory } from 'unplugin'
 import { createHash } from 'node:crypto'
+import { spawn, type ChildProcess } from 'node:child_process'
 import { createRequire } from 'node:module'
 import { readFile, readdir, stat, writeFile } from 'node:fs/promises'
 import { readFileSync } from 'node:fs'
@@ -27,8 +28,31 @@ import {
   PAGEFLOW_RUNTIME_RESOLVED_ID,
 } from './constants.ts'
 import { createThumbnailCache } from './thumbnail-cache.ts'
+import { isPageFlowTestFile, PageTestIndex } from './page-tests.ts'
+import { createPageTestResultCache } from './page-test-results.ts'
+import { PAGEFLOW_TEST_EVENT } from '../shared/protocol.ts'
 
 const ACCENTS = ['#ff795d', '#7c6cff', '#26b99a', '#e7ad43', '#dd648e']
+
+async function terminateProcessTree(child: ChildProcess) {
+  if (!child.pid || child.exitCode != null) return
+  if (process.platform === 'win32') {
+    await new Promise<void>(resolveDone => {
+      const killer = spawn('taskkill', ['/pid', String(child.pid), '/T', '/F'], { stdio: 'ignore', windowsHide: true })
+      killer.once('error', () => {
+        child.kill()
+        resolveDone()
+      })
+      killer.once('close', () => resolveDone())
+    })
+    return
+  }
+  try {
+    process.kill(-child.pid, 'SIGTERM')
+  } catch {
+    child.kill('SIGTERM')
+  }
+}
 
 function normalizePreviewPath(path: string) {
   return `/${path.replace(/^\/+|\/+$/g, '')}/`
@@ -44,6 +68,8 @@ function resolveOptions(options: PageFlowOptions = {}): ResolvedPageFlowOptions 
     dynamicParams: options.dynamicParams ?? {},
     previewRoles: options.previewRoles ?? [],
     groupNames: options.groupNames ?? {},
+    pageTests: options.pageTests ?? {},
+    testCommands: options.testCommands ?? {},
   }
 }
 
@@ -64,6 +90,8 @@ async function loadProjectOptions(root: string, options: PageFlowOptions = {}) {
     routes: options.routes ?? stored.routes,
     previewRoles: options.previewRoles ?? stored.previewRoles,
     groupNames: options.groupNames ?? stored.groupNames,
+    pageTests: options.pageTests ?? stored.pageTests,
+    testCommands: options.testCommands ?? stored.testCommands,
   })
 }
 
@@ -364,6 +392,22 @@ const factory: UnpluginFactory<PageFlowOptions | undefined> = (options) => {
   let cachedClientStyle: Buffer | undefined
   let sendGraphUpdate: ((graph: PageFlowGraph) => void) | undefined
   let sendPageUpdate: ((page: PageFlowPage) => void) | undefined
+  let pageTestIndex: PageTestIndex | undefined
+  let pageTestIndexReady: Promise<void> = Promise.resolve()
+  let pageTestIndexScanned = false
+  let pageTestResultCache: ReturnType<typeof createPageTestResultCache> | undefined
+  const runningPageTests = new Map<string, ChildProcess>()
+  const cancelledPageTests = new Set<string>()
+
+  const ensurePageTestIndex = () => {
+    if (!pageTestIndex || pageTestIndexScanned) return pageTestIndexReady
+    pageTestIndexScanned = true
+    pageTestIndexReady = pageTestIndex.scan().catch(error => {
+      pageTestIndexScanned = false
+      throw error
+    })
+    return pageTestIndexReady
+  }
 
   const rebuildGraph = (updatedPath?: string) => {
     graph = createGraph(routes, reportedPages, staticLinksByFile, configuredTitlesByPath, routeOrderByPath, sourceRevisionsByFile, graph.version + 1, routeMode, uniAppHomePath)
@@ -462,6 +506,10 @@ const factory: UnpluginFactory<PageFlowOptions | undefined> = (options) => {
       handleHotUpdate(context) {
         const file = normalizeFile(context.file)
         if (`${file}/`.startsWith(pluginDist) || file.includes('/.unplugin-pageflow/cache/')) return []
+        if (isPageFlowTestFile(file) && pageTestIndex && pageTestIndexScanned) {
+          pageTestIndexReady = pageTestIndex.update(file).then(() => sendEvent(PAGEFLOW_TEST_EVENT, { file }))
+          return []
+        }
       },
       transformIndexHtml: {
         order: 'pre',
@@ -497,6 +545,7 @@ const factory: UnpluginFactory<PageFlowOptions | undefined> = (options) => {
           server.config.logger.warn(`unplugin-pageflow could not scan Vue sources: ${error instanceof Error ? error.message : error}`),
         )
         const thumbnailCache = createThumbnailCache(resolve(projectRoot, '.unplugin-pageflow/cache'))
+        pageTestResultCache = createPageTestResultCache(resolve(projectRoot, '.unplugin-pageflow/cache'))
         sendGraphUpdate = nextGraph => {
           server.ws.send({ type: 'custom', event: PAGEFLOW_GRAPH_EVENT, data: nextGraph })
           sendEvent(PAGEFLOW_GRAPH_EVENT, nextGraph)
@@ -509,6 +558,7 @@ const factory: UnpluginFactory<PageFlowOptions | undefined> = (options) => {
           routes = resolved.routes
           rebuildGraph()
         }
+        pageTestIndex = new PageTestIndex(projectRoot, routes, resolved.pageTests)
 
         server.middlewares.use(async (request, response, next) => {
           const requestUrl = new URL(request.url ?? '/', 'http://unplugin-pageflow.local')
@@ -522,6 +572,118 @@ const factory: UnpluginFactory<PageFlowOptions | undefined> = (options) => {
           const stylePath = `${resolved.previewPath}style.css`
           const clientVersionPath = `${resolved.previewPath}api/client-version`
           const groupNamePath = `${resolved.previewPath}api/group-name`
+          const testsPath = `${resolved.previewPath}api/tests`
+
+          if (pathname === testsPath && request.method === 'GET') {
+            try {
+              await ensurePageTestIndex()
+            } catch (error) {
+              server.config.logger.warn(`unplugin-pageflow could not scan page tests: ${error instanceof Error ? error.message : error}`)
+              response.statusCode = 500
+              response.end('Could not scan page tests')
+              return
+            }
+            const pagePath = requestUrl.searchParams.get('path') ?? ''
+            const tests = await Promise.all((pageTestIndex?.testsFor(pagePath) ?? []).map(async test => ({
+              ...test,
+              ...await pageTestResultCache?.read(test),
+              runnable: Boolean(resolved.testCommands[test.kind]),
+            })))
+            response.setHeader('Content-Type', 'application/json; charset=utf-8')
+            response.end(JSON.stringify(tests))
+            return
+          }
+
+          if (pathname === `${testsPath}/run` && request.method === 'POST') {
+            let runId = ''
+            try {
+              await ensurePageTestIndex()
+              const body = await readJson(request)
+              const pagePath = typeof body.path === 'string' ? body.path : ''
+              const id = typeof body.id === 'string' ? body.id : ''
+              runId = id
+              const test = pageTestIndex?.testsFor(pagePath).find(item => item.id === id)
+              if (!test) throw new Error('Unknown page test')
+              const command = resolved.testCommands[test.kind]
+              if (!command?.command) throw new Error(`No ${test.kind} test command configured`)
+              if (runningPageTests.has(id)) {
+                response.statusCode = 409
+                response.end('Test is already running')
+                return
+              }
+
+              const startedAt = Date.now()
+              const values = { file: resolve(projectRoot, test.file), name: test.name }
+              const interpolate = (value: string) => value.replaceAll('{file}', values.file).replaceAll('{name}', values.name)
+              const child = spawn(command.command, (command.args ?? []).map(interpolate), {
+                cwd: projectRoot,
+                env: process.env,
+                shell: false,
+                windowsHide: true,
+                detached: process.platform !== 'win32',
+              })
+              runningPageTests.set(id, child)
+              let output = ''
+              const append = (chunk: Buffer) => { output = `${output}${chunk}`.slice(-100_000) }
+              child.stdout.on('data', append)
+              child.stderr.on('data', append)
+              const timeoutMs = Math.min(Math.max(command.timeoutMs ?? 120_000, 1_000), 1_800_000)
+              let timedOut = false
+              const timeout = setTimeout(() => {
+                timedOut = true
+                append(Buffer.from(`\nPageFlow stopped this test after ${timeoutMs}ms.`))
+                void terminateProcessTree(child)
+              }, timeoutMs)
+              const exitCode = await new Promise<number>((resolveExit, reject) => {
+                child.once('error', reject)
+                child.once('close', code => resolveExit(code ?? 1))
+              }).finally(() => clearTimeout(timeout))
+              const cancelled = cancelledPageTests.has(id)
+              if (cancelled) append(Buffer.from('\nPageFlow cancelled this test.'))
+              const result = {
+                status: cancelled ? 'skipped' as const : !timedOut && exitCode === 0 ? 'passed' as const : 'failed' as const,
+                duration: Date.now() - startedAt,
+                output: output.trim(),
+              }
+              await pageTestResultCache?.write(test, result).catch(error =>
+                server.config.logger.warn(`unplugin-pageflow could not persist a test result: ${error instanceof Error ? error.message : error}`),
+              )
+              sendEvent(PAGEFLOW_TEST_EVENT, { path: pagePath, id, result })
+              response.setHeader('Content-Type', 'application/json; charset=utf-8')
+              response.end(JSON.stringify(result))
+            } catch (error) {
+              response.statusCode = 400
+              response.setHeader('Content-Type', 'application/json; charset=utf-8')
+              response.end(JSON.stringify({ error: error instanceof Error ? error.message : 'Could not run page test' }))
+            } finally {
+              if (runId) {
+                runningPageTests.delete(runId)
+                cancelledPageTests.delete(runId)
+              }
+            }
+            return
+          }
+
+          if (pathname === `${testsPath}/cancel` && request.method === 'POST') {
+            try {
+              const body = await readJson(request)
+              const id = typeof body.id === 'string' ? body.id : ''
+              const child = runningPageTests.get(id)
+              if (!id || !child) {
+                response.statusCode = 404
+                response.end('Page test is not running')
+                return
+              }
+              cancelledPageTests.add(id)
+              await terminateProcessTree(child)
+              response.statusCode = 202
+              response.end()
+            } catch (error) {
+              response.statusCode = 400
+              response.end(error instanceof Error ? error.message : 'Could not cancel page test')
+            }
+            return
+          }
 
           if (pathname === groupNamePath && request.method === 'POST') {
             try {
@@ -664,6 +826,7 @@ const factory: UnpluginFactory<PageFlowOptions | undefined> = (options) => {
               if (next.routeMode !== routeMode || JSON.stringify(next.routes) !== JSON.stringify(routes)) {
                 routeMode = next.routeMode
                 routes = next.routes
+                pageTestIndex?.setRoutes(routes)
                 rebuildGraph()
               }
               response.statusCode = 204

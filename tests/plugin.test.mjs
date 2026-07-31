@@ -136,6 +136,78 @@ test('serves the unplugin-pageflow client from the configured development route'
   }
 })
 
+test('serves tests associated with the requested page', async () => {
+  const root = resolve('tests/fixtures/page-tests')
+  const server = await createServer({
+    root,
+    configFile: resolve(root, 'vite.config.ts'),
+    logLevel: 'silent',
+    server: { host: '127.0.0.1', port: 0 },
+  })
+
+  await server.listen()
+  try {
+    const address = server.httpServer?.address()
+    assert(address && typeof address === 'object')
+    const origin = `http://127.0.0.1:${address.port}`
+    const componentFile = resolve(root, 'src/pages/login.tsx').replaceAll('\\', '/')
+    const routeUpdate = await fetch(`${origin}/__unplugin-pageflow/api/routes`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        routeMode: 'history',
+        routes: [
+          { id: 'login', path: '/login', title: 'Login', componentFile },
+          { id: 'profile', path: '/profile', title: 'Profile' },
+        ],
+      }),
+    })
+    const testsResponse = await fetch(`${origin}/__unplugin-pageflow/api/tests?path=${encodeURIComponent('/login')}`)
+    const pageTests = await testsResponse.json()
+
+    assert.equal(routeUpdate.status, 204)
+    assert.equal(testsResponse.status, 200)
+    assert.deepEqual(pageTests.map(item => item.name).sort(), [
+      'returns to login',
+      'shows invalid credentials',
+      'submits valid credentials',
+    ])
+    const runnable = pageTests.find(item => item.name === 'returns to login')
+    assert.equal(runnable.runnable, true)
+    const runResponse = await fetch(`${origin}/__unplugin-pageflow/api/tests/run`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ path: '/login', id: runnable.id }),
+    })
+    const result = await runResponse.json()
+    const refreshedTests = await (await fetch(`${origin}/__unplugin-pageflow/api/tests?path=${encodeURIComponent('/login')}`)).json()
+    assert.equal(runResponse.status, 200)
+    assert.equal(result.status, 'passed')
+    assert.match(result.output, /pageflow test ok/)
+    assert.equal(refreshedTests.find(item => item.id === runnable.id).status, 'passed')
+
+    const profileTests = await (await fetch(`${origin}/__unplugin-pageflow/api/tests?path=${encodeURIComponent('/profile')}`)).json()
+    const profileTest = profileTests.find(item => item.name === 'opens the profile page')
+    const runningRequest = fetch(`${origin}/__unplugin-pageflow/api/tests/run`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ path: '/profile', id: profileTest.id }),
+    })
+    await new Promise(resolveDelay => setTimeout(resolveDelay, 100))
+    const cancelResponse = await fetch(`${origin}/__unplugin-pageflow/api/tests/cancel`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id: profileTest.id }),
+    })
+    const cancelledResult = await (await runningRequest).json()
+    assert.equal(cancelResponse.status, 202)
+    assert.equal(cancelledResult.status, 'skipped')
+    assert.match(cancelledResult.output, /cancelled this test/)
+  } finally {
+    await server.close()
+  }
+})
+
 test('collapses the configured uni-app home into the root route', async () => {
   const server = await createServer({
     root: resolve('tests/fixtures/uniapp'),

@@ -9,4 +9,6 @@ mountPageFlow(document.querySelector('#app'), {
   dynamicParams: {},
   previewRoles: [],
   groupNames: {},
+  pageTests: {},
+  testCommands: {},
 })

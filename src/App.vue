@@ -6,13 +6,14 @@ import '@leafer-in/viewport'
 import type {
   PageFlowLink,
   PageFlowPage,
+  PageFlowPageTest,
   PageFlowApiResult,
   PageFlowRouteMode,
   PageFlowThumbnailManifest,
   PageFlowThumbnailRecord,
   ResolvedPageFlowOptions,
 } from './shared/types'
-import { fetchPageFlowGraph, reportPageTitle, startRouteDiscovery, subscribeToPageFlowUpdates } from './client/graph'
+import { cancelPageFlowTest, fetchPageFlowGraph, fetchPageFlowTests, reportPageTitle, runPageFlowTest, startRouteDiscovery, subscribeToPageFlowUpdates } from './client/graph'
 import { planGraphUpdate } from './client/graph-update'
 import { resolvePreviewUrl, touchPreviewCache } from './client/preview'
 import { PAGEFLOW_SCAN_MESSAGE } from './shared/protocol'
@@ -104,6 +105,13 @@ const focusedPageId = ref<string>()
 const focusedLinks = ref<PageFlowLink[]>([])
 const apiResultsByPage = ref<Record<string, PageFlowApiResult[]>>({})
 const expandedApiResults = ref(new Set<string>())
+const panelTab = ref<'api' | 'tests'>('api')
+const focusedPageTests = ref<PageFlowPageTest[]>([])
+const focusedTestsLoading = ref(false)
+const focusedTestsFailed = ref(false)
+const runningPageTestIds = ref(new Set<string>())
+const runningAllPageTests = ref(false)
+const stopAllPageTestsRequested = ref(false)
 const hoveredHotspot = ref<{ targets: string[]; centerX?: number; centerY?: number }>()
 const focusedTargetPositions = ref<Record<string, [number, number]>>({})
 const parkedPages = ref<Record<string, PageFlowPage>>({})
@@ -187,6 +195,7 @@ const focusAnimation = new FrameAnimation(animationHost)
 const hoverAnimation = new FrameAnimation(animationHost)
 const flightAnimation = new FrameAnimation(animationHost)
 let thumbnailResourceGeneration = 0
+let focusedTestsRequest = 0
 let sceneRenderFrame = 0
 let hoverFadeProgress = 0
 const currentPreviewMode = computed(() => previewModes[previewMode.value])
@@ -264,6 +273,81 @@ const focusScene = computed(() => createFocusScene({
 }))
 const connectionPaths = computed(() => focusScene.value?.connections ?? [])
 const focusedApiResults = computed(() => focusedPageId.value ? apiResultsByPage.value[focusedPageId.value] ?? [] : [])
+
+const testKindLabels: Record<PageFlowPageTest['kind'], string> = { e2e: 'E2E', component: '组件', unit: '单元' }
+const testSourceLabels: Record<PageFlowPageTest['source'], string> = { config: '显式配置', import: '组件引用', route: '页面路由', convention: '同名文件' }
+const testStatusLabels: Record<PageFlowPageTest['status'], string> = { unknown: '未运行', passed: '通过', failed: '失败', skipped: '跳过' }
+const runnableFocusedTests = computed(() => focusedPageTests.value.filter(test => test.runnable))
+const focusedTestSummary = computed(() => focusedPageTests.value.reduce((summary, test) => {
+  summary[test.status]++
+  return summary
+}, { unknown: 0, passed: 0, failed: 0, skipped: 0 }))
+
+async function refreshFocusedTests() {
+  const request = ++focusedTestsRequest
+  const page = pages.value.find(item => item.id === focusedPageId.value)
+  if (!page) {
+    focusedPageTests.value = []
+    focusedTestsLoading.value = false
+    return
+  }
+  focusedTestsLoading.value = true
+  focusedTestsFailed.value = false
+  try {
+    const tests = await fetchPageFlowTests(props.config, page.path)
+    if (request === focusedTestsRequest && page.id === focusedPageId.value) focusedPageTests.value = tests
+  } catch {
+    if (request === focusedTestsRequest) focusedTestsFailed.value = true
+  } finally {
+    if (request === focusedTestsRequest) focusedTestsLoading.value = false
+  }
+}
+
+async function runFocusedPageTest(test: PageFlowPageTest) {
+  const page = pages.value.find(item => item.id === focusedPageId.value)
+  if (!page || runningPageTestIds.value.has(test.id)) return
+  runningPageTestIds.value = new Set(runningPageTestIds.value).add(test.id)
+  try {
+    const result = await runPageFlowTest(props.config, page.path, test.id)
+    if (focusedPageId.value === page.id)
+      focusedPageTests.value = focusedPageTests.value.map(item => item.id === test.id ? { ...item, ...result } : item)
+  } catch (error) {
+    if (focusedPageId.value === page.id)
+      focusedPageTests.value = focusedPageTests.value.map(item => item.id === test.id
+        ? { ...item, status: 'failed', output: error instanceof Error ? error.message : '测试执行失败' }
+        : item)
+  } finally {
+    const next = new Set(runningPageTestIds.value)
+    next.delete(test.id)
+    runningPageTestIds.value = next
+  }
+}
+
+async function runAllFocusedPageTests() {
+  if (runningAllPageTests.value || !runnableFocusedTests.value.length) return
+  const pageId = focusedPageId.value
+  runningAllPageTests.value = true
+  stopAllPageTestsRequested.value = false
+  try {
+    for (const test of [...runnableFocusedTests.value]) {
+      if (focusedPageId.value !== pageId || stopAllPageTestsRequested.value) break
+      await runFocusedPageTest(test)
+    }
+  } finally {
+    runningAllPageTests.value = false
+    stopAllPageTestsRequested.value = false
+  }
+}
+
+async function cancelFocusedPageTest(test: PageFlowPageTest) {
+  if (!runningPageTestIds.value.has(test.id)) return
+  await cancelPageFlowTest(props.config, test.id).catch(() => undefined)
+}
+
+async function stopAllFocusedPageTests() {
+  stopAllPageTestsRequested.value = true
+  await Promise.all([...runningPageTestIds.value].map(id => cancelPageFlowTest(props.config, id).catch(() => undefined)))
+}
 
 function toggleApiResult(id: string) {
   const next = new Set(expandedApiResults.value)
@@ -1708,7 +1792,10 @@ watch(requiredThumbnailRecords, records => {
 }, { immediate: true })
 
 watch([active, copiedPath], scheduleCanvasRender)
-watch(focusedPageId, () => previewFrames.forEach((_frame, pageId) => syncPreviewHotspots(pageId)))
+watch(focusedPageId, () => {
+  previewFrames.forEach((_frame, pageId) => syncPreviewHotspots(pageId))
+  void refreshFocusedTests()
+})
 
 onMounted(async () => {
   window.addEventListener('message', handlePreviewMessage)
@@ -1761,6 +1848,7 @@ onMounted(async () => {
   stopPageFlowUpdates = subscribeToPageFlowUpdates(props.config, {
     graph: graph => applyGraph(graph.pages, graph.routeMode),
     page: applyPageUpdate,
+    tests: () => void refreshFocusedTests(),
   })
   try {
     const graph = await fetchPageFlowGraph(props.config)
@@ -1881,10 +1969,15 @@ onUnmounted(() => {
       </div>
       <div ref="connectionCanvas" class="connection-canvas"></div>
       <aside v-if="focusedPageId" class="api-panel">
-        <div class="api-panel-heading">
-          <strong>页面接口</strong><span>{{ focusedApiResults.length }}</span>
+        <div class="page-panel-tabs" role="tablist" aria-label="页面详情">
+          <button type="button" :class="{ active: panelTab === 'api' }" @click="panelTab = 'api'">
+            接口 <span>{{ focusedApiResults.length }}</span>
+          </button>
+          <button type="button" :class="{ active: panelTab === 'tests' }" @click="panelTab = 'tests'">
+            测试 <span>{{ focusedPageTests.length }}</span>
+          </button>
         </div>
-        <div v-if="focusedApiResults.length" class="api-panel-list">
+        <div v-if="panelTab === 'api' && focusedApiResults.length" class="api-panel-list">
           <section v-for="result in focusedApiResults" :key="result.id" class="api-result">
             <div class="api-result-summary">
               <span class="api-method">{{ result.method }}</span>
@@ -1902,7 +1995,42 @@ onUnmounted(() => {
             </button>
           </section>
         </div>
-        <div v-else class="api-panel-waiting">等待页面接口响应…</div>
+        <div v-else-if="panelTab === 'api'" class="api-panel-waiting">等待页面接口响应…</div>
+        <div v-else-if="focusedTestsLoading" class="api-panel-waiting">正在整理页面测试…</div>
+        <div v-else-if="focusedTestsFailed" class="api-panel-waiting">页面测试加载失败</div>
+        <div v-else-if="focusedPageTests.length" class="api-panel-list page-test-list">
+          <div class="page-test-toolbar">
+            <span>通过 {{ focusedTestSummary.passed }} · 失败 {{ focusedTestSummary.failed }} · 未运行 {{ focusedTestSummary.unknown }}</span>
+            <button v-if="runnableFocusedTests.length" type="button" :class="{ stop: runningAllPageTests }" @click="runningAllPageTests ? stopAllFocusedPageTests() : runAllFocusedPageTests()">
+              {{ runningAllPageTests ? '停止运行' : `运行全部 ${runnableFocusedTests.length}` }}
+            </button>
+          </div>
+          <section v-for="test in focusedPageTests" :key="test.id" class="page-test">
+            <div class="page-test-heading">
+              <strong>{{ test.name }}</strong>
+              <span>{{ testKindLabels[test.kind] }}</span>
+            </div>
+            <code :title="test.file">{{ test.file }}{{ test.line ? `:${test.line}` : '' }}</code>
+            <div class="page-test-meta">
+              <span>{{ testSourceLabels[test.source] }}</span>
+              <span :class="test.status">{{ testStatusLabels[test.status] }}{{ test.duration != null ? ` · ${test.duration}ms` : '' }}</span>
+              <button
+                v-if="test.runnable"
+                type="button"
+                :class="{ stop: runningPageTestIds.has(test.id) }"
+                :disabled="runningAllPageTests && !runningPageTestIds.has(test.id)"
+                @click="runningPageTestIds.has(test.id) ? cancelFocusedPageTest(test) : runFocusedPageTest(test)"
+              >
+                {{ runningPageTestIds.has(test.id) ? '取消' : '运行' }}
+              </button>
+            </div>
+            <details v-if="test.output" class="page-test-output-wrap">
+              <summary>查看输出</summary>
+              <pre class="page-test-output">{{ test.output }}</pre>
+            </details>
+          </section>
+        </div>
+        <div v-else class="api-panel-waiting">暂未发现属于此页面的测试</div>
       </aside>
     </section>
     <div class="zoom"><button type="button" @click="zoomCanvas('in')">+</button><span>{{ zoomPercent }}%</span><button type="button" @click="zoomCanvas('out')">−</button></div>

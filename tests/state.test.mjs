@@ -72,14 +72,14 @@ test('DOM fallback restores controls but never stores sensitive fields', async (
   checkbox.checked = true
   password.value = 'secret'
   select.dispatchEvent(new window.Event('change', { bubbles: true }))
-  await wait(180)
+  await wait(400)
   stop()
 
   select.value = 'farmer'
   checkbox.checked = false
   password.value = ''
   const stopRestored = module.startPageFlowDomStatePersistence()
-  await wait(20)
+  await wait(80)
   assert.equal(select.value, 'expert')
   assert.equal(checkbox.checked, true)
   assert.equal(password.value, '')

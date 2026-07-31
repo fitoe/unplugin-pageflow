@@ -30,6 +30,7 @@
 | 页面发现与热点 | Vue Router、`RouterLink`、uni-app 跳转和事件热点被发现，热点点击只通知画板且保留参数 | `runtime.test.mjs` |
 | 框架路由适配 | Vue Router 的发现、路由表、动态参数、base/hash 地址和程序化导航通过统一适配器输出 | `router-adapter.test.mjs` |
 | 页面状态 | query 与角色间缓存隔离；表单和滚动恢复；密码等敏感字段不保存 | `state.test.mjs` |
+| 页面测试 | 测试可关联、运行、批量串行、超时和取消；结果跨重启恢复，测试文件内容变化后旧结果失效 | `page-tests.test.mjs`、`page-test-results.test.mjs`、`plugin.test.mjs` |
 | 插件集成 | 开发路由、pages.json 首页折叠、标题与路由元数据、资源服务可用 | `plugin.test.mjs` |
 | 快照缓存 | 磁盘缓存受大小约束；Object URL 使用 LRU 回收 | `thumbnail-cache.test.mjs`、`thumbnail-resources.test.mjs` |
 
@@ -65,6 +66,7 @@ pnpm run check
 6. 拖动关联小页面后连线跟随；退出再进入后位置与扫描关系恢复。
 7. 放大后切换高清页面并更新快照；无限列表保持一屏高度。
 8. 多角色页面使用匹配 Token；接口无权限时进入登录页，不污染其它角色页面状态。
+9. 聚焦页面后右侧可在“接口 / 测试”间切换；切换焦点不串测试，修改测试文件后列表自动更新且画布不刷新。
 
 ## 维护规则
 

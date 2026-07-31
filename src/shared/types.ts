@@ -10,6 +10,10 @@ export interface PageFlowOptions {
   dynamicParams?: Record<string, Record<string, string | number>>
   previewRoles?: Array<{ match: string; role: string }>
   groupNames?: Record<string, string>
+  /** Explicit route or route-glob to test file/glob mappings. */
+  pageTests?: Record<string, string[]>
+  /** Explicit test commands. Placeholders: {file}, {name}. Commands run without a shell. */
+  testCommands?: Partial<Record<PageFlowTestKind, PageFlowTestCommand>>
 }
 
 export type PageFlowFramework = 'auto' | 'uni-app' | 'vue' | 'nuxt' | 'astro' | 'react-router' | 'sveltekit' | 'solid-start' | 'next' | 'qwik-city' | 'vite'
@@ -23,6 +27,8 @@ export interface ResolvedPageFlowOptions {
   dynamicParams: Record<string, Record<string, string | number>>
   previewRoles: Array<{ match: string; role: string }>
   groupNames: Record<string, string>
+  pageTests: Record<string, string[]>
+  testCommands: Partial<Record<PageFlowTestKind, PageFlowTestCommand>>
 }
 
 export interface PageFlowRuntimeRoute {
@@ -101,4 +107,27 @@ export interface PageFlowApiResult {
   status: number
   duration: number
   fields: PageFlowApiField[]
+}
+
+export type PageFlowTestSource = 'config' | 'import' | 'route' | 'convention'
+export type PageFlowTestKind = 'e2e' | 'component' | 'unit'
+
+export interface PageFlowTestCommand {
+  command: string
+  args?: string[]
+  timeoutMs?: number
+}
+
+export interface PageFlowPageTest {
+  id: string
+  name: string
+  file: string
+  line?: number
+  kind: PageFlowTestKind
+  source: PageFlowTestSource
+  status: 'unknown' | 'passed' | 'failed' | 'skipped'
+  duration?: number
+  output?: string
+  runnable?: boolean
+  revision?: string
 }
