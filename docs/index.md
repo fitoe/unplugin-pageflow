@@ -2,13 +2,13 @@
 layout: home
 
 title: PageFlow
-titleTemplate: Your product lives between pages
-description: Turn routes, real screens, navigation paths, and page tests into one living product map.
+titleTemplate: See your whole app at once
+description: Put every page and every path between them on one clear, always-current canvas.
 
 hero:
   name: PageFlow
-  text: Your product lives between pages.
-  tagline: A route table tells you where screens exist—not how the experience holds together. PageFlow maps real pages, navigation paths, and page tests on one living canvas.
+  text: See your whole app at once.
+  tagline: As pages multiply, navigation gets harder to follow. PageFlow puts every page and every path between them on one clear canvas.
   image:
     src: /pageflow-demo.svg
     alt: Animated PageFlow map reorganizing application pages and navigation paths
@@ -22,30 +22,30 @@ hero:
 
 features:
   - icon: 🧭
-    title: Stop reconstructing the product
-    details: Replace tabs, router configs, and tribal knowledge with one navigable view of the application.
+    title: Every page, one view
+    details: Stop opening files and browser tabs just to remember what the app contains.
   - icon: ◫
-    title: Work from the real interface
-    details: Inspect same-origin page previews—not screenshots that drift away from the code.
+    title: See the real page
+    details: Preview the interface your code actually renders, not an old screenshot or diagram.
   - icon: ⤳
-    title: Expose broken journeys
-    details: Make navigation hotspots and page relationships visible before fragmented flows reach users.
+    title: Follow every path
+    details: See where a button or link goes and how one page leads to the next.
   - icon: ◈
-    title: Make complexity legible
-    details: Collapse deep route trees into groups, then move from the whole product to one focused flow.
+    title: Keep large apps readable
+    details: Group related pages and zoom from the whole app into one part of the flow.
   - icon: ✓
-    title: Put tests where they matter
-    details: See unit, component, and end-to-end tests in the context of the pages they protect.
+    title: Find the tests for a page
+    details: See and run the unit, component, and end-to-end tests connected to each page.
   - icon: ⏻
-    title: Leave production untouched
-    details: Explore the product in development without shipping the PageFlow runtime to users.
+    title: Development only
+    details: Use PageFlow while building the app. Nothing is added to the production experience.
 ---
 
-## A route table is not a product map
+## More pages, less visibility
 
-As an application grows, its real structure disappears across router files, framework conventions, redirects, tabs, and team memory. Static flowcharts fall behind. Screenshots lose their connection to the code. The expensive gaps are usually not inside a page—they are between pages.
+As an app grows, no one sees all of it in one place. Developers read route files, designers check mockups, testers follow test cases, and everyone keeps part of the flow in their head. Those views quickly drift apart.
 
-PageFlow rebuilds that missing context from the running application, giving engineers and product teams a shared view of what exists, how users move, and where confidence is thin.
+PageFlow reads the running app and lays out its real pages and links together. Open one view to understand what exists, where users can go, and which pages have tests.
 
 ## Start in minutes
 
