@@ -4,7 +4,7 @@ export default defineConfig({
   lang: 'en-US',
   title: 'PageFlow',
   description: 'See every application page and navigation path on one infinite canvas.',
-  base: '/unplugin-pageflow/',
+  base: process.env.VITEPRESS_BASE || '/unplugin-pageflow/',
   cleanUrls: true,
   lastUpdated: true,
   srcExclude: ['smoke-test-plan.md'],
