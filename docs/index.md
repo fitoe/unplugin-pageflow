@@ -10,7 +10,7 @@ hero:
   text: See your whole app at once.
   tagline: As pages multiply, navigation gets harder to follow. PageFlow puts every page and every path between them on one clear canvas.
   image:
-    src: /pageflow-demo.svg
+    src: /pageflow-demo.svg?v=20260801-6
     alt: Animated PageFlow map reorganizing application pages and navigation paths
   actions:
     - theme: brand

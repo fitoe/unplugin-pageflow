@@ -32,24 +32,43 @@
       .node { transform-box: view-box; transform-origin: 0 0; }
       .top { animation: topMove 18s cubic-bezier(.22,1,.36,1) infinite, topDim 18s ease-in-out infinite; }
       .top.target { animation: topMove 18s cubic-bezier(.22,1,.36,1) infinite, targetOpacity 18s ease-in-out infinite; }
+      .top.focus-source { animation: sourceMove 18s cubic-bezier(.22,1,.36,1) infinite, sourceOpacity 18s ease-in-out infinite; }
       .product { animation: productMove 18s cubic-bezier(.22,1,.36,1) infinite, productOpacity 18s ease-in-out infinite; animation-delay: calc(var(--i) * 45ms); }
-      .product.focus-target { animation: productMove 18s cubic-bezier(.22,1,.36,1) infinite, productTargetOpacity 18s ease-in-out infinite; animation-delay: calc(var(--i) * 45ms); }
+      .product.focus-target { animation: productTargetMove 18s cubic-bezier(.22,1,.36,1) infinite, productTargetOpacity 18s ease-in-out infinite; animation-delay: calc(var(--i) * 45ms); }
+      .product.focus-neighbor { animation: focusNeighborMove 18s cubic-bezier(.22,1,.36,1) infinite, focusNeighborOpacity 18s ease-in-out infinite; animation-delay: 0ms; }
       .label { fill: #4a504b; font-size: 7px; }
       .path { fill: #969c97; font-size: 5px; }
       .hotspot { opacity: 0; animation: hotspot 18s ease-in-out infinite; }
       .link { fill: none; stroke: #ff4f9a; stroke-width: 2.2; stroke-linecap: round; stroke-dasharray: 1; stroke-dashoffset: 1; animation: links 18s ease-in-out infinite; }
+      .drag-link { fill: none; stroke: #ff4f9a; stroke-width: 2.2; stroke-linecap: round; opacity: 0; animation: dragLink 18s ease-in-out infinite; }
+      .new-link { fill: none; stroke: #ff4f9a; stroke-width: 2.2; stroke-linecap: round; opacity: 0; animation: newLinks 18s ease-in-out infinite; }
+      .new-hotspot { opacity: 0; animation: newHotspots 18s ease-in-out infinite; }
       .cursor { opacity: 0; pointer-events: none; animation: cursorMove 18s cubic-bezier(.22,1,.36,1) infinite; }
+      .cursor-press { transform-box: fill-box; transform-origin: 0 0; animation: cursorPress 18s ease-in-out infinite; }
       .click-ring { fill: none; stroke: #ff795d; stroke-width: 1.6; opacity: 0; transform-box: fill-box; transform-origin: center; pointer-events: none; }
+      .click-dot { fill: #ff795d; opacity: 0; transform-box: fill-box; transform-origin: center; pointer-events: none; }
       .click-product { animation: clickProduct 18s ease-out infinite; }
       .click-supplier { animation: clickSupplier 18s ease-out infinite; }
       .click-home { animation: clickHome 18s ease-out infinite; }
+      .click-link { animation: clickLink 18s ease-out infinite; }
+      .click-canvas { animation: clickCanvas 18s ease-out infinite; }
 
       /* 720 ms expansion/collapse windows inside an 18 s loop. */
       @keyframes topMove {
         0%, 10% { transform: translate(var(--ix),var(--iy)) scale(1); }
         14%, 56% { transform: translate(var(--px),var(--py)) scale(.66); }
         60%, 70% { transform: translate(var(--ix),var(--iy)) scale(1); }
-        74%, 94% { transform: translate(var(--fx),var(--fy)) scale(var(--fs)); }
+        74%, 84% { transform: translate(var(--fx),var(--fy)) scale(var(--fs)); }
+        88%, 98% { transform: translate(var(--ix),var(--iy)) scale(1); }
+        100% { transform: translate(var(--ix),var(--iy)) scale(1); }
+      }
+      @keyframes sourceMove {
+        0%, 10% { transform: translate(var(--ix),var(--iy)) scale(1); }
+        14%, 56% { transform: translate(var(--px),var(--py)) scale(.66); }
+        60%, 70% { transform: translate(var(--ix),var(--iy)) scale(1); }
+        74%, 84% { transform: translate(var(--fx),var(--fy)) scale(var(--fs)); }
+        88%, 92% { transform: translate(var(--nx),var(--ny)) scale(var(--ns)); }
+        96%, 98% { transform: translate(var(--dx),var(--dy)) scale(var(--ns)); }
         100% { transform: translate(var(--ix),var(--iy)) scale(1); }
       }
       @keyframes productMove {
@@ -58,7 +77,29 @@
         32%, 44% { transform: translate(var(--sx),var(--sy)) scale(var(--ss)); }
         48%, 56% { transform: translate(var(--gx),var(--gy)) scale(1); }
         60%, 70% { transform: translate(var(--ix),var(--iy)) scale(1); }
-        74%, 94% { transform: translate(var(--fx),var(--fy)) scale(var(--fs)); }
+        74%, 84% { transform: translate(var(--fx),var(--fy)) scale(var(--fs)); }
+        88%, 98% { transform: translate(var(--ix),var(--iy)) scale(1); }
+        100% { transform: translate(var(--ix),var(--iy)) scale(1); }
+      }
+      @keyframes productTargetMove {
+        0%, 10% { transform: translate(var(--ix),var(--iy)) scale(1); }
+        14%, 28% { transform: translate(var(--gx),var(--gy)) scale(1); }
+        32%, 44% { transform: translate(var(--sx),var(--sy)) scale(var(--ss)); }
+        48%, 56% { transform: translate(var(--gx),var(--gy)) scale(1); }
+        60%, 70% { transform: translate(var(--ix),var(--iy)) scale(1); }
+        74%, 84% { transform: translate(var(--fx),var(--fy)) scale(var(--fs)); }
+        87% { transform: translate(575px,175px) scale(.55); }
+        91%, 98% { transform: translate(var(--tx),var(--ty)) scale(var(--ts)); }
+        100% { transform: translate(var(--ix),var(--iy)) scale(1); }
+      }
+      @keyframes focusNeighborMove {
+        0%, 10% { transform: translate(var(--ix),var(--iy)) scale(1); }
+        14%, 28% { transform: translate(var(--gx),var(--gy)) scale(1); }
+        32%, 44% { transform: translate(var(--sx),var(--sy)) scale(var(--ss)); }
+        48%, 56% { transform: translate(var(--gx),var(--gy)) scale(1); }
+        60%, 84% { transform: translate(var(--ix),var(--iy)) scale(1); }
+        87% { transform: translate(var(--ix),var(--iy)) scale(.55); }
+        91%, 98% { transform: translate(var(--nfx),var(--nfy)) scale(.9); }
         100% { transform: translate(var(--ix),var(--iy)) scale(1); }
       }
       @keyframes topDim {
@@ -70,7 +111,14 @@
       @keyframes targetOpacity {
         0%, 10%, 60%, 70% { opacity: 1; }
         14%, 56% { opacity: .14; }
-        74%, 94% { opacity: .9; }
+        74%, 84% { opacity: .9; }
+        88%, 98% { opacity: .14; }
+        100% { opacity: 1; }
+      }
+      @keyframes sourceOpacity {
+        0%, 10%, 60%, 70% { opacity: 1; }
+        14%, 56% { opacity: .14; }
+        74%, 98% { opacity: .9; }
         100% { opacity: 1; }
       }
       @keyframes productOpacity {
@@ -82,18 +130,37 @@
       @keyframes productTargetOpacity {
         0%, 10%, 60%, 70%, 100% { opacity: var(--stack-opacity); }
         14%, 56% { opacity: var(--group-opacity); }
-        74%, 94% { opacity: .9; }
+        74%, 84% { opacity: .9; }
+        88%, 98% { opacity: 1; }
       }
-      @keyframes hotspot { 0%, 80%, 94%, 100% { opacity: 0; } 84%, 92% { opacity: 1; } }
-      @keyframes links { 0%, 82% { stroke-dashoffset: 1; opacity: 0; } 88%, 94% { stroke-dashoffset: 0; opacity: 1; } 100% { stroke-dashoffset: 1; opacity: 0; } }
+      @keyframes focusNeighborOpacity {
+        0%, 10%, 60%, 70%, 100% { opacity: var(--stack-opacity); }
+        14%, 56% { opacity: var(--group-opacity); }
+        74%, 86% { opacity: .14; }
+        91%, 98% { opacity: .9; }
+      }
+      @keyframes hotspot { 0%, 76%, 86%, 100% { opacity: 0; } 80%, 84% { opacity: 1; } }
+      @keyframes links { 0%, 78% { stroke-dashoffset: 1; opacity: 0; } 82%, 84% { stroke-dashoffset: 0; opacity: 1; } 87%, 100% { stroke-dashoffset: 1; opacity: 0; } }
+      @keyframes dragLink { 0%, 90%, 99%, 100% { opacity: 0; } 92%, 98% { opacity: 1; } }
+      @keyframes newLinks { 0%, 90%, 99%, 100% { opacity: 0; } 92%, 98% { opacity: 1; } }
+      @keyframes newHotspots { 0%, 90%, 99%, 100% { opacity: 0; } 92%, 98% { opacity: 1; } }
       @keyframes cursorMove {
-        0%, 4% { opacity: 0; transform: translate(820px,540px); }
+        0%, 4% { opacity: 1; transform: translate(820px,540px); }
         7%, 11% { opacity: 1; transform: translate(460px,359px); }
-        13%, 22% { opacity: 0; transform: translate(460px,359px); }
-        25%, 29% { opacity: 1; transform: translate(317px,392px); }
-        31%, 65% { opacity: 0; transform: translate(317px,392px); }
+        14%, 22% { opacity: 1; transform: translate(590px,500px); }
+        25%, 29% { opacity: 1; transform: translate(317px,410px); }
+        33%, 64% { opacity: 1; transform: translate(860px,545px); }
         68%, 71% { opacity: 1; transform: translate(318px,143px); }
-        73%, 100% { opacity: 0; transform: translate(318px,143px); }
+        76%, 83% { opacity: 1; transform: translate(500px,225px); }
+        84%, 86% { opacity: 1; transform: translate(541.25px,314px); }
+        89%, 91% { opacity: 1; transform: translate(500px,225px); }
+        92% { opacity: 1; transform: translate(284px,149px); }
+        96% { opacity: 1; transform: translate(194px,384px); }
+        99%, 100% { opacity: 1; transform: translate(900px,560px); }
+      }
+      @keyframes cursorPress {
+        0%, 7.7%, 8.8%, 25.7%, 26.8%, 68.7%, 69.8%, 83.7%, 84.8%, 91.7%, 96.3%, 98.7%, 99.8%, 100% { transform: scale(1); }
+        8.2%, 26.2%, 69.2%, 84.2%, 92.2%, 95.8%, 99.2% { transform: scale(.8); }
       }
       @keyframes clickProduct {
         0%, 7%, 12%, 100% { opacity: 0; transform: scale(.65); }
@@ -110,6 +177,16 @@
         69% { opacity: .9; transform: scale(.65); }
         71.5% { opacity: 0; transform: scale(1.7); }
       }
+      @keyframes clickLink {
+        0%, 83%, 87%, 100% { opacity: 0; transform: scale(.65); }
+        84% { opacity: .9; transform: scale(.65); }
+        86.5% { opacity: 0; transform: scale(1.7); }
+      }
+      @keyframes clickCanvas {
+        0%, 98%, 100% { opacity: 0; transform: scale(.65); }
+        99% { opacity: .9; transform: scale(.65); }
+        100% { opacity: 0; transform: scale(1.7); }
+      }
 
       @media (prefers-reduced-motion: reduce) {
         * { animation: none !important; }
@@ -119,7 +196,7 @@
   </defs>
 
   <!-- Top-level pages. They remain the same objects while being parked at group edges. -->
-  <g class="node top target sans" style="--ix:280px;--iy:72px;--px:56px;--py:260px;--fx:405px;--fy:104px;--fs:2.5">
+  <g class="node top target focus-source sans" style="--ix:280px;--iy:72px;--px:56px;--py:260px;--fx:405px;--fy:104px;--fs:2.5;--nx:250px;--ny:85px;--dx:160px;--dy:320px;--ns:.9">
     <use href="#pageAlt" width="76" height="142"/><text class="label" y="153">首页</text><text class="mono path" y="161">/pages/index</text>
     <rect class="hotspot" x="8" y="34" width="60" height="29" rx="3" fill="#ff4f9a" fill-opacity=".12" stroke="#ff4f9a" stroke-width="1.2" vector-effect="non-scaling-stroke"/>
     <rect class="hotspot" x="8" y="72" width="27" height="24" rx="3" fill="#ff4f9a" fill-opacity=".16" stroke="#ff4f9a" stroke-width="1.2" vector-effect="non-scaling-stroke"/>
@@ -136,16 +213,16 @@
   <g class="node top sans" style="--ix:540px;--iy:300px;--px:850px;--py:255px;--fx:900px;--fy:250px;--fs:.6"><use href="#page" width="76" height="142"/><text class="label" y="153">农技服务</text></g>
 
   <!-- Product children are already stacked at the product deck coordinate. No object is created on entry. -->
-  <g class="node product focus-target sans" style="--i:0;--stack-opacity:1;--group-opacity:1;--supplier-opacity:.14;--ix:410px;--iy:300px;--gx:270px;--gy:105px;--sx:175px;--sy:80px;--ss:.64;--fx:680px;--fy:85px;--fs:.9"><use href="#pageAlt" width="76" height="142"/><text class="label" y="153">农品服务</text></g>
-  <g class="node product sans" style="--i:1;--stack-opacity:.82;--group-opacity:1;--supplier-opacity:.14;--ix:413px;--iy:297px;--gx:400px;--gy:105px;--sx:175px;--sy:430px;--ss:.64;--fx:0px;--fy:0px;--fs:.5"><use href="#page" width="76" height="142"/><text class="label" y="153">农品地图</text></g>
-  <g class="node product sans" style="--i:2;--stack-opacity:.64;--group-opacity:1;--supplier-opacity:.14;--ix:416px;--iy:294px;--gx:530px;--gy:105px;--sx:750px;--sy:80px;--ss:.64;--fx:0px;--fy:0px;--fs:.5"><use href="#pageAlt" width="76" height="142"/><text class="label" y="153">供需市场</text></g>
-  <g class="node product sans" style="--i:3;--stack-opacity:.48;--group-opacity:1;--supplier-opacity:.14;--ix:419px;--iy:291px;--gx:660px;--gy:105px;--sx:750px;--sy:430px;--ss:.64;--fx:0px;--fy:0px;--fs:.5"><use href="#page" width="76" height="142"/><text class="label" y="153">产品详情</text></g>
+  <g class="node product focus-target sans" style="--i:0;--stack-opacity:1;--group-opacity:1;--supplier-opacity:.14;--ix:410px;--iy:300px;--gx:270px;--gy:105px;--sx:175px;--sy:80px;--ss:.64;--fx:680px;--fy:85px;--fs:.9;--tx:405px;--ty:104px;--ts:2.5"><use href="#pageAlt" width="76" height="142"/><text class="label" y="153">农品服务</text><rect class="new-hotspot" x="8" y="34" width="60" height="29" rx="3" fill="#ff4f9a" fill-opacity=".12" stroke="#ff4f9a" stroke-width="1.2" vector-effect="non-scaling-stroke"/><rect class="new-hotspot" x="8" y="72" width="27" height="24" rx="3" fill="#ff4f9a" fill-opacity=".16" stroke="#ff4f9a" stroke-width="1.2" vector-effect="non-scaling-stroke"/><rect class="new-hotspot" x="41" y="72" width="27" height="24" rx="3" fill="#ff4f9a" fill-opacity=".16" stroke="#ff4f9a" stroke-width="1.2" vector-effect="non-scaling-stroke"/><rect class="new-hotspot" x="8" y="105" width="60" height="21" rx="3" fill="#ff4f9a" fill-opacity=".12" stroke="#ff4f9a" stroke-width="1.2" vector-effect="non-scaling-stroke"/></g>
+  <g class="node product focus-neighbor sans" style="--i:1;--stack-opacity:.82;--group-opacity:1;--supplier-opacity:.14;--ix:413px;--iy:303px;--gx:400px;--gy:105px;--sx:175px;--sy:430px;--ss:.64;--nfx:250px;--nfy:355px"><use href="#page" width="76" height="142"/><text class="label" y="153">农品地图</text></g>
+  <g class="node product focus-neighbor sans" style="--i:2;--stack-opacity:.64;--group-opacity:1;--supplier-opacity:.14;--ix:416px;--iy:306px;--gx:530px;--gy:105px;--sx:750px;--sy:80px;--ss:.64;--nfx:680px;--nfy:85px"><use href="#pageAlt" width="76" height="142"/><text class="label" y="153">供需市场</text></g>
+  <g class="node product focus-neighbor sans" style="--i:3;--stack-opacity:.48;--group-opacity:1;--supplier-opacity:.14;--ix:419px;--iy:309px;--gx:660px;--gy:105px;--sx:750px;--sy:430px;--ss:.64;--nfx:680px;--nfy:355px"><use href="#page" width="76" height="142"/><text class="label" y="153">产品详情</text></g>
 
   <!-- These four are also product children; at level one they form the supplier deck, then spread from it. -->
-  <g class="node product sans" style="--i:4;--stack-opacity:.32;--group-opacity:1;--supplier-opacity:1;--ix:422px;--iy:288px;--gx:270px;--gy:330px;--sx:335px;--sy:145px;--ss:1.12;--fx:0px;--fy:0px;--fs:.5"><use href="#pageAlt" width="76" height="142"/><text class="label" y="153">供货主页</text></g>
-  <g class="node product sans" style="--i:5;--stack-opacity:0;--group-opacity:.75;--supplier-opacity:1;--ix:422px;--iy:288px;--gx:273px;--gy:327px;--sx:470px;--sy:145px;--ss:1.12;--fx:0px;--fy:0px;--fs:.5"><use href="#page" width="76" height="142"/><text class="label" y="153">供货列表</text></g>
-  <g class="node product sans" style="--i:6;--stack-opacity:0;--group-opacity:.5;--supplier-opacity:1;--ix:422px;--iy:288px;--gx:276px;--gy:324px;--sx:605px;--sy:145px;--ss:1.12;--fx:0px;--fy:0px;--fs:.5"><use href="#page" width="76" height="142"/><text class="label" y="153">新增供货</text></g>
-  <g class="node product sans" style="--i:7;--stack-opacity:0;--group-opacity:.3;--supplier-opacity:1;--ix:422px;--iy:288px;--gx:279px;--gy:321px;--sx:335px;--sy:350px;--ss:1.12;--fx:0px;--fy:0px;--fs:.5"><use href="#pageAlt" width="76" height="142"/><text class="label" y="153">供应商详情</text></g>
+  <g class="node product sans" style="--i:4;--stack-opacity:.32;--group-opacity:1;--supplier-opacity:1;--ix:422px;--iy:312px;--gx:270px;--gy:330px;--sx:335px;--sy:145px;--ss:1.12;--fx:0px;--fy:0px;--fs:.5"><use href="#pageAlt" width="76" height="142"/><text class="label" y="153">供货主页</text></g>
+  <g class="node product sans" style="--i:5;--stack-opacity:0;--group-opacity:.75;--supplier-opacity:1;--ix:422px;--iy:312px;--gx:273px;--gy:333px;--sx:470px;--sy:145px;--ss:1.12;--fx:0px;--fy:0px;--fs:.5"><use href="#page" width="76" height="142"/><text class="label" y="153">供货列表</text></g>
+  <g class="node product sans" style="--i:6;--stack-opacity:0;--group-opacity:.5;--supplier-opacity:1;--ix:422px;--iy:312px;--gx:276px;--gy:336px;--sx:605px;--sy:145px;--ss:1.12;--fx:0px;--fy:0px;--fs:.5"><use href="#page" width="76" height="142"/><text class="label" y="153">新增供货</text></g>
+  <g class="node product sans" style="--i:7;--stack-opacity:0;--group-opacity:.3;--supplier-opacity:1;--ix:422px;--iy:312px;--gx:279px;--gy:339px;--sx:335px;--sy:350px;--ss:1.12;--fx:0px;--fy:0px;--fs:.5"><use href="#pageAlt" width="76" height="142"/><text class="label" y="153">供应商详情</text></g>
 
   <!-- Focus connections animate after the same page objects finish repositioning. -->
   <!-- Hotspot center → target-facing page edge. Control handles mirror focus-layout.ts. -->
@@ -154,12 +231,31 @@
   <path class="link" pathLength="1" d="M541.25 314 C597.25 314 624 148.9 680 148.9"/>
   <path class="link" pathLength="1" d="M500 391.5 C556 391.5 634 423.9 690 423.9"/>
 
+  <!-- Focused target → linked page. Its endpoint follows the page while it is dragged. -->
+  <path class="drag-link" d="M458.75 314 C402.75 314 374.4 160.6 318.4 160.6">
+    <animate attributeName="d" dur="18s" repeatCount="indefinite"
+      keyTimes="0;0.92;0.96;1"
+      values="M458.75 314 C402.75 314 374.4 160.6 318.4 160.6;M458.75 314 C402.75 314 374.4 160.6 318.4 160.6;M458.75 314 C402.75 314 284.4 395.6 228.4 395.6;M458.75 314 C402.75 314 284.4 395.6 228.4 395.6"/>
+  </path>
+  <path class="new-link" d="M458.75 314 C402.75 314 374.4 418.9 318.4 418.9"/>
+  <path class="new-link" d="M541.25 314 C597.25 314 624 148.9 680 148.9"/>
+  <path class="new-link" d="M500 392.75 C556 392.75 624 418.9 680 418.9"/>
+
   <!-- Small click feedback; ring centers match the pointer tip and clicked object. -->
   <circle class="click-ring click-product" cx="460" cy="359" r="8"/>
-  <circle class="click-ring click-supplier" cx="317" cy="392" r="8"/>
+  <circle class="click-dot click-product" cx="460" cy="359" r="3"/>
+  <circle class="click-ring click-supplier" cx="317" cy="410" r="8"/>
+  <circle class="click-dot click-supplier" cx="317" cy="410" r="3"/>
   <circle class="click-ring click-home" cx="318" cy="143" r="8"/>
+  <circle class="click-dot click-home" cx="318" cy="143" r="3"/>
+  <circle class="click-ring click-link" cx="541.25" cy="314" r="8"/>
+  <circle class="click-dot click-link" cx="541.25" cy="314" r="3"/>
+  <circle class="click-ring click-canvas" cx="900" cy="560" r="8"/>
+  <circle class="click-dot click-canvas" cx="900" cy="560" r="3"/>
   <g class="cursor">
-    <path d="M0 0v22l6-5 5 10 5-2.5-5-9h9z" fill="#24211f" stroke="#fff" stroke-width="1.4" stroke-linejoin="round"/>
+    <g class="cursor-press">
+      <path d="M0 0v22l6-5 5 10 5-2.5-5-9h9z" fill="#24211f" stroke="#fff" stroke-width="1.4" stroke-linejoin="round"/>
+    </g>
   </g>
 
 </svg>
