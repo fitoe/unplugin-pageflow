@@ -1,4 +1,5 @@
 import html2canvas from 'html2canvas-pro'
+import { domToCanvas, type Options as ModernScreenshotOptions } from 'modern-screenshot'
 import type { PageFlowThumbnailRecord, ResolvedPageFlowOptions } from '../shared/types'
 import { PAGE_CARD_WIDTH } from './layout'
 import { boundedPreviewDocumentHeight, materializeMaskedIcons } from './snapshot'
@@ -27,8 +28,33 @@ interface SnapshotCaptureDependencies {
   save(config: ResolvedPageFlowOptions, record: Omit<PageFlowThumbnailRecord, 'mimeType' | 'file' | 'updatedAt'>, blob: Blob): Promise<PageFlowThumbnailRecord>
 }
 
+interface SnapshotRenderers {
+  primary(target: HTMLElement, options: ModernScreenshotOptions): Promise<HTMLCanvasElement>
+  fallback(target: HTMLElement, options: Record<string, unknown>): Promise<HTMLCanvasElement>
+}
+
+export async function renderSnapshotCanvas(
+  target: HTMLElement,
+  options: Record<string, unknown>,
+  renderers: SnapshotRenderers = { primary: domToCanvas, fallback: html2canvas },
+) {
+  try {
+    return await renderers.primary(target, {
+      backgroundColor: options.backgroundColor as string,
+      height: options.height as number,
+      onCloneNode: clone => {
+        if (clone.nodeType === 1) materializeMaskedIcons(clone as Element)
+      },
+      scale: options.scale as number,
+      width: options.width as number,
+    })
+  } catch {
+    return renderers.fallback(target, options)
+  }
+}
+
 const defaultDependencies: SnapshotCaptureDependencies = {
-  render: (target, options) => html2canvas(target, options),
+  render: renderSnapshotCanvas,
   resize: (source, width) => resizeThumbnail(source as HTMLCanvasElement, width),
   tileCount: source => thumbnailTileCount(source as HTMLCanvasElement),
   extractTile: (source, index) => extractThumbnailTile(source as HTMLCanvasElement, index),

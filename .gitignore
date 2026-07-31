@@ -11,3 +11,4 @@ docs/.vitepress/dist/
 /([{]name
 /\[p.path
 /x.name)
+/tests/fixtures/page-tests/.pageflow

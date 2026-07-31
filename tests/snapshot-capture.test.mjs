@@ -55,3 +55,47 @@ test('captures the real page root and saves compact plus reversed full tiles', a
     await window.happyDOM.close()
   }
 })
+
+test('uses modern-screenshot first and falls back to html2canvas-pro', async () => {
+  const window = new Window()
+  Object.assign(globalThis, { Element: window.Element, HTMLElement: window.HTMLElement })
+  const target = window.document.createElement('main')
+  target.innerHTML = '<div data-unplugin-pageflow-hotspot-layer></div><span>Page</span>'
+  const modernCanvas = { width: 200, height: 300 }
+  const fallbackCanvas = { width: 100, height: 150 }
+  const server = await createServer({ configFile: false, server: { middlewareMode: true }, appType: 'custom', logLevel: 'silent' })
+  try {
+    const { renderSnapshotCanvas } = await server.ssrLoadModule('/src/client/snapshot-capture.ts')
+    let modernOptions
+    let fallbackCalls = 0
+    const primary = await renderSnapshotCanvas(target, { backgroundColor: '#fff', height: 852, scale: 2, width: 393 }, {
+      primary: async (_target, options) => {
+        modernOptions = options
+        return modernCanvas
+      },
+      fallback: async () => {
+        fallbackCalls++
+        return fallbackCanvas
+      },
+    })
+    const clone = target.cloneNode(true)
+    await modernOptions.onCloneNode(clone)
+    assert.equal(clone.querySelector('[data-unplugin-pageflow-hotspot-layer]'), null)
+    assert.equal(primary, modernCanvas)
+    assert.equal(fallbackCalls, 0)
+    assert.deepEqual({ height: modernOptions.height, scale: modernOptions.scale, width: modernOptions.width }, { height: 852, scale: 2, width: 393 })
+
+    const fallback = await renderSnapshotCanvas(target, { backgroundColor: '#fff' }, {
+      primary: async () => { throw new Error('modern failed') },
+      fallback: async () => {
+        fallbackCalls++
+        return fallbackCanvas
+      },
+    })
+    assert.equal(fallback, fallbackCanvas)
+    assert.equal(fallbackCalls, 1)
+  } finally {
+    await server.close()
+    await window.happyDOM.close()
+  }
+})

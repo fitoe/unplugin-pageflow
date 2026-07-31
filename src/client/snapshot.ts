@@ -74,17 +74,22 @@ export function maskedIconBackground(maskImage: string, color: string) {
   }
 }
 
-export function materializeMaskedIcons(document: Document) {
-  document.querySelector('[data-unplugin-pageflow-hotspot-layer]')?.remove()
-  document.querySelectorAll<HTMLElement>('.status-space').forEach(element => element.remove())
-  document.querySelectorAll<HTMLElement>('uni-text > span').forEach(element => {
-    const style = document.defaultView?.getComputedStyle(element)
+export function materializeMaskedIcons(root: Document | Element) {
+  const document = root.nodeType === 9 || 'defaultView' in root ? root as Document : root.ownerDocument
+  if (!document) return
+  const computedStyle = (element: HTMLElement) => !element.isConnected && element.style.cssText
+    ? element.style
+    : document.defaultView?.getComputedStyle(element)
+  root.querySelector('[data-unplugin-pageflow-hotspot-layer]')?.remove()
+  root.querySelectorAll<HTMLElement>('.status-space').forEach(element => element.remove())
+  root.querySelectorAll<HTMLElement>('uni-text > span').forEach(element => {
+    const style = computedStyle(element)
     if (!style || style.whiteSpace !== 'pre-line' || !element.textContent || /[\r\n]/.test(element.textContent)) return
     const lineHeight = Number.parseFloat(style.lineHeight) || Number.parseFloat(style.fontSize) * 1.5
     if (element.getBoundingClientRect().height <= lineHeight + 1) element.style.whiteSpace = 'nowrap'
   })
-  document.querySelectorAll<HTMLElement>('[class*="i-"], [style*="mask"]').forEach(element => {
-    const style = document.defaultView?.getComputedStyle(element)
+  root.querySelectorAll<HTMLElement>('[class*="i-"], [style*="mask"]').forEach(element => {
+    const style = computedStyle(element)
     if (!style) return
     const backgroundImage = maskedIconBackground(style.maskImage || style.webkitMaskImage, style.color)
     if (!backgroundImage) return
