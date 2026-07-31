@@ -94,7 +94,7 @@
     "build:plugin": "tsup src/plugin/index.ts src/runtime/client.ts src/runtime/state.ts src/nuxt/index.ts src/astro/index.ts src/react-router/index.ts src/sveltekit/index.ts src/solid-start/index.ts src/next/index.ts src/qwik-city/index.ts --format esm --dts --splitting false --clean --out-dir dist --external unplugin --external vue --external vue-router --external nuxt/kit --external astro --external next --external vite --tsconfig tsconfig.app.json && node scripts/add-next-shebang.mjs && vite build --config vite.package.config.ts",
     "build:demo": "tsc -b && vite build",
     "build:playground": "vite build --config playground/basic/vite.config.ts",
-    "check": "npm test && npm run build && npm run check:package && npm run build:playground && npm run check:production && npm run pack:check",
+    "check": "npm run build:plugin && npm test && npm run build:demo && npm run check:package && npm run build:playground && npm run check:production && npm run pack:check",
     "check:package": "node tests/package-output.mjs",
     "check:production": "node tests/production-output.mjs",
     "pack:check": "npm pack --dry-run",
