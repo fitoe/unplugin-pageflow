@@ -1,0 +1,170 @@
+const STATE_PREFIX = 'unplugin-pageflow:page-state:'
+const PAGEFLOW_PREVIEW_PARAM = '__unplugin-pageflow_preview'
+const ROLE_PARAM = '__unplugin_pageflow_role'
+const INTERNAL_PARAMS = [PAGEFLOW_PREVIEW_PARAM, ROLE_PARAM, '__unplugin_pageflow_inspect']
+
+export interface PageFlowStateAdapter<T> {
+  get(): T
+  restore(state: T): void
+}
+
+function previewContext() {
+  if (typeof window === 'undefined') return
+  const url = new URL(window.location.href)
+  if (!url.searchParams.has(PAGEFLOW_PREVIEW_PARAM)) return
+  const role = url.searchParams.get(ROLE_PARAM) ?? ''
+  INTERNAL_PARAMS.forEach(param => url.searchParams.delete(param))
+  return { role, location: `${url.pathname}${url.search}${url.hash}` }
+}
+
+function storageKey(scope: string) {
+  const context = previewContext()
+  return context
+    ? `${STATE_PREFIX}${encodeURIComponent(context.role)}:${encodeURIComponent(context.location)}:${scope}`
+    : undefined
+}
+
+function readState<T>(key: string): T | undefined {
+  try {
+    const value = window.localStorage.getItem(key)
+    return value == null ? undefined : JSON.parse(value) as T
+  } catch {
+    return undefined
+  }
+}
+
+function writeState(key: string, value: unknown) {
+  try {
+    window.localStorage.setItem(key, JSON.stringify(value))
+  } catch {}
+}
+
+/** Persist an explicit unit of page state while the page is rendered by PageFlow. */
+export function definePageFlowState<T>(key: string, adapter: PageFlowStateAdapter<T>) {
+  const cacheKey = storageKey(`variable:${key}`)
+  if (!cacheKey) return () => {}
+
+  let disposed = false
+  let serialized = ''
+  const save = () => {
+    if (disposed) return
+    try {
+      const value = adapter.get()
+      const next = JSON.stringify(value)
+      if (next === serialized) return
+      serialized = next
+      writeState(cacheKey, value)
+    } catch {}
+  }
+  const restore = () => {
+    const value = readState<T>(cacheKey)
+    if (value === undefined || disposed) return
+    try {
+      adapter.restore(value)
+      serialized = JSON.stringify(adapter.get())
+    } catch {}
+  }
+  requestAnimationFrame(() => requestAnimationFrame(restore))
+  const timer = window.setInterval(save, 400)
+  window.addEventListener('pagehide', save)
+  window.addEventListener('beforeunload', save)
+  return () => {
+    save()
+    disposed = true
+    window.clearInterval(timer)
+    window.removeEventListener('pagehide', save)
+    window.removeEventListener('beforeunload', save)
+  }
+}
+
+interface DomControlState {
+  value?: string
+  checked?: boolean
+}
+
+interface DomPageState {
+  controls: Record<string, DomControlState>
+  scrollX: number
+  scrollY: number
+}
+
+function isSensitiveControl(element: HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement) {
+  if (element.localName === 'input' && ['password', 'file'].includes((element as HTMLInputElement).type)) return true
+  const identity = `${element.id} ${element.getAttribute('name') ?? ''} ${element.getAttribute('autocomplete') ?? ''}`
+  return /(?:captcha|verify|verification|one-time-code|验证码)/i.test(identity)
+}
+
+function controlIdentity(element: Element) {
+  const declared = element.getAttribute('data-pageflow-state')
+  if (declared) return `data:${declared}`
+  const name = element.getAttribute('name')
+  if (name) return `name:${name}`
+  if (element.id) return `id:${element.id}`
+  const parts: string[] = []
+  let current: Element | null = element
+  while (current && current !== document.body) {
+    const siblings = current.parentElement
+      ? [...current.parentElement.children].filter(sibling => sibling.tagName === current!.tagName)
+      : []
+    parts.unshift(`${current.tagName.toLowerCase()}:nth-of-type(${Math.max(1, siblings.indexOf(current) + 1)})`)
+    current = current.parentElement
+  }
+  return `path:${parts.join('>')}`
+}
+
+function controls() {
+  return [...document.querySelectorAll<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>('input, textarea, select')]
+    .filter(element => !isSensitiveControl(element))
+}
+
+/** Persist native form controls and the window scroll position as a safe fallback. */
+export function startPageFlowDomStatePersistence() {
+  const cacheKey = storageKey('dom')
+  if (!cacheKey) return () => {}
+  let timer: number | undefined
+  let disposed = false
+  const save = () => {
+    if (disposed) return
+    const state: DomPageState = { controls: {}, scrollX: window.scrollX, scrollY: window.scrollY }
+    controls().forEach(element => {
+      const item: DomControlState = { value: element.value }
+      if (element.localName === 'input' && ['checkbox', 'radio'].includes((element as HTMLInputElement).type)) item.checked = (element as HTMLInputElement).checked
+      state.controls[controlIdentity(element)] = item
+    })
+    writeState(cacheKey, state)
+  }
+  const scheduleSave = () => {
+    window.clearTimeout(timer)
+    timer = window.setTimeout(save, 150)
+  }
+  const restore = () => {
+    const state = readState<DomPageState>(cacheKey)
+    if (!state || disposed) return
+    controls().forEach(element => {
+      const item = state.controls[controlIdentity(element)]
+      if (!item) return
+      if (item.value !== undefined) element.value = item.value
+      if (element.localName === 'input' && item.checked !== undefined) (element as HTMLInputElement).checked = item.checked
+      const EventConstructor = element.ownerDocument.defaultView?.Event ?? Event
+      element.dispatchEvent(new EventConstructor('input', { bubbles: true }))
+      element.dispatchEvent(new EventConstructor('change', { bubbles: true }))
+    })
+    window.scrollTo(state.scrollX, state.scrollY)
+  }
+  document.addEventListener('input', scheduleSave, true)
+  document.addEventListener('change', scheduleSave, true)
+  window.addEventListener('scroll', scheduleSave, true)
+  window.addEventListener('pagehide', save)
+  window.addEventListener('beforeunload', save)
+  requestAnimationFrame(() => requestAnimationFrame(restore))
+  return () => {
+    save()
+    disposed = true
+    window.clearTimeout(timer)
+    document.removeEventListener('input', scheduleSave, true)
+    document.removeEventListener('change', scheduleSave, true)
+    window.removeEventListener('scroll', scheduleSave, true)
+    window.removeEventListener('pagehide', save)
+    window.removeEventListener('beforeunload', save)
+  }
+}

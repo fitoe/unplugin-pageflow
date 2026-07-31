@@ -76,6 +76,13 @@ export function maskedIconBackground(maskImage: string, color: string) {
 
 export function materializeMaskedIcons(document: Document) {
   document.querySelector('[data-unplugin-pageflow-hotspot-layer]')?.remove()
+  document.querySelectorAll<HTMLElement>('.status-space').forEach(element => element.remove())
+  document.querySelectorAll<HTMLElement>('uni-text > span').forEach(element => {
+    const style = document.defaultView?.getComputedStyle(element)
+    if (!style || style.whiteSpace !== 'pre-line' || !element.textContent || /[\r\n]/.test(element.textContent)) return
+    const lineHeight = Number.parseFloat(style.lineHeight) || Number.parseFloat(style.fontSize) * 1.5
+    if (element.getBoundingClientRect().height <= lineHeight + 1) element.style.whiteSpace = 'nowrap'
+  })
   document.querySelectorAll<HTMLElement>('[class*="i-"], [style*="mask"]').forEach(element => {
     const style = document.defaultView?.getComputedStyle(element)
     if (!style) return

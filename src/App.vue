@@ -7,6 +7,7 @@ import '@leafer-in/viewport'
 import type {
   PageFlowLink,
   PageFlowPage,
+  PageFlowApiResult,
   PageFlowRouteMode,
   PageFlowThumbnailManifest,
   PageFlowThumbnailRecord,
@@ -14,7 +15,7 @@ import type {
 } from './shared/types'
 import { fetchPageFlowGraph, reportPageTitle, startRouteDiscovery, subscribeToPageFlowUpdates } from './client/graph'
 import { resolvePreviewUrl, touchPreviewCache } from './client/preview'
-import { PAGEFLOW_HOTSPOT_HOVER_MESSAGE, PAGEFLOW_NAVIGATE_MESSAGE, PAGEFLOW_PAGE_REPORTED_MESSAGE, PAGEFLOW_SCAN_MESSAGE, PAGEFLOW_SCAN_RESULT_MESSAGE } from './shared/protocol'
+import { PAGEFLOW_API_RESULT_MESSAGE, PAGEFLOW_HOTSPOT_HOVER_MESSAGE, PAGEFLOW_NAVIGATE_MESSAGE, PAGEFLOW_PAGE_REPORTED_MESSAGE, PAGEFLOW_SCAN_MESSAGE, PAGEFLOW_SCAN_RESULT_MESSAGE } from './shared/protocol'
 import { forwardWheelToCanvas, PAGEFLOW_CANVAS_CONFIG, type PageFlowWheelInteraction } from './client/canvas'
 import { boundedPreviewDocumentHeight, materializeMaskedIcons, waitForPreviewReady } from './client/snapshot'
 import { ThumbnailResourceCache } from './client/thumbnail-resources'
@@ -99,6 +100,8 @@ const settledTransform = ref<CanvasTransform>({ x: 0, y: 0, scaleX: 1, scaleY: 1
 const livePreviewId = ref<string>()
 const focusedPageId = ref<string>()
 const focusedLinks = ref<PageFlowLink[]>([])
+const apiResultsByPage = ref<Record<string, PageFlowApiResult[]>>({})
+const expandedApiResults = ref(new Set<string>())
 const hoveredHotspot = ref<{ targets: string[]; centerX?: number; centerY?: number }>()
 const focusedTargetPositions = ref<Record<string, [number, number]>>({})
 const parkedPages = ref<Record<string, PageFlowPage>>({})
@@ -377,6 +380,18 @@ const fallbackFocusScene = computed(() => {
 
 const focusScene = computed(() => fallbackFocusScene.value)
 const connectionPaths = computed(() => focusScene.value?.connections ?? [])
+const focusedApiResults = computed(() => focusedPageId.value ? apiResultsByPage.value[focusedPageId.value] ?? [] : [])
+
+function toggleApiResult(id: string) {
+  const next = new Set(expandedApiResults.value)
+  if (next.has(id)) next.delete(id)
+  else next.add(id)
+  expandedApiResults.value = next
+}
+
+function visibleApiFields(result: PageFlowApiResult) {
+  return expandedApiResults.value.has(result.id) ? result.fields : result.fields.filter(field => field.used)
+}
 const connectionCountsByTarget = computed(() => connectionPaths.value.reduce((counts, connection) => {
   counts.set(connection.targetId, (counts.get(connection.targetId) ?? 0) + 1)
   return counts
@@ -791,7 +806,12 @@ function scheduleInitialSceneReveal() {
 }
 
 function previewUrl(path: string) {
-  return resolvePreviewUrl(path, props.config, window.location.origin, routeMode.value, navigationLocations.value[path])
+  const resolved = resolvePreviewUrl(path, props.config, window.location.origin, routeMode.value, navigationLocations.value[path])
+  const page = pages.value.find(item => item.path === path)
+  if (!page || page.id !== focusedPageId.value) return resolved
+  const url = new URL(resolved, window.location.origin)
+  url.searchParams.set('__unplugin_pageflow_inspect', '1')
+  return `${url.pathname}${url.search}${url.hash}`
 }
 
 function pageThumbnailRevision(page: PageFlowPage) {
@@ -979,6 +999,7 @@ function activatePreview(pageId: string, animate = true) {
       parkedPageProgress.value = {}
     }
     active.value = pageId
+    apiResultsByPage.value = { ...apiResultsByPage.value, [pageId]: [] }
     focusedPageId.value = pageId
     focusedLinksScannedPageId = cachedLinks ? pageId : undefined
     cancelAnimationFrame(focusLayoutFrame)
@@ -1139,6 +1160,10 @@ async function copyPagePath(path: string) {
   }
 }
 
+function openPage(path: string) {
+  window.open(previewUrl(path), '_blank', 'noopener,noreferrer')
+}
+
 function groupDisplayName(key: string, fallback: string) {
   return groupNames.value[key] || fallback
 }
@@ -1186,7 +1211,8 @@ function handleCanvasClick(event: MouseEvent) {
     const sourcePreviewH = pagePreviewHeight(focus.source.id)
     const sourceLocalX = worldX - sourceX
     const sourceLocalY = worldY - sourceY
-    if (sourceLocalX >= 0 && sourceLocalX <= PAGE_CARD_WIDTH && sourceLocalY >= sourcePreviewH + 32 && sourceLocalY <= sourcePreviewH + 56) void copyPagePath(focus.source.path)
+    if (sourceLocalX >= PAGE_CARD_WIDTH - 30 && sourceLocalX <= PAGE_CARD_WIDTH && sourceLocalY >= sourcePreviewH + 30 && sourceLocalY <= sourcePreviewH + 58) openPage(focus.source.path)
+    else if (sourceLocalX >= 0 && sourceLocalX < PAGE_CARD_WIDTH - 30 && sourceLocalY >= sourcePreviewH + 32 && sourceLocalY <= sourcePreviewH + 56) void copyPagePath(focus.source.path)
     else if (!(sourceLocalX >= 0 && sourceLocalX <= PAGE_CARD_WIDTH && sourceLocalY >= 0 && sourceLocalY <= sourcePreviewH)) void exitFocusAfterSnapshot()
     return
   }
@@ -1219,7 +1245,8 @@ function handleCanvasClick(event: MouseEvent) {
   const localX = worldX - position[0]
   const localY = worldY - position[1]
   const previewH = pagePreviewHeight(page.id)
-  if (localX >= 0 && localX <= PAGE_CARD_WIDTH && localY >= previewH + 32 && localY <= previewH + 56) void copyPagePath(page.path)
+  if (localX >= PAGE_CARD_WIDTH - 30 && localX <= PAGE_CARD_WIDTH && localY >= previewH + 30 && localY <= previewH + 58) openPage(page.path)
+  else if (localX >= 0 && localX < PAGE_CARD_WIDTH - 30 && localY >= previewH + 32 && localY <= previewH + 56) void copyPagePath(page.path)
   else if (localX >= 0 && localX <= PAGE_CARD_WIDTH && localY >= 0 && localY <= previewH) activatePreview(page.id)
 }
 
@@ -1282,6 +1309,34 @@ function handleFocusTargetHover(event: PointerEvent) {
   const currentPageId = hoveredHotspot.value?.centerX == null ? hoveredHotspot.value?.targets[0] : undefined
   if (target?.page.id === currentPageId) return
   setHoveredHotspot(target ? { targets: [target.page.id] } : undefined)
+}
+
+function handleCanvasCursor(event: PointerEvent) {
+  if (!canvas.value || !leafer) return
+  const bounds = canvas.value.getBoundingClientRect()
+  const layer = leafer.zoomLayer
+  const scale = layer.scaleX ?? 1
+  const worldX = (event.clientX - bounds.left - (layer.x ?? 0)) / scale
+  const worldY = (event.clientY - bounds.top - (layer.y ?? 0)) / scale
+  const candidates = focusScene.value
+    ? [focusScene.value.source, ...focusScene.value.targets.map(target => target.page)]
+    : pages.value.filter(page => visiblePageIds.value.has(page.id))
+  const metaHit = candidates.some(page => {
+    const position = focusScene.value?.source.id === page.id
+      ? focusScene.value.sourcePosition
+      : (focusScene.value?.targets.find(target => target.page.id === page.id)
+        ? [focusScene.value.targets.find(target => target.page.id === page.id)!.x, focusScene.value.targets.find(target => target.page.id === page.id)!.y] as [number, number]
+        : positions.value.get(page.id))
+    if (!position) return false
+    const height = pagePreviewHeight(page.id)
+    return worldX >= position[0] && worldX <= position[0] + PAGE_CARD_WIDTH
+      && worldY >= position[1] + height + 6 && worldY <= position[1] + height + 58
+  })
+  if (metaHit) {
+    setTimeout(() => {
+      if (canvas.value) canvas.value.style.cursor = 'default'
+    }, 0)
+  }
 }
 
 function clearFocusTargetHover() {
@@ -1416,12 +1471,22 @@ async function capturePreview(pageId: string, frame: HTMLIFrameElement, ready = 
     const fullHeight = previewMode.value === 'mobile'
       ? mode.height
       : boundedPreviewDocumentHeight(frame.contentDocument!, mode.height)
-    const snapshot = await html2canvas(body, {
+    // uni-app wraps every page in #app/uni-app/uni-page elements. Capturing
+    // that wrapper also captures its reserved top area, which appears as a
+    // blank strip in the home thumbnail. Prefer the actual preview page root.
+    const captureTarget = body.querySelector<HTMLElement>('.home-page.pageflow-preview')
+      // uni-app's page body contains the actual Vue page as its direct child;
+      // #app/uni-app/uni-page wrappers may include a reserved top offset.
+      ?? body.querySelector<HTMLElement>('uni-page-body > *')
+      ?? (body.firstElementChild instanceof HTMLElement ? body.firstElementChild : body)
+    const snapshot = await html2canvas(captureTarget, {
       backgroundColor: '#fff',
       height: fullHeight,
       logging: false,
       onclone: materializeMaskedIcons,
       scale: highResolution ? 2 : PAGE_CARD_WIDTH / mode.width,
+      scrollX: 0,
+      scrollY: 0,
       useCORS: true,
       width: mode.width,
       windowHeight: mode.height,
@@ -1588,6 +1653,16 @@ function previewPageIdForSource(source: MessageEventSource | null) {
 function handlePreviewMessage(event: MessageEvent) {
   if (event.origin !== window.location.origin) return
   const sourcePageId = previewPageIdForSource(event.source)
+  if (event.data?.type === PAGEFLOW_API_RESULT_MESSAGE) {
+    const result = event.data.result as PageFlowApiResult | undefined
+    if (!sourcePageId || !result || !Array.isArray(result.fields)) return
+    const current = apiResultsByPage.value[sourcePageId] ?? []
+    apiResultsByPage.value = {
+      ...apiResultsByPage.value,
+      [sourcePageId]: [...current.filter(item => item.id !== result.id), result].slice(-30),
+    }
+    return
+  }
   if (event.data?.type === PAGEFLOW_PAGE_REPORTED_MESSAGE) {
     if (sourcePageId === focusedPageId.value)
       requestAnimationFrame(() => requestFocusedPageScan(sourcePageId))
@@ -1659,8 +1734,9 @@ function createCardGroup(page: PageFlowPage, x: number, y: number, scale = 1, hi
     group.add(new Text({ x: 16, y: Math.max(38, previewH - 29), width: PAGE_CARD_WIDTH - 32, text: page.path, fill: '#6f7478', fontFamily: 'DM Mono', fontSize: 10, textWrap: 'none', textOverflow: 'ellipsis' }))
   }
   if (!hideMeta) {
-    group.add(new Text({ x: 0, y: previewH + 12, width: PAGE_CARD_WIDTH, text: page.title, fill: '#3f4347', fontSize: 13, fontWeight: 700, textWrap: 'none', textOverflow: 'ellipsis' }))
-    group.add(new Text({ x: 0, y: previewH + 38, width: PAGE_CARD_WIDTH, text: copiedPath.value === page.path ? '已复制' : page.path, fill: '#969b9f', fontFamily: 'DM Mono', fontSize: 10, textWrap: 'none', textOverflow: 'ellipsis' }))
+    group.add(new Text({ x: 0, y: previewH + 12, width: PAGE_CARD_WIDTH, text: page.title, fill: '#3f4347', fontSize: 13, fontWeight: 700, textWrap: 'none', textOverflow: 'ellipsis', cursor: 'default' }))
+    group.add(new Text({ x: 0, y: previewH + 38, width: PAGE_CARD_WIDTH - 28, text: copiedPath.value === page.path ? '已复制' : page.path, fill: '#969b9f', fontFamily: 'DM Mono', fontSize: 10, textWrap: 'none', textOverflow: 'ellipsis', cursor: 'pointer' }))
+    group.add(new Text({ x: PAGE_CARD_WIDTH - 20, y: previewH + 36, width: 20, text: '↗', fill: '#6f7478', fontSize: 14, textAlign: 'right', cursor: 'pointer' }))
   }
   return group
 }
@@ -1675,7 +1751,7 @@ function createDeckGroup(page: PageFlowPage, x: number, y: number) {
     card.opacity = Math.max(0.36, 1 - layer * 0.16)
     group.add(card)
   })
-  group.add(new Text({ x: 0, y: pagePreviewHeight(page.id) + 12, width: PAGE_CARD_WIDTH, text: `${groupDisplayName(deck.key, deck.label)} · ${deck.pages.length}`, fill: '#3f4347', fontSize: 13, fontWeight: 700, textWrap: 'none', textOverflow: 'ellipsis', cursor: 'text' }))
+  group.add(new Text({ x: 0, y: pagePreviewHeight(page.id) + 12, width: PAGE_CARD_WIDTH, text: `${groupDisplayName(deck.key, deck.label)} · ${deck.pages.length}`, fill: '#3f4347', fontSize: 13, fontWeight: 700, textWrap: 'none', textOverflow: 'ellipsis', cursor: 'default' }))
   return group
 }
 
@@ -1859,6 +1935,7 @@ function draw() {
     leafer.on(ZoomEvent.ZOOM, () => handleViewportTransform())
     canvas.value.addEventListener('click', handleCanvasClick)
     canvas.value.addEventListener('pointerdown', handleFocusTargetPointerDown, true)
+    canvas.value.addEventListener('pointermove', handleCanvasCursor, true)
     canvas.value.addEventListener('pointermove', handleFocusTargetHover)
     canvas.value.addEventListener('pointerleave', clearFocusTargetHover)
     window.addEventListener('pointermove', handleFocusTargetPointerMove, true)
@@ -2044,6 +2121,7 @@ onUnmounted(() => {
   window.removeEventListener('message', handlePreviewMessage)
   canvas.value?.removeEventListener('click', handleCanvasClick)
   canvas.value?.removeEventListener('pointerdown', handleFocusTargetPointerDown, true)
+  canvas.value?.removeEventListener('pointermove', handleCanvasCursor, true)
   canvas.value?.removeEventListener('pointermove', handleFocusTargetHover)
   canvas.value?.removeEventListener('pointerleave', clearFocusTargetHover)
   window.removeEventListener('pointermove', handleFocusTargetPointerMove, true)
@@ -2145,6 +2223,30 @@ onUnmounted(() => {
         </div>
       </div>
       <div ref="connectionCanvas" class="connection-canvas"></div>
+      <aside v-if="focusedPageId" class="api-panel">
+        <div class="api-panel-heading">
+          <strong>页面接口</strong><span>{{ focusedApiResults.length }}</span>
+        </div>
+        <div v-if="focusedApiResults.length" class="api-panel-list">
+          <section v-for="result in focusedApiResults" :key="result.id" class="api-result">
+            <div class="api-result-summary">
+              <span class="api-method">{{ result.method }}</span>
+              <code>{{ result.url }}</code>
+              <small :class="{ error: result.status >= 400 }">{{ result.status }} · {{ result.duration }}ms</small>
+            </div>
+            <div v-if="visibleApiFields(result).length" class="api-fields">
+              <div v-for="field in visibleApiFields(result)" :key="field.path" class="api-field" :class="{ unused: !field.used }">
+                <code>{{ field.path }}</code><span>{{ field.value }}</span>
+              </div>
+            </div>
+            <div v-else class="api-empty">页面暂未展示返回字段</div>
+            <button v-if="result.fields.some(field => !field.used)" type="button" class="api-expand" @click="toggleApiResult(result.id)">
+              {{ expandedApiResults.has(result.id) ? '收起未使用字段' : `展开 ${result.fields.filter(field => !field.used).length} 个未使用字段` }}
+            </button>
+          </section>
+        </div>
+        <div v-else class="api-panel-waiting">等待页面接口响应…</div>
+      </aside>
     </section>
     <div class="zoom"><button type="button" @click="zoomCanvas('in')">+</button><span>{{ zoomPercent }}%</span><button type="button" @click="zoomCanvas('out')">−</button></div>
     <footer><span><i></i> {{ status }}</span><span>Last synced just now</span></footer>

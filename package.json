@@ -12,6 +12,10 @@
     "./source": {
       "types": "./dist/plugin/index.d.ts",
       "import": "./src/plugin/index.ts"
+    },
+    "./runtime-state": {
+      "types": "./dist/runtime/state.d.ts",
+      "import": "./dist/runtime/state.js"
     }
   },
   "files": [
@@ -51,9 +55,9 @@
   ],
   "scripts": {
     "dev": "vite",
-    "dev:plugin": "concurrently -k -n plugin,client \"tsup src/plugin/index.ts src/runtime/client.ts --format esm --dts --out-dir dist --external unplugin --external vue --external vue-router --tsconfig tsconfig.app.json --watch\" \"vite build --config vite.package.config.ts --watch\"",
+    "dev:plugin": "concurrently -k -n plugin,client \"tsup src/plugin/index.ts src/runtime/client.ts src/runtime/state.ts --format esm --dts --out-dir dist --external unplugin --external vue --external vue-router --tsconfig tsconfig.app.json --watch\" \"vite build --config vite.package.config.ts --watch\"",
     "build": "npm run build:plugin && npm run build:demo",
-    "build:plugin": "tsup src/plugin/index.ts src/runtime/client.ts --format esm --dts --clean --out-dir dist --external unplugin --external vue --external vue-router --tsconfig tsconfig.app.json && vite build --config vite.package.config.ts",
+    "build:plugin": "tsup src/plugin/index.ts src/runtime/client.ts src/runtime/state.ts --format esm --dts --clean --out-dir dist --external unplugin --external vue --external vue-router --tsconfig tsconfig.app.json && vite build --config vite.package.config.ts",
     "build:demo": "tsc -b && vite build",
     "build:playground": "vite build --config playground/basic/vite.config.ts",
     "check": "npm test && npm run build && npm run check:package && npm run build:playground && npm run check:production && npm run pack:check",

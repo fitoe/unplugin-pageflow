@@ -159,9 +159,11 @@ function createGraph(
         path: route.path,
         routeOrder: routeOrderByPath.get(route.path)
           ?? (route.path === '/' && hiddenHomePath ? routeOrderByPath.get(hiddenHomePath) : undefined),
-        revision: route.componentFile
-          ? [...sourceRevisionsByFile.entries()].find(([file]) => file === route.componentFile || file.endsWith(route.componentFile!))?.[1] ?? route.path
-          : sourceEntryForPath(sourceRevisionsByFile, route.path) ?? route.path,
+        revision: sourceEntryForPath(sourceRevisionsByFile, configuredPath)
+          ?? (route.componentFile
+            ? [...sourceRevisionsByFile.entries()].find(([file]) => file === route.componentFile || file.endsWith(route.componentFile!))?.[1]
+            : undefined)
+          ?? route.path,
         accent: ACCENTS[index % ACCENTS.length],
         links: [],
       }
@@ -184,9 +186,12 @@ function createGraph(
 
   pages.forEach(page => {
     const componentFile = routesById.get(page.id)?.componentFile
+    const sourcePath = page.path === '/' && hiddenHomePath ? hiddenHomePath : page.path
     const staticLinks = componentFile
-      ? [...staticLinksByFile.entries()].find(([file]) => file === componentFile || file.endsWith(componentFile))?.[1] ?? []
-      : sourceEntryForPath(staticLinksByFile, page.path) ?? []
+      ? sourceEntryForPath(staticLinksByFile, sourcePath)
+        ?? [...staticLinksByFile.entries()].find(([file]) => file === componentFile || file.endsWith(componentFile))?.[1]
+        ?? []
+      : sourceEntryForPath(staticLinksByFile, sourcePath) ?? []
     const links = new Map<string, PageFlowPage['links'][number]>()
     ;[...staticLinks, ...(reportedPages.get(page.path)?.links ?? [])].forEach(link => {
       const target = resolveTarget(link.to)
@@ -194,7 +199,7 @@ function createGraph(
       const hotspotKey = link.hotspot
         ? `${link.hotspot.centerX}:${link.hotspot.centerY}`
         : 'static'
-      links.set(`${target}:${hotspotKey}`, { label: link.label, to: target, hotspot: link.hotspot })
+      links.set(`${target}:${hotspotKey}:${link.location ?? ''}`, { label: link.label, to: target, location: link.location, hotspot: link.hotspot })
     })
     page.links = [...links.values()]
   })
@@ -343,6 +348,7 @@ const factory: UnpluginFactory<PageFlowOptions | undefined> = (options) => {
   const staticLinksByFile = new Map<string, PageFlowRuntimeLink[]>()
   const sourceRevisionsByFile = new Map<string, string>()
   const eventResponses = new Set<ServerResponse>()
+  let cachedClientStyle: Buffer | undefined
   let sendGraphUpdate: ((graph: PageFlowGraph) => void) | undefined
   let sendPageUpdate: ((page: PageFlowPage) => void) | undefined
 
@@ -411,12 +417,21 @@ const factory: UnpluginFactory<PageFlowOptions | undefined> = (options) => {
       apply: 'serve',
       config(config) {
         const ignored = config.server?.watch?.ignored
+        const normalizedPluginDist = normalizeFile(pluginDist)
         return {
           server: {
             watch: {
               ignored: [
                 ...(ignored == null ? [] : Array.isArray(ignored) ? ignored : [ignored]),
                 `${pluginDist}**`,
+                // Chokidar's glob matching is inconsistent for absolute
+                // Windows paths. Use a predicate so PageFlow's own build
+                // output can never feed back into the host HMR graph.
+                (file: string) => {
+                  const normalizedFile = normalizeFile(file)
+                  return normalizedFile === normalizedPluginDist
+                    || normalizedFile.startsWith(`${normalizedPluginDist}/`)
+                },
                 '**/.unplugin-pageflow/cache/**',
                 '**/.pageflow',
               ],
@@ -520,7 +535,22 @@ const factory: UnpluginFactory<PageFlowOptions | undefined> = (options) => {
           if (pathname === stylePath && request.method === 'GET' && clientStyleFile) {
             response.setHeader('Content-Type', 'text/css; charset=utf-8')
             response.setHeader('Cache-Control', 'no-cache')
-            response.end(await readFile(clientStyleFile))
+            try {
+              cachedClientStyle = await readFile(clientStyleFile)
+              response.end(cachedClientStyle)
+            } catch (error) {
+              // `vite build --watch` replaces dist atomically by cleaning it
+              // first. Keep the host dev server alive while style.css is
+              // briefly absent and serve the last complete stylesheet.
+              if (cachedClientStyle) response.end(cachedClientStyle)
+              else {
+                response.statusCode = 503
+                response.setHeader('Retry-After', '1')
+                response.end('/* unplugin-pageflow client is rebuilding */')
+              }
+              if ((error as NodeJS.ErrnoException).code !== 'ENOENT')
+                server.config.logger.warn(`unplugin-pageflow could not read client style: ${error instanceof Error ? error.message : error}`)
+            }
             return
           }
 

@@ -155,6 +155,27 @@ PageFlow.vite({
 })
 ```
 
+原生输入框、下拉框、复选框和页面滚动位置会在 PageFlow 预览中自动恢复。复杂组件或 Vue 页面变量可显式注册：
+
+```ts
+import { onUnmounted, ref } from 'vue'
+import { definePageFlowState } from 'unplugin-pageflow/runtime-state'
+
+const activeTab = ref('overview')
+const selectedRole = ref('farmer')
+
+const stopPageFlowState = definePageFlowState('page-options', {
+  get: () => ({ activeTab: activeTab.value, selectedRole: selectedRole.value }),
+  restore: state => {
+    activeTab.value = state.activeTab
+    selectedRole.value = state.selectedRole
+  },
+})
+onUnmounted(stopPageFlowState)
+```
+
+缓存按页面 URL（包含业务 query/hash）和 PageFlow 角色隔离。不要注册 Token、密码、验证码等敏感信息；密码、文件和验证码输入框也不会被自动缓存。
+
 要求 Node.js `>=20.19`、npm `>=10`。当前以 Vite 和 history 模式 Vue Router 为主要支持范围。
 
 </details>

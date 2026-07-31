@@ -9,7 +9,7 @@ import type { CanvasTransform, ViewportSize } from './layout'
 export type PageFlowPreviewMode = 'mobile' | 'tablet' | 'pc'
 export type PageFlowThumbnailTier = 'compact' | 'full'
 export const PAGEFLOW_THUMBNAIL_TILE_HEIGHT = 512
-const PAGEFLOW_THUMBNAIL_CAPTURE_VERSION = 9
+const PAGEFLOW_THUMBNAIL_CAPTURE_VERSION = 13
 
 export function thumbnailTierForZoom(zoomPercent: number): PageFlowThumbnailTier {
   return zoomPercent < 50 ? 'compact' : 'full'

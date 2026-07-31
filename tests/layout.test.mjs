@@ -85,10 +85,20 @@ test('lays out linked pages in layers and limits previews to the viewport', asyn
     )
     assert.match(iconBackground, /data:image\/svg\+xml/)
     assert.match(decodeURIComponent(iconBackground), /fill='rgb\(79, 167, 87\)'/)
-    assert.match(thumbnailRevision(pages[0]), /^9:/)
+    assert.match(thumbnailRevision(pages[0]), /^13:/)
     const hotspotLayer = { removed: false, remove() { this.removed = true } }
-    materializeMaskedIcons({ querySelector: () => hotspotLayer, querySelectorAll: () => [] })
+    const singleLineText = {
+      textContent: '热门服务',
+      style: {},
+      getBoundingClientRect: () => ({ height: 23 }),
+    }
+    materializeMaskedIcons({
+      defaultView: { getComputedStyle: () => ({ whiteSpace: 'pre-line', lineHeight: 'normal', fontSize: '16px' }) },
+      querySelector: () => hotspotLayer,
+      querySelectorAll: selector => selector === 'uni-text > span' ? [singleLineText] : [],
+    })
     assert.equal(hotspotLayer.removed, true)
+    assert.equal(singleLineText.style.whiteSpace, 'nowrap')
     assert.deepEqual(touchPreviewCache(['home', 'about', 'contact'], 'settings'), ['about', 'contact', 'settings'])
     assert.deepEqual(touchPreviewCache(['home', 'about', 'contact'], 'settings', 3), ['about', 'contact', 'settings'])
     const wheelCalls = []

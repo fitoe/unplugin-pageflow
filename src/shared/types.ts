@@ -29,6 +29,7 @@ export type PageFlowRouteMode = 'history' | 'hash'
 export interface PageFlowRuntimeLink {
   label: string
   to: string
+  location?: string
   hotspot?: { centerX: number; centerY: number }
 }
 
@@ -41,6 +42,7 @@ export interface PageFlowRuntimePage {
 export interface PageFlowLink {
   label: string
   to: string
+  location?: string
   hotspot?: { centerX: number; centerY: number }
 }
 
@@ -75,4 +77,19 @@ export interface PageFlowGraph {
   pages: PageFlowPage[]
   routeMode: PageFlowRouteMode
   version: number
+}
+
+export interface PageFlowApiField {
+  path: string
+  value: string
+  used: boolean
+}
+
+export interface PageFlowApiResult {
+  id: string
+  method: string
+  url: string
+  status: number
+  duration: number
+  fields: PageFlowApiField[]
 }

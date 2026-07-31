@@ -5,7 +5,39 @@ import type {
   ResolvedPageFlowOptions,
 } from '../shared/types'
 import { PAGEFLOW_PREVIEW_PARAM } from './index'
-import { PAGEFLOW_HOTSPOT_HOVER_MESSAGE, PAGEFLOW_NAVIGATE_MESSAGE, PAGEFLOW_NETWORK_EVENT, PAGEFLOW_PAGE_REPORTED_MESSAGE, PAGEFLOW_READY_EVENT, PAGEFLOW_SCAN_MESSAGE, PAGEFLOW_SCAN_RESULT_MESSAGE } from '../shared/protocol'
+import { startPageFlowDomStatePersistence } from './state'
+import { PAGEFLOW_API_RESULT_MESSAGE, PAGEFLOW_HOTSPOT_HOVER_MESSAGE, PAGEFLOW_NAVIGATE_MESSAGE, PAGEFLOW_NETWORK_EVENT, PAGEFLOW_PAGE_REPORTED_MESSAGE, PAGEFLOW_READY_EVENT, PAGEFLOW_SCAN_MESSAGE, PAGEFLOW_SCAN_RESULT_MESSAGE } from '../shared/protocol'
+
+const apiInspectionEnabled = new URLSearchParams(window.location.search).has('__unplugin_pageflow_inspect')
+
+function apiFields(value: unknown, path = '', fields: Array<{ path: string, value: string, used: boolean }> = []) {
+  if (fields.length >= 300) return fields
+  if (Array.isArray(value)) {
+    value.slice(0, 20).forEach((item, index) => apiFields(item, `${path}[${index}]`, fields))
+  } else if (value && typeof value === 'object') {
+    Object.entries(value).forEach(([key, item]) => apiFields(item, path ? `${path}.${key}` : key, fields))
+  } else if (path) {
+    const rendered = value == null ? String(value) : String(value)
+    const text = document.body?.innerText ?? ''
+    fields.push({ path, value: rendered.length > 160 ? `${rendered.slice(0, 157)}…` : rendered, used: rendered.length >= 2 && text.includes(rendered) })
+  }
+  return fields
+}
+
+function reportApiResult(method: string, url: string, status: number, duration: number, value: unknown) {
+  if (!apiInspectionEnabled || window.parent === window || url.includes('/__unplugin-pageflow/')) return
+  window.parent.postMessage({
+    type: PAGEFLOW_API_RESULT_MESSAGE,
+    result: {
+      id: `${method}:${url}`,
+      method,
+      url,
+      status,
+      duration: Math.round(duration),
+      fields: apiFields(value),
+    },
+  }, window.location.origin)
+}
 
 interface PageFlowWindow extends Window {
   __UNPLUGIN_PAGEFLOW_PENDING_REQUESTS__?: () => number
@@ -27,14 +59,53 @@ function trackPreviewRequests() {
 
   const originalFetch = window.fetch.bind(window)
   window.fetch = (...args) => {
+    const startedAt = performance.now()
+    const request = args[0]
+    const method = (args[1]?.method ?? (request instanceof Request ? request.method : 'GET')).toUpperCase()
+    const url = request instanceof Request ? request.url : String(request)
     update(1)
-    return originalFetch(...args).finally(() => update(-1))
+    return originalFetch(...args).then(response => {
+      const contentType = response.headers?.get?.('content-type') ?? ''
+      if (apiInspectionEnabled && typeof response.clone === 'function') {
+        const clone = response.clone()
+        const value = contentType.includes('json')
+          ? clone.json()
+          : clone.text().then(text => /^[\s]*[\[{]/.test(text) ? JSON.parse(text) : Promise.reject())
+        void value.then(data => requestAnimationFrame(() => reportApiResult(method, url, response.status, performance.now() - startedAt, data)))
+          .catch(() => undefined)
+      }
+      return response
+    }).finally(() => update(-1))
   }
 
+  const requests = new WeakMap<XMLHttpRequest, { method: string, url: string, startedAt: number }>()
+  const originalOpen = window.XMLHttpRequest.prototype.open
+  window.XMLHttpRequest.prototype.open = function (method: string, url: string | URL, ...args: unknown[]) {
+    requests.set(this, { method: method.toUpperCase(), url: String(url), startedAt: 0 })
+    return originalOpen.apply(this, [method, url, ...args] as Parameters<XMLHttpRequest['open']>)
+  }
   const originalSend = window.XMLHttpRequest.prototype.send
   window.XMLHttpRequest.prototype.send = function (...args) {
+    const request = requests.get(this)
+    if (request) request.startedAt = performance.now()
     update(1)
-    this.addEventListener('loadend', () => update(-1), { once: true })
+    this.addEventListener('loadend', () => {
+      update(-1)
+      const current = requests.get(this)
+      const contentType = this.getResponseHeader('content-type') ?? ''
+      if (!apiInspectionEnabled || !current) return
+      try {
+        const value = this.responseType === 'json' && this.response != null
+          ? this.response
+          : (() => {
+              const text = this.responseText
+              if (!contentType.includes('json') && !/^[\s]*[\[{]/.test(text)) return undefined
+              return JSON.parse(text)
+            })()
+        if (value === undefined) return
+        requestAnimationFrame(() => reportApiResult(current.method, this.responseURL || current.url, this.status, performance.now() - current.startedAt, value))
+      } catch {}
+    }, { once: true })
     return originalSend.apply(this, args)
   }
 }
@@ -170,11 +241,11 @@ async function publishRoutes(router: RouterLike, config: ResolvedPageFlowOptions
 }
 
 const programmaticLinks = new Map<string, PageFlowRuntimeLink>()
-const programmaticElements = new Map<Element, Set<string>>()
+const programmaticElements = new Map<Element, Map<string, string>>()
 
-function associateProgrammaticElement(element: Element, target: string) {
-  const targets = programmaticElements.get(element) ?? new Set<string>()
-  targets.add(target)
+function associateProgrammaticElement(element: Element, target: string, location = target) {
+  const targets = programmaticElements.get(element) ?? new Map<string, string>()
+  targets.set(target, location)
   programmaticElements.set(element, targets)
 }
 let lastClickedElement: Element | null = null
@@ -262,7 +333,7 @@ function bindHotspotHover(element: Element, targets: string[]) {
   bindHotspotHoverDelegation()
 }
 
-function addHotspot(layer: HTMLElement, element: Element, type: 'link' | 'event', targets: string[]) {
+function addHotspot(layer: HTMLElement, element: Element, type: 'link' | 'event', targets: string[], locations = targets) {
   const rect = element.getBoundingClientRect()
   if (!rect.width || !rect.height) return false
   const overlay = document.createElement('div')
@@ -295,7 +366,7 @@ function addHotspot(layer: HTMLElement, element: Element, type: 'link' | 'event'
     const navigate = (event: Event) => {
       event.preventDefault()
       event.stopImmediatePropagation()
-      notifyNavigation(targets[0], targets[0], 'hotspot')
+      notifyNavigation(targets[0], locations[0] ?? targets[0], 'hotspot')
     }
     overlay.addEventListener('pointerdown', event => {
       pointerNavigationAt = performance.now()
@@ -325,7 +396,16 @@ function hotspotCenter(element: Element) {
   }
 }
 
+function isFormControlRegion(element: Element) {
+  if (element.matches('input, textarea, select, option, [contenteditable="true"]')) return true
+  if (element.matches('a[href], button, [role="link"], [role="button"], uni-button')) return false
+  return element.matches('label') || element.querySelector('input, textarea, select, [contenteditable="true"]') != null
+}
+
 function hasClickHandler(element: Element) {
+  // uni-app wraps native inputs in clickable label/view components. Their
+  // focus and model handlers must not become navigation hotspots either.
+  if (isFormControlRegion(element)) return false
   const rendered = element as VueRenderedElement
   const component = rendered.__vueParentComponent
   if (component && (component.vnode?.el === element || component.subTree?.el === element)) {
@@ -402,14 +482,15 @@ function collectLinks(router: RouterLike) {
     const anchorPath = anchorRoutePath(router, target)
     const matched = router.resolve?.(anchorPath).matched
     const routePath = matched?.[matched.length - 1]?.path ?? anchorPath
-    if (!addHotspot(layer, anchor, 'link', [routePath])) return
-    links.push({ label, to: routePath, hotspot: hotspotCenter(anchor) })
+    const location = anchorNavigationLocation(router, target)
+    if (!addHotspot(layer, anchor, 'link', [routePath], [location])) return
+    links.push({ label, to: routePath, location, hotspot: hotspotCenter(anchor) })
   })
   document.querySelectorAll<HTMLElement>('[data-pageflow-to]').forEach(element => {
     const declaredTarget = element.dataset.pageflowTo
     const to = declaredTarget && targetPath(router, declaredTarget)
-    if (!to || !addHotspot(layer!, element, 'link', [to])) return
-    links.push({ label: element.getAttribute('aria-label')?.trim() || element.textContent?.trim() || to, to, hotspot: hotspotCenter(element) })
+    if (!to || !addHotspot(layer!, element, 'link', [to], [declaredTarget!])) return
+    links.push({ label: element.getAttribute('aria-label')?.trim() || element.textContent?.trim() || to, to, location: declaredTarget, hotspot: hotspotCenter(element) })
   })
   document.body.querySelectorAll('*').forEach(element => {
     if (element.closest('[data-unplugin-pageflow-hotspot-layer]') || !hasClickHandler(element)) return
@@ -418,14 +499,17 @@ function collectLinks(router: RouterLike) {
     if (element.hasAttribute('data-pageflow-to')) return
     const label = element.getAttribute('aria-label')?.trim() || element.textContent?.trim() || 'Navigation'
     const targets = renderedNavigationTargets(element, router)
-    const type = targets.length ? 'link' : 'event'
-    if (!addHotspot(layer!, element, type, targets) || !targets.length) return
+    // A click handler alone is not a page relationship (checkboxes, inputs,
+    // accordions, etc.). Only render an event hotspot after a navigation
+    // target has actually been resolved.
+    if (!targets.length || !addHotspot(layer!, element, 'event', targets)) return
     const hotspot = hotspotCenter(element)
     targets.forEach(to => links.push({ label, to, hotspot }))
   })
-  programmaticElements.forEach((targets, element) => {
+  programmaticElements.forEach((targetLocations, element) => {
+    if (isFormControlRegion(element)) return
     if (element.closest('a[href], [data-pageflow-to]')) return
-    addHotspot(layer!, element, 'link', [...targets])
+    addHotspot(layer!, element, 'event', [...targetLocations.keys()], [...targetLocations.values()])
   })
   const uniqueLinks = new Map<string, PageFlowRuntimeLink>()
   links.forEach(link => {
@@ -480,13 +564,14 @@ function protectPreviewInteractions(router: RouterLike, config: ResolvedPageFlow
         const element = lastClickedElement?.closest('a, button, [role="link"], [role="button"], uni-button, uni-view')
           ?? lastClickedElement
         const label = element?.textContent?.trim() || `${method} ${target}`
+        const resolved = router.resolve?.(to)
         programmaticLinks.set(`${routePath(router)}:${target}`, {
           label,
           to: target,
+          location: resolved?.fullPath ?? resolved?.path ?? target,
           hotspot: element ? hotspotCenter(element) : undefined,
         })
-        if (element) associateProgrammaticElement(element, target)
-        const resolved = router.resolve?.(to)
+        if (element) associateProgrammaticElement(element, target, resolved?.fullPath ?? resolved?.path ?? target)
         if (element) notifyNavigation(target, resolved?.fullPath ?? resolved?.path ?? target)
         void publishPage(router, config)
       }
@@ -507,9 +592,10 @@ function protectPreviewInteractions(router: RouterLike, config: ResolvedPageFlow
         programmaticLinks.set(`${routePath(router)}:${target}`, {
           label,
           to: target,
+          location,
           hotspot: element ? hotspotCenter(element) : undefined,
         })
-        if (element) associateProgrammaticElement(element, target)
+        if (element) associateProgrammaticElement(element, target, location)
         if (element) notifyNavigation(target, location)
         void publishPage(router, config)
       }
@@ -556,6 +642,7 @@ export async function startPageFlowRuntime(config: ResolvedPageFlowOptions) {
   }
 
   if (!router) return
+  startPageFlowDomStatePersistence()
   const previewMode = new URLSearchParams(window.location.search).has(PAGEFLOW_PREVIEW_PARAM)
   protectPreviewInteractions(router, config)
   if (!previewMode) await publishRoutes(router, config)

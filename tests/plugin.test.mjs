@@ -165,12 +165,14 @@ test('collapses the configured uni-app home into the root route', async () => {
       }),
     })
     const plugin = server.config.plugins.find(item => item.name === 'unplugin-pageflow')
+    await plugin.transform('<template><navigator url="/pages/login">Login</navigator></template>', resolve('tests/fixtures/uniapp/src/pages/index.vue'))
     await plugin.transform("uni.switchTab({ url: '/pages/index' })", 'src/menu.vue')
     const graph = await (await fetch(`${origin}/__unplugin-pageflow/api/graph`)).json()
 
     assert.equal(response.status, 204)
     assert.deepEqual(graph.pages.map(page => page.path), ['/', '/pages/login', '/pages/untitled', '/pages/product/index', '/menu'])
     assert.equal(graph.pages.find(page => page.id === 'root').title, 'Fixture home')
+    assert.notEqual(graph.pages.find(page => page.id === 'root').revision, '/')
     assert.equal(graph.pages.find(page => page.id === 'login').title, 'Fixture login')
     assert.equal(graph.pages.find(page => page.id === 'product').title, 'Fixture product')
     assert.equal(graph.pages.find(page => page.id === 'untitled').title, '')
