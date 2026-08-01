@@ -45,9 +45,9 @@ export function createPageCardGroup(options: PageCardOptions) {
     group.add(new Text({ x: 16, y: Math.max(38, previewHeight - 29), width: PAGE_CARD_WIDTH - 32, text: page.path, fill: '#6f7478', fontFamily: 'DM Mono', fontSize: 10, textWrap: 'none', textOverflow: 'ellipsis' }))
   }
   if (!options.hideMeta) {
-    group.add(new Text({ x: 0, y: previewHeight + 12, width: PAGE_CARD_WIDTH, text: page.title, fill: '#3f4347', fontSize: 13, fontWeight: 700, textWrap: 'none', textOverflow: 'ellipsis', cursor: 'default' }))
-    group.add(new Text({ x: 0, y: previewHeight + 38, width: PAGE_CARD_WIDTH - 28, text: options.copied ? '已复制' : page.path, fill: '#969b9f', fontFamily: 'DM Mono', fontSize: 10, textWrap: 'none', textOverflow: 'ellipsis', cursor: 'pointer' }))
-    group.add(new Text({ x: PAGE_CARD_WIDTH - 20, y: previewHeight + 36, width: 20, text: '↗', fill: '#6f7478', fontSize: 14, textAlign: 'right', cursor: 'pointer' }))
+    group.add(new Text({ x: 0, y: previewHeight + 12, width: PAGE_CARD_WIDTH - 28, text: page.title, fill: '#3f4347', fontSize: 13, fontWeight: 700, textWrap: 'none', textOverflow: 'ellipsis', cursor: 'default' }))
+    group.add(new Text({ x: PAGE_CARD_WIDTH - 20, y: previewHeight + 10, width: 20, text: '→', fill: '#6f7478', fontSize: 15, textAlign: 'right', cursor: 'pointer' }))
+    group.add(new Text({ x: 0, y: previewHeight + 38, width: PAGE_CARD_WIDTH, text: options.copied ? '已复制' : page.path, fill: '#969b9f', fontFamily: 'DM Mono', fontSize: 10, textWrap: 'none', textOverflow: 'ellipsis', cursor: 'pointer' }))
   }
   return group
 }

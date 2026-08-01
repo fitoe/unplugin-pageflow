@@ -44,8 +44,9 @@ assert.equal(packageManifest.bin['pageflow-next'], './dist/next/index.js')
 assert.match(await readFile('dist/next/index.js', 'utf8'), /^#!\/usr\/bin\/env node/)
 const packagedAssets = await readdir('dist/assets')
 assert.deepEqual(packageManifest.dependencies, {
+  '@nuxt/ui': '^4.10.0',
+  tailwindcss: '^4.3.3',
   unplugin: '^2.3.5',
-  'vue-json-pretty': '^2.6.0',
 })
 assert.match(clientOutput, /origin\.createCanvas/)
 assert.doesNotMatch(clientOutput, /from\s*["']vue["']/)
@@ -56,8 +57,8 @@ assert.match(clientOutput, /image\/webp/)
 assert.match(clientOutput, /EventSource/)
 assert.match(clientOutput, /unplugin-pageflow:page-update/)
 assert.match(clientOutput, /unplugin-pageflow:preview-mode/)
-assert.match(clientOutput, /layout\.worker-/)
+assert.doesNotMatch(clientOutput, /new URL\([^)]*layout\.worker/)
 assert.match(pluginOutput, /style\.css/)
 assert.doesNotMatch(clientOutput, /["']\/assets\/layout\.worker-/)
-assert(packagedAssets.some(file => /^layout\.worker-.*\.js$/.test(file)))
+assert(!packagedAssets.some(file => /^layout\.worker-.*\.js$/.test(file)))
 console.log('Built package exposes unplugin adapters and resolves its client assets.')

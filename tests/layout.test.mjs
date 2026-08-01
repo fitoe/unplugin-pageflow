@@ -5,7 +5,7 @@ import { createServer } from 'vite'
 test('lays out linked pages in layers and limits previews to the viewport', async () => {
   const server = await createServer({ configFile: false, server: { middlewareMode: true }, appType: 'custom', logLevel: 'silent' })
   try {
-    const { assignOrderedFocusSides, centerPageTransform, collapseRepeatedListLinks, createPageSpatialIndex, createRouteDeckView, getRenderablePages, getVisiblePageIds, layoutPageGrid, layoutPagesByRoute, queryPageSpatialIndex, routeDeckPathForPage } = await server.ssrLoadModule('/src/client/layout.ts')
+    const { assignOrderedFocusSides, centerPageTransform, collapseRepeatedListLinks, createPageSpatialIndex, createRouteDeckView, fitFocusedPreviewTransform, getRenderablePages, getVisiblePageIds, layoutPageGrid, layoutPagesByRoute, queryPageSpatialIndex, routeDeckPathForPage } = await server.ssrLoadModule('/src/client/layout.ts')
     const { forwardWheelToCanvas, PAGEFLOW_CANVAS_CONFIG } = await server.ssrLoadModule('/src/client/canvas.ts')
     const { resolvePreviewUrl, touchPreviewCache } = await server.ssrLoadModule('/src/client/preview.ts')
     const { fullThumbnailTiles, thumbnailRevision, thumbnailSlot, thumbnailTierForZoom, thumbnailUrl, visibleThumbnailTiles } = await server.ssrLoadModule('/src/client/thumbnails.ts')
@@ -48,6 +48,10 @@ test('lays out linked pages in layers and limits previews to the viewport', asyn
     assert.deepEqual(
       centerPageTransform([100, 200], 500, { width: 1000, height: 800 }, 2),
       { x: 60, y: -500, scaleX: 2, scaleY: 2 },
+    )
+    assert.deepEqual(
+      fitFocusedPreviewTransform([100, 200], 500, { width: 1000, height: 800 }, 1.03),
+      { x: 178.75728155339806, y: -249.0873786407767, scaleX: 1.4601941747572815, scaleY: 1.4601941747572815 },
     )
     assert.deepEqual(touchPreviewCache([], 'home'), ['home'])
     assert.deepEqual(touchPreviewCache(['home', 'about', 'contact'], 'home'), ['about', 'contact', 'home'])

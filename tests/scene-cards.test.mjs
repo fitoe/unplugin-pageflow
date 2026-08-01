@@ -28,7 +28,7 @@ test('builds reusable page cards and real-page deck layers', async () => {
     })
     assert.deepEqual([card.x, card.y, card.children.length], [10, 20, 6])
     assert.deepEqual(card.children.slice(1).map(child => child.text), [
-      'Title home', '/home', 'Title home', '已复制', '↗',
+      'Title home', '/home', 'Title home', '→', '已复制',
     ])
 
     const layers = [page('index'), page('detail')]

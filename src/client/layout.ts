@@ -39,6 +39,24 @@ export function centerPageTransform(
   }
 }
 
+export function fitFocusedPreviewTransform(
+  position: [number, number],
+  previewHeight: number,
+  viewport: ViewportSize,
+  selectedScale = 1,
+  topPadding = 32,
+  bottomPadding = 16,
+): CanvasTransform {
+  const availableHeight = Math.max(1, viewport.height - topPadding - bottomPadding)
+  const scale = availableHeight / Math.max(1, previewHeight * selectedScale)
+  return {
+    x: viewport.width / 2 - (position[0] + PAGE_CARD_WIDTH / 2) * scale,
+    y: topPadding + availableHeight / 2 - (position[1] + previewHeight / 2) * scale,
+    scaleX: scale,
+    scaleY: scale,
+  }
+}
+
 export interface PageSpatialIndex {
   cellSize: number
   cells: Map<string, Set<string>>

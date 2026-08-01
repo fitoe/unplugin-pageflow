@@ -29,6 +29,7 @@ test('captures the real page root and saves compact plus reversed full tiles', a
       render: async (target, options) => {
         renderTarget = target
         renderOptions = options
+        assert.match(window.document.getElementById('unplugin-pageflow-snapshot-scrollbars')?.textContent ?? '', /webkit-scrollbar/)
         return snapshot
       },
       resize: () => compact,
@@ -48,6 +49,7 @@ test('captures the real page root and saves compact plus reversed full tiles', a
       ['mobile:full:home:tile:0', 156, 0],
     ])
     assert.equal(records.length, 3)
+    assert.equal(window.document.getElementById('unplugin-pageflow-snapshot-scrollbars'), null)
     assert.deepEqual([snapshot.width, snapshot.height, compact.width, compact.height], [0, 0, 0, 0])
     assert(tiles.every(tile => tile.width === 0 && tile.height === 0))
   } finally {

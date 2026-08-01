@@ -27,10 +27,11 @@ export function cachedPreviewUsers(storage: Pick<Storage, 'length' | 'key'> = lo
 }
 
 export function visibleSessionUsers(savedUsers: string[], previewRoles: Array<{ role: string }>, cachedUsers: string[]) {
-  const configured = new Set(configuredUsers(previewRoles))
-  const manuallyAdded = savedUsers.filter(user => user !== '默认用户' && !configured.has(user))
-  const visitedRoles = cachedUsers.filter(user => configured.has(user))
-  const users = [...new Set([...manuallyAdded, ...visitedRoles])]
+  const configured = configuredUsers(previewRoles)
+  const configuredSet = new Set(configured)
+  const manuallyAdded = savedUsers.filter(user => user !== '默认用户' && !configuredSet.has(user))
+  const visitedRoles = cachedUsers.filter(user => configuredSet.has(user))
+  const users = [...new Set([...configured, ...manuallyAdded, ...visitedRoles])]
   return users.length ? users : ['默认用户']
 }
 
@@ -38,7 +39,7 @@ export function loadUserSessions(storage: Pick<Storage, 'getItem'> = localStorag
   try {
     const value = JSON.parse(storage.getItem(STORAGE_KEY) ?? '')
     return {
-      users: Array.isArray(value?.users) ? value.users.filter((user: unknown) => typeof user === 'string' && user) : [],
+      users: Array.isArray(value?.customUsers) ? value.customUsers.filter((user: unknown) => typeof user === 'string' && user) : [],
       notes: value?.notes && typeof value.notes === 'object' ? value.notes : {},
       activeUser: typeof value?.activeUser === 'string' ? value.activeUser : undefined,
       pageUsers: value?.pageUsers && typeof value.pageUsers === 'object' ? value.pageUsers : {},
@@ -50,6 +51,7 @@ export function loadUserSessions(storage: Pick<Storage, 'getItem'> = localStorag
 
 export function saveUserSessions(sessions: PageFlowUserSessions, storage: Pick<Storage, 'setItem'> = localStorage) {
   try {
-    storage.setItem(STORAGE_KEY, JSON.stringify(sessions))
+    const { users, ...rest } = sessions
+    storage.setItem(STORAGE_KEY, JSON.stringify({ ...rest, customUsers: users }))
   } catch {}
 }

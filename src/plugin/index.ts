@@ -4,7 +4,7 @@ import { createHash } from 'node:crypto'
 import { spawn, type ChildProcess } from 'node:child_process'
 import { createRequire } from 'node:module'
 import { readFile, readdir, stat, writeFile } from 'node:fs/promises'
-import { readFileSync } from 'node:fs'
+import { existsSync, readFileSync } from 'node:fs'
 import type { ServerResponse } from 'node:http'
 import { dirname, resolve } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
@@ -375,10 +375,12 @@ const factory: UnpluginFactory<PageFlowOptions | undefined> = (options) => {
   const pluginDist = `${normalizeFile(resolve(pluginRoot, 'dist'))}/`
   const moduleFile = normalizeFile(fileURLToPath(import.meta.url))
   const packaged = moduleFile.includes('/dist/')
-  const clientEntryFile = resolve(pluginRoot, packaged ? 'dist/client/mount.js' : 'src/client/mount.ts')
+  const builtClientEntryFile = resolve(pluginRoot, 'dist/client/mount.js')
+  const useBuiltClient = packaged || existsSync(builtClientEntryFile)
+  const clientEntryFile = useBuiltClient ? builtClientEntryFile : resolve(pluginRoot, 'src/client/mount.ts')
   const clientEntry = toViteFsPath(pathToFileURL(clientEntryFile))
   const runtimeEntry = toViteFsPath(pathToFileURL(resolve(pluginRoot, packaged ? 'dist/runtime/client.js' : 'src/runtime/client.ts')))
-  const clientStyleFile = packaged ? resolve(pluginRoot, 'dist/style.css') : undefined
+  const clientStyleFile = useBuiltClient ? resolve(pluginRoot, 'dist/style.css') : undefined
   let graph: PageFlowGraph = { pages: [], routeMode: 'history', version: 0 }
   let routes: PageFlowRuntimeRoute[] = []
   let routeMode: PageFlowRouteMode = 'history'

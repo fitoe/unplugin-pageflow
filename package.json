@@ -107,8 +107,9 @@
     "preview": "vite preview"
   },
   "dependencies": {
-    "unplugin": "^2.3.5",
-    "vue-json-pretty": "^2.6.0"
+    "@nuxt/ui": "^4.10.0",
+    "tailwindcss": "^4.3.3",
+    "unplugin": "^2.3.5"
   },
   "peerDependencies": {
     "@builder.io/qwik": ">=1.10.0",

@@ -276,7 +276,7 @@ function addHotspot(layer: HTMLElement, element: Element, type: 'link' | 'event'
     border: `1px solid ${border}`,
     boxSizing: 'border-box',
     pointerEvents: targets.length ? 'auto' : 'none',
-    cursor: targets.length ? 'pointer' : 'default',
+    cursor: 'default',
     opacity: '0.5',
     transition: 'opacity 500ms ease-out',
   })

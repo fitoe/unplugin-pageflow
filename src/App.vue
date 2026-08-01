@@ -1,5 +1,9 @@
 <script setup lang="ts">
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
+import UCollapsible from '@nuxt/ui/components/Collapsible.vue'
+import UDropdownMenu from '@nuxt/ui/components/DropdownMenu.vue'
+import UInputMenu from '@nuxt/ui/components/InputMenu.vue'
+import UTabs from '@nuxt/ui/components/Tabs.vue'
 import { Leafer, Text, Group, MoveEvent, Path, ZoomEvent } from 'leafer-ui'
 import '@leafer-in/view'
 import '@leafer-in/viewport'
@@ -31,7 +35,8 @@ import { FrameAnimation } from './client/frame-animation'
 import { PreviewFrameRegistry } from './client/preview-frame-registry'
 import { decodePreviewMessage } from './client/preview-message'
 import { buildApiFieldTree } from './client/api-field-tree'
-import { cachedPreviewUsers, loadUserSessions, saveUserSessions, visibleSessionUsers } from './client/user-sessions'
+import { cachedPreviewUsers, configuredUsers, loadUserSessions, saveUserSessions, visibleSessionUsers } from './client/user-sessions'
+import LayoutWorker from './client/layout.worker?worker&inline'
 import ApiFieldTree from './components/ApiFieldTree.vue'
 import { focusTargetSetKey, planPageUpdate } from './client/page-update'
 import {
@@ -47,6 +52,7 @@ import {
 } from './client/thumbnails'
 import {
   centerPageTransform,
+  fitFocusedPreviewTransform,
   createPageSpatialIndex,
   createRouteDeckView,
   getRenderablePages,
@@ -67,6 +73,11 @@ const previewModes = {
   tablet: { label: '平板', width: 768, height: 1024 },
   pc: { label: 'PC', width: 1440, height: 900 },
 } as const
+const viewportTabs = [
+  { value: 'mobile', label: previewModes.mobile.label, icon: 'i-lucide-smartphone', ui: { label: 'sr-only' } },
+  { value: 'tablet', label: previewModes.tablet.label, icon: 'i-lucide-tablet', ui: { label: 'sr-only' } },
+  { value: 'pc', label: previewModes.pc.label, icon: 'i-lucide-monitor', ui: { label: 'sr-only' } },
+]
 const PREVIEW_MODE_STORAGE_KEY = 'unplugin-pageflow:preview-mode'
 const initialUserSessions = loadUserSessions()
 
@@ -135,10 +146,35 @@ const readyPreviewIds = ref(new Set<string>())
 const routeMode = ref<PageFlowRouteMode>('history')
 const capturePreviewId = ref<string>()
 const copiedPath = ref<string>()
+const searchOpen = ref(false)
+const searchSelection = ref<string>()
+const searchRoot = ref<HTMLDivElement>()
 const canvas = ref<HTMLDivElement>()
 const connectionCanvas = ref<HTMLDivElement>()
 const overlayWorld = ref<HTMLDivElement>()
+
+const panelTabs = computed(() => [
+  { value: 'api', label: '接口', badge: focusedApiResults.value.length, slot: 'api' },
+  { value: 'tests', label: '测试', badge: focusedPageTests.value.length, slot: 'tests' },
+])
+const headerUserMenuItems = computed(() => [
+  [{ type: 'label' as const, label: '切换用户' }],
+  users.value.map(user => ({
+    label: user,
+    description: userNotes.value[user],
+    user,
+    onSelect: () => selectActiveUser(user),
+  })),
+])
+
+function pageUserMenuItems(pageId: string) {
+  return users.value.map(user => ({
+    label: userNotes.value[user] || user,
+    onSelect: () => selectPageUser(pageId, user),
+  }))
+}
 let leafer: Leafer | undefined
+let userSessionRefreshTimer: number | undefined
 let connectionLeafer: Leafer | undefined
 let edgeLayer: Group | undefined
 let connectionLayer: Group | undefined
@@ -365,10 +401,6 @@ function toggleApiResult(id: string) {
   if (next.has(id)) next.delete(id)
   else next.add(id)
   expandedApiResults.value = next
-}
-
-function toggleApiResultPanel(id: string) {
-  openApiResultId.value = openApiResultId.value === id ? undefined : id
 }
 
 function visibleApiFields(result: PageFlowApiResult) {
@@ -763,7 +795,8 @@ function scheduleInitialSceneReveal() {
 
 function previewUrl(path: string) {
   const page = pages.value.find(item => item.path === path)
-  const user = page ? pageUsers.value[page.id] ?? activeUser.value : activeUser.value
+  const selectedUser = page ? pageUsers.value[page.id] ?? activeUser.value : activeUser.value
+  const user = selectedUser === '默认用户' ? undefined : selectedUser
   const resolved = resolvePreviewUrl(path, props.config, window.location.origin, routeMode.value, navigationLocations.value[path], user)
   if (!page || page.id !== focusedPageId.value) return resolved
   const url = new URL(resolved, window.location.origin)
@@ -771,32 +804,37 @@ function previewUrl(path: string) {
   return `${url.pathname}${url.search}${url.hash}`
 }
 
+function refreshSessionUsers() {
+  const next = visibleSessionUsers(initialUserSessions.users, props.config.previewRoles, cachedPreviewUsers())
+  if (JSON.stringify(next) === JSON.stringify(users.value)) return
+  users.value = next
+  if (!users.value.includes(activeUser.value ?? '')) activeUser.value = users.value[0]
+}
+
 function selectActiveUser(user: string) {
   activeUser.value = user
-  saveUserSessions({ users: users.value, notes: userNotes.value, activeUser: user, pageUsers: pageUsers.value })
+  saveCurrentUserSessions(user)
+}
+
+function saveCurrentUserSessions(selectedUser = activeUser.value) {
+  const configured = new Set(configuredUsers(props.config.previewRoles))
+  saveUserSessions({ users: users.value.filter(user => !configured.has(user)), notes: userNotes.value, activeUser: selectedUser, pageUsers: pageUsers.value })
 }
 
 function selectPageUser(pageId: string, user: string) {
   pageUsers.value = { ...pageUsers.value, [pageId]: user }
-  saveUserSessions({ users: users.value, notes: userNotes.value, activeUser: activeUser.value, pageUsers: pageUsers.value })
+  saveCurrentUserSessions()
 }
 
 function setUserNote(user: string, note: string) {
   userNotes.value = { ...userNotes.value, [user]: note.trim() }
-  saveUserSessions({ users: users.value, notes: userNotes.value, activeUser: activeUser.value, pageUsers: pageUsers.value })
+  saveCurrentUserSessions()
 }
 
 function editUserNote(user: string) {
   const note = window.prompt(`输入 ${user} 的备注`, userNotes.value[user] ?? '')
   if (note == null) return
   setUserNote(user, note)
-}
-
-function addUser() {
-  const name = window.prompt('输入用户名')?.trim()
-  if (!name) return
-  if (!users.value.includes(name)) users.value = [...users.value, name]
-  selectActiveUser(name)
 }
 
 function pageThumbnailRevision(page: PageFlowPage) {
@@ -991,16 +1029,28 @@ function activatePreview(pageId: string, animate = true) {
   else apply()
 }
 
+function selectSearchPage(pageId: string) {
+  searchSelection.value = undefined
+  searchOpen.value = false
+  activatePreview(pageId)
+}
+
+function handleSearchShortcut(event: KeyboardEvent) {
+  if (event.key.toLowerCase() !== 'k' || (!event.metaKey && !event.ctrlKey)) return
+  event.preventDefault()
+  searchOpen.value = true
+  void nextTick(() => searchRoot.value?.querySelector('input')?.focus())
+}
+
 function centerFocusedPage(pageId: string) {
   if (!leafer || !canvas.value) return
   const position = positions.value.get(pageId)
   if (!position) return
-  const scale = Math.max(leafer.zoomLayer.scaleX ?? 1, PAGEFLOW_AUTO_PREVIEW_SCALE)
-  const transform = centerPageTransform(
+  const transform = fitFocusedPreviewTransform(
     position,
-    pageCardHeight(pageId),
+    pagePreviewHeight(pageId),
     { width: canvas.value.clientWidth, height: canvas.value.clientHeight },
-    scale,
+    SELECTED_PAGE_SCALE,
   )
   leafer.zoomLayer.set(transform)
   syncOverlay(false)
@@ -1243,6 +1293,16 @@ function handleFocusTargetHover(event: PointerEvent) {
 
 function handleCanvasCursor(event: PointerEvent) {
   if (!canvas.value || !leafer) return
+  const canvasView = canvas.value.querySelector<HTMLElement>('.leafer-canvas-view')
+  const setCursor = (cursor: 'default' | 'pointer' | 'move') => {
+    if (!canvas.value) return
+    canvas.value.style.cursor = cursor
+    if (canvasView) canvasView.style.cursor = cursor
+  }
+  if (focusTargetDrag) {
+    setCursor('move')
+    return
+  }
   const bounds = canvas.value.getBoundingClientRect()
   const layer = leafer.zoomLayer
   const scale = layer.scaleX ?? 1
@@ -1251,20 +1311,38 @@ function handleCanvasCursor(event: PointerEvent) {
   const candidates = focusScene.value
     ? [focusScene.value.source, ...focusScene.value.targets.map(target => target.page)]
     : pages.value.filter(page => visiblePageIds.value.has(page.id))
-  const metaHit = candidates.some(page => {
+  let linkHit = false
+  const pageHit = candidates.some(page => {
     const position = focusScene.value?.source.id === page.id
       ? focusScene.value.sourcePosition
       : (focusScene.value?.targets.find(target => target.page.id === page.id)
         ? [focusScene.value.targets.find(target => target.page.id === page.id)!.x, focusScene.value.targets.find(target => target.page.id === page.id)!.y] as [number, number]
         : positions.value.get(page.id))
     if (!position) return false
-    const height = pagePreviewHeight(page.id)
-    return worldX >= position[0] && worldX <= position[0] + PAGE_CARD_WIDTH
-      && worldY >= position[1] + height + 6 && worldY <= position[1] + height + 58
+    const localX = worldX - position[0]
+    const localY = worldY - position[1]
+    const previewHeight = pagePreviewHeight(page.id)
+    const hit = localX >= 0 && localX <= PAGE_CARD_WIDTH
+      && localY >= 0 && localY <= pageCardHeight(page.id)
+    if (hit) {
+      const arrowHit = localX >= PAGE_CARD_WIDTH - 28
+        && localY >= previewHeight + 6 && localY <= previewHeight + 32
+      const pathHit = localY >= previewHeight + 32 && localY <= previewHeight + 60
+      linkHit = arrowHit || pathHit
+    }
+    return hit
   })
-  if (metaHit) {
+  if (linkHit) {
     setTimeout(() => {
-      if (canvas.value) canvas.value.style.cursor = 'default'
+      setCursor('pointer')
+    }, 0)
+  } else if (pageHit) {
+    setTimeout(() => {
+      setCursor('default')
+    }, 0)
+  } else {
+    setTimeout(() => {
+      setCursor('pointer')
     }, 0)
   }
 }
@@ -1486,7 +1564,9 @@ function flyToPage(
       midpoint?.()
       const currentPosition = positions.value.get(pageId)
       if (!finalTransform && currentPosition)
-        target = centerPageTransform(currentPosition, pageCardHeight(pageId), viewport, targetScale ?? start.scaleX)
+        target = focusedPageId.value === pageId
+          ? fitFocusedPreviewTransform(currentPosition, pagePreviewHeight(pageId), viewport, SELECTED_PAGE_SCALE)
+          : centerPageTransform(currentPosition, pageCardHeight(pageId), viewport, targetScale ?? start.scaleX)
     }
     const transform = progress < 0.5
       ? tween(start, middle, ease(progress * 2))
@@ -1698,7 +1778,7 @@ function renderCanvasScene() {
           || (Math.abs((connection.centerX ?? 0.5) - hover.centerX) < 0.002
             && Math.abs((connection.centerY ?? 0.5) - hover.centerY) < 0.002)))
       const opacity = hover && highlighted ? 0.5 + hoverFadeProgress * 0.5 : 0.5
-      connectionNodes?.upsert(connection.id, connection.id, () => new Path({
+      connectionNodes?.upsert(connection.id, connection.d, () => new Path({
           path: connection.d,
           stroke: '#ff79b8',
           strokeWidth: 2,
@@ -1744,6 +1824,7 @@ function draw() {
   }
   if (!connectionLeafer && connectionCanvas.value) {
     connectionLeafer = new Leafer({ ...PAGEFLOW_CANVAS_CONFIG, view: connectionCanvas.value })
+    connectionCanvas.value.querySelectorAll('canvas').forEach(canvas => canvas.style.setProperty('pointer-events', 'none', 'important'))
     connectionLayer = new Group({ hittable: false })
     connectionNodes = new SceneNodeCache(connectionLayer)
     connectionLeafer.add(connectionLayer)
@@ -1846,8 +1927,11 @@ watch(focusedPageId, () => {
 })
 
 onMounted(async () => {
+  refreshSessionUsers()
+  userSessionRefreshTimer = window.setInterval(refreshSessionUsers, 1_000)
   window.addEventListener('message', handlePreviewMessage)
-  layoutWorker = new Worker(new URL('./client/layout.worker.ts', import.meta.url), { type: 'module' })
+  window.addEventListener('keydown', handleSearchShortcut)
+  layoutWorker = new LayoutWorker()
   layoutWorker.addEventListener('message', event => {
     if (event.data?.id !== layoutRequestId) return
     clearTimeout(layoutTimeout)
@@ -1917,7 +2001,9 @@ onMounted(async () => {
 })
 
 onUnmounted(() => {
+  window.clearInterval(userSessionRefreshTimer)
   window.removeEventListener('message', handlePreviewMessage)
+  window.removeEventListener('keydown', handleSearchShortcut)
   canvas.value?.removeEventListener('click', handleCanvasClick)
   canvas.value?.removeEventListener('pointerdown', handleFocusTargetPointerDown, true)
   canvas.value?.removeEventListener('pointermove', handleCanvasCursor, true)
@@ -1957,49 +2043,56 @@ onUnmounted(() => {
   <main @dragstart.prevent>
     <header>
       <div class="brand"><span>✦</span> unplugin-pageflow</div>
-      <div class="crumb">
-        <button type="button" @click="enterRouteGroup([])">全部页面</button>
-        <template v-for="(segment, index) in routeGroupPath" :key="`${segment}:${index}`">
-          <span>/</span><button type="button" @click="enterRouteGroup(routeGroupPath.slice(0, index + 1))">{{ segment }}</button>
-        </template>
-        <span>·</span> {{ canvasPages.length }} 项 / {{ pages.length }} 页
-      </div>
-      <div class="viewport-switch" aria-label="Preview viewport">
-        <button
-          v-for="(mode, id) in previewModes"
-          :key="id"
-          type="button"
-          :class="{ active: previewMode === id }"
-          :aria-pressed="previewMode === id"
-          :aria-label="mode.label"
-          :title="mode.label"
-          @click="setPreviewMode(id)"
+      <div class="crumb">{{ routeDeckView.decks.length }} 组 / {{ pages.length }} 页</div>
+      <div ref="searchRoot" class="quick-search">
+        <UInputMenu
+          v-model:open="searchOpen"
+          v-model="searchSelection"
+          :items="pages"
+          value-key="id"
+          label-key="title"
+          icon="i-lucide-search"
+          placeholder="搜索页面…"
+          open-on-focus
+          open-on-click
+          @update:model-value="selectSearchPage"
         >
-          <svg v-if="id === 'mobile'" viewBox="0 0 20 20" aria-hidden="true">
-            <rect x="5.5" y="2.5" width="9" height="15" rx="1.5" />
-            <path d="M8.5 5h3M9 15.5h2" />
-          </svg>
-          <svg v-else-if="id === 'tablet'" viewBox="0 0 20 20" aria-hidden="true">
-            <rect x="3.5" y="2.5" width="13" height="15" rx="1.5" />
-            <path d="M8.5 5h3M9 15.5h2" />
-          </svg>
-          <svg v-else viewBox="0 0 20 20" aria-hidden="true">
-            <rect x="2.5" y="3" width="15" height="10.5" rx="1.5" />
-            <path d="M10 13.5v3M6.5 16.5h7" />
-          </svg>
-        </button>
+          <template #trailing><kbd>⌘K</kbd></template>
+          <template #item="{ item }">
+            <span>{{ item.title }}</span>
+            <code>{{ item.path }}</code>
+          </template>
+          <template #empty>没有匹配页面</template>
+        </UInputMenu>
       </div>
-      <details class="user-menu">
-        <summary :title="activeUser">{{ activeUser?.slice(0, 1).toUpperCase() }}</summary>
-        <div class="user-menu-popover">
-          <small>切换用户</small>
-          <div v-for="user in users" :key="user" class="user-menu-item" :class="{ active: user === activeUser }">
-            <button type="button" class="user-select" @click="selectActiveUser(user)"><span>{{ user.slice(0, 1).toUpperCase() }}</span>{{ user }}</button>
-            <button type="button" class="user-note" :title="userNotes[user] || '添加备注'" @click="editUserNote(user)">{{ userNotes[user] || '备注' }}</button>
-          </div>
-          <button type="button" class="add-user" @click="addUser"><span>＋</span>添加用户</button>
-        </div>
-      </details>
+      <div class="viewport-switch-layout">
+        <UTabs
+          :model-value="previewMode"
+          :items="viewportTabs"
+          :content="false"
+          aria-label="Preview viewport"
+          @update:model-value="value => value && setPreviewMode(value as PageFlowPreviewMode)"
+        >
+        </UTabs>
+      </div>
+      <div class="user-menu">
+        <UDropdownMenu :items="headerUserMenuItems" :content="{ align: 'end', sideOffset: 7 }">
+          <button type="button" :title="activeUser">
+            {{ activeUser?.slice(0, 1).toUpperCase() }}
+          </button>
+          <template #item-leading="{ item }">
+            <span>{{ item.user?.slice(0, 1).toUpperCase() }}</span>
+          </template>
+          <template #item-trailing="{ item }">
+            <button v-if="item.user" type="button" :aria-label="`编辑 ${item.user} 的备注`" :title="userNotes[item.user] || '添加备注'" @click.stop.prevent="editUserNote(item.user)">
+              <svg viewBox="0 0 16 16" aria-hidden="true">
+                <path d="M10.8 2.2a1.4 1.4 0 0 1 2 2L5.2 11.8 2.5 12.5l.7-2.7z" />
+                <path d="m9.8 3.2 2 2" />
+              </svg>
+            </button>
+          </template>
+        </UDropdownMenu>
+      </div>
     </header>
     <section class="workspace" :class="{ 'scene-ready': initialSceneReady }">
       <div ref="canvas" class="canvas"></div>
@@ -2019,16 +2112,17 @@ onUnmounted(() => {
             }"
             :data-page-id="page.id"
           >
-            <select
+            <UDropdownMenu
               v-if="users.length > 1 && page.id === focusedPageId"
-              class="page-user-select"
-              :value="pageUsers[page.id] ?? activeUser"
-              aria-label="当前页面用户"
-              @change="selectPageUser(page.id, ($event.target as HTMLSelectElement).value)"
+              :items="pageUserMenuItems(page.id)"
+              :content="{ align: 'end', sideOffset: 4 }"
             >
-              <option v-for="user in users" :key="user" :value="user">{{ user }}</option>
-            </select>
-            <span v-else-if="page.id === focusedPageId" class="page-user-label">{{ users[0] }}</span>
+              <button type="button" aria-label="切换当前页面用户">
+                <span>{{ userNotes[pageUsers[page.id] ?? activeUser ?? ''] || pageUsers[page.id] || activeUser }}</span>
+                <svg viewBox="0 0 12 12" aria-hidden="true"><path d="m3 4.5 3 3 3-3" /></svg>
+              </button>
+            </UDropdownMenu>
+            <span v-else-if="page.id === focusedPageId" class="page-user-label">{{ userNotes[users[0]] || users[0] }}</span>
             <iframe
               :ref="element => setPreviewFrame(page.id, element as Element | null)"
               :key="`${previewMode}:${page.id}:${pageUsers[page.id] ?? activeUser}`"
@@ -2052,22 +2146,21 @@ onUnmounted(() => {
       </div>
       <div ref="connectionCanvas" class="connection-canvas"></div>
       <aside v-if="focusedPageId" class="api-panel">
-        <div class="page-panel-tabs" role="tablist" aria-label="页面详情">
-          <button type="button" :class="{ active: panelTab === 'api' }" @click="panelTab = 'api'">
-            接口 <span>{{ focusedApiResults.length }}</span>
-          </button>
-          <button type="button" :class="{ active: panelTab === 'tests' }" @click="panelTab = 'tests'">
-            测试 <span>{{ focusedPageTests.length }}</span>
-          </button>
-        </div>
-        <div v-if="panelTab === 'api' && focusedApiResults.length" class="api-panel-list">
-          <section v-for="result in focusedApiResults" :key="result.id" class="api-result" :class="{ open: openApiResultId === result.id }">
-            <button type="button" class="api-result-summary" :aria-expanded="openApiResultId === result.id" @click="toggleApiResultPanel(result.id)">
+      <UTabs v-model="panelTab" :items="panelTabs" aria-label="页面详情">
+        <template #api>
+          <div v-if="focusedApiResults.length" class="api-panel-list">
+          <UCollapsible
+            v-for="result in focusedApiResults"
+            :key="result.id"
+            :open="openApiResultId === result.id"
+            @update:open="openApiResultId = $event ? result.id : undefined"
+          >
+            <button type="button">
               <span class="api-method">{{ result.method }}</span>
               <code>{{ result.url }}</code>
               <small :class="{ error: result.status >= 400 }">{{ result.status }} · {{ result.duration }}ms</small>
             </button>
-            <div v-if="openApiResultId === result.id" class="api-result-content">
+            <template #content>
               <div v-if="visibleApiFields(result).length" class="api-fields">
                 <ApiFieldTree :nodes="visibleApiFieldTree(result)" />
               </div>
@@ -2075,13 +2168,15 @@ onUnmounted(() => {
               <button v-if="result.fields.some(field => !field.used)" type="button" class="api-expand" @click="toggleApiResult(result.id)">
                 {{ expandedApiResults.has(result.id) ? '收起未使用字段' : `展开 ${result.fields.filter(field => !field.used).length} 个未使用字段` }}
               </button>
-            </div>
-          </section>
-        </div>
-        <div v-else-if="panelTab === 'api'" class="api-panel-waiting">等待页面接口响应…</div>
-        <div v-else-if="focusedTestsLoading" class="api-panel-waiting">正在整理页面测试…</div>
-        <div v-else-if="focusedTestsFailed" class="api-panel-waiting">页面测试加载失败</div>
-        <div v-else-if="focusedPageTests.length" class="api-panel-list page-test-list">
+            </template>
+          </UCollapsible>
+          </div>
+          <div v-else class="api-panel-waiting">等待页面接口响应…</div>
+        </template>
+        <template #tests>
+          <div v-if="focusedTestsLoading" class="api-panel-waiting">正在整理页面测试…</div>
+          <div v-else-if="focusedTestsFailed" class="api-panel-waiting">页面测试加载失败</div>
+          <div v-else-if="focusedPageTests.length" class="api-panel-list page-test-list">
           <div class="page-test-toolbar">
             <span>通过 {{ focusedTestSummary.passed }} · 失败 {{ focusedTestSummary.failed }} · 未运行 {{ focusedTestSummary.unknown }}</span>
             <button v-if="runnableFocusedTests.length" type="button" :class="{ stop: runningAllPageTests }" @click="runningAllPageTests ? stopAllFocusedPageTests() : runAllFocusedPageTests()">
@@ -2107,13 +2202,17 @@ onUnmounted(() => {
                 {{ runningPageTestIds.has(test.id) ? '取消' : '运行' }}
               </button>
             </div>
-            <details v-if="test.output" class="page-test-output-wrap">
-              <summary>查看输出</summary>
-              <pre class="page-test-output">{{ test.output }}</pre>
-            </details>
+            <UCollapsible v-if="test.output">
+              <button type="button">查看输出</button>
+              <template #content>
+                <pre class="page-test-output">{{ test.output }}</pre>
+              </template>
+            </UCollapsible>
           </section>
-        </div>
-        <div v-else class="api-panel-waiting">暂未发现属于此页面的测试</div>
+          </div>
+          <div v-else class="api-panel-waiting">暂未发现属于此页面的测试</div>
+        </template>
+      </UTabs>
       </aside>
     </section>
     <div class="zoom"><button type="button" @click="zoomCanvas('in')">+</button><span>{{ zoomPercent }}%</span><button type="button" @click="zoomCanvas('out')">−</button></div>

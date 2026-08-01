@@ -62,6 +62,16 @@ const defaultDependencies: SnapshotCaptureDependencies = {
   save: saveThumbnail,
 }
 
+const SNAPSHOT_SCROLLBAR_STYLE_ID = 'unplugin-pageflow-snapshot-scrollbars'
+
+export function hideSnapshotScrollbars(document: Document) {
+  const style = document.createElement('style')
+  style.id = SNAPSHOT_SCROLLBAR_STYLE_ID
+  style.textContent = '* { scrollbar-width: none !important; } *::-webkit-scrollbar { display: none !important; width: 0 !important; height: 0 !important; }'
+  document.head.append(style)
+  return () => style.remove()
+}
+
 export function snapshotCaptureTarget(body: HTMLElement) {
   return body.querySelector<HTMLElement>('.home-page.pageflow-preview')
     ?? body.querySelector<HTMLElement>('uni-page-body > *')
@@ -86,19 +96,25 @@ export async function capturePageThumbnails(
   const fullHeight = options.previewMode === 'mobile'
     ? options.mode.height
     : boundedPreviewDocumentHeight(options.document, options.mode.height)
-  const snapshot = await dependencies.render(snapshotCaptureTarget(options.body), {
-    backgroundColor: '#fff',
-    height: fullHeight,
-    logging: false,
-    onclone: materializeMaskedIcons,
-    scale: options.highResolution ? 2 : PAGE_CARD_WIDTH / options.mode.width,
-    scrollX: 0,
-    scrollY: 0,
-    useCORS: true,
-    width: options.mode.width,
-    windowHeight: options.mode.height,
-    windowWidth: options.mode.width,
-  })
+  const restoreScrollbars = hideSnapshotScrollbars(options.document)
+  let snapshot: SnapshotCanvas
+  try {
+    snapshot = await dependencies.render(snapshotCaptureTarget(options.body), {
+      backgroundColor: '#fff',
+      height: fullHeight,
+      logging: false,
+      onclone: materializeMaskedIcons,
+      scale: options.highResolution ? 2 : PAGE_CARD_WIDTH / options.mode.width,
+      scrollX: 0,
+      scrollY: 0,
+      useCORS: true,
+      width: options.mode.width,
+      windowHeight: options.mode.height,
+      windowWidth: options.mode.width,
+    })
+  } finally {
+    restoreScrollbars()
+  }
   const records: PageFlowThumbnailRecord[] = []
   const displayScale = PAGE_CARD_WIDTH / snapshot.width
   const displayHeight = Math.round(snapshot.height * displayScale)

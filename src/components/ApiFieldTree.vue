@@ -1,33 +1,38 @@
 <script setup lang="ts">
 import { computed } from 'vue'
-import VueJsonPretty from 'vue-json-pretty'
-import 'vue-json-pretty/lib/styles.css'
+import UTree from '@nuxt/ui/components/Tree.vue'
 import type { ApiFieldTreeNode } from '../client/api-field-tree'
 
 const props = defineProps<{ nodes: ApiFieldTreeNode[] }>()
 
-function nodeValue(node: ApiFieldTreeNode): unknown {
-  if (!node.children.length) return node.value
+const defaultExpanded = computed(() => props.nodes.flatMap(node => [
+  node.key,
+  ...node.children.filter(child => child.children.length).map(child => child.key),
+]))
+
+function branchSummary(node: ApiFieldTreeNode) {
   const array = node.children.every(child => /^\[\d+\]$/.test(child.label))
-  if (array) {
-    return node.children.reduce<unknown[]>((values, child) => {
-      values[Number(child.label.slice(1, -1))] = nodeValue(child)
-      return values
-    }, [])
-  }
-  return Object.fromEntries(node.children.map(child => [child.label, nodeValue(child)]))
+  return `${array ? 'Array' : 'Object'}(${node.children.length})`
 }
 
-const data = computed(() => Object.fromEntries(props.nodes.map(node => [node.label, nodeValue(node)])))
+function displayValue(value: string | undefined) {
+  return JSON.stringify(value ?? null)
+}
 </script>
 
 <template>
-  <VueJsonPretty
-    class="api-json-tree"
-    :data="data"
-    :deep="2"
-    :show-double-quotes="false"
-    :show-icon="true"
-    :show-length="true"
-  />
+  <UTree
+    :items="nodes"
+    :default-expanded="defaultExpanded"
+    :get-key="node => node.key"
+    :on-select="event => event.preventDefault()"
+  >
+    <template #item="{ item, expanded, handleToggle }">
+      <span v-if="item.children.length" aria-hidden="true" @click.stop="handleToggle">{{ expanded ? '▾' : '▸' }}</span>
+      <span>{{ item.label }}</span>
+      <span>:</span>
+      <span v-if="item.children.length">{{ branchSummary(item) }}</span>
+      <span v-else>{{ displayValue(item.value) }}</span>
+    </template>
+  </UTree>
 </template>
