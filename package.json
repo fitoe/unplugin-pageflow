@@ -107,7 +107,8 @@
     "preview": "vite preview"
   },
   "dependencies": {
-    "unplugin": "^2.3.5"
+    "unplugin": "^2.3.5",
+    "vue-json-pretty": "^2.6.0"
   },
   "peerDependencies": {
     "@builder.io/qwik": ">=1.10.0",
@@ -148,6 +149,8 @@
     "@leafer-in/view": "^2.2.6",
     "@leafer-in/viewport": "^2.2.6",
     "@leafer-ui/core": "^2.2.6",
+    "@leafer-ui/draw": "2.2.6",
+    "@leafer/core": "2.2.6",
     "@leafer/node": "^2.2.6",
     "@napi-rs/canvas": "^1.0.3",
     "@solidjs/router": "^0.15.3",

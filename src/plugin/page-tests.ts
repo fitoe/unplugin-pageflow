@@ -111,12 +111,19 @@ export function isPageFlowTestFile(file: string) {
 
 export class PageTestIndex {
   private files = new Map<string, IndexedTestFile>()
+  private root: string
+  private routes: PageFlowRuntimeRoute[]
+  private explicit: Record<string, string[]>
 
   constructor(
-    private root: string,
-    private routes: PageFlowRuntimeRoute[],
-    private explicit: Record<string, string[]> = {},
-  ) {}
+    root: string,
+    routes: PageFlowRuntimeRoute[],
+    explicit: Record<string, string[]> = {},
+  ) {
+    this.root = root
+    this.routes = routes
+    this.explicit = explicit
+  }
 
   setRoutes(routes: PageFlowRuntimeRoute[]) {
     this.routes = routes

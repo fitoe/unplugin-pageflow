@@ -48,9 +48,20 @@ unplugin-pageflow  http://localhost:5173/__unplugin-pageflow/
 
 打开该地址即可浏览路由地图。滚动缩放画布，拖动画布移动视野，选择页面可查看它与其他页面的关系。
 
+## 本地开发插件
+
+宿主项目始终使用构建入口：
+
+```ts
+import PageFlow from 'unplugin-pageflow'
+```
+
+不要导入 `unplugin-pageflow/source`；Node.js 的 TypeScript strip-only 模式不能执行插件源码中的全部 TypeScript 语法。
+
+在 PageFlow 仓库运行 `pnpm dev:plugin`，并在宿主项目中用 `link:` 依赖指向该仓库。客户端构建产物变化后，PageFlow 页面会自动刷新；服务端插件入口变化后需重启宿主开发服务器。
+
 ## 下一步
 
 - [选择其他框架接入方式](/zh/integrations/)
 - [配置动态路由参数](/zh/reference/configuration#动态路由参数)
 - [了解预览限制与安全注意事项](/zh/reference/limitations)
-

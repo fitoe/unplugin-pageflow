@@ -2,7 +2,7 @@
 
 请根据应用使用的路由方案选择对应适配器。
 
-## Vite 与 Vue Router
+## Vite 与 Vue Router {#vite-and-vue-router}
 
 ```ts
 import PageFlow from 'unplugin-pageflow'
@@ -83,3 +83,6 @@ pageflow-next --dir . --host 127.0.0.1 --port 3000
 
 生产构建不会使用该 sidecar。
 
+## uni-app
+
+PageFlow 支持当前基于 Vite 的 uni-app 项目，并在开发时读取其生成的路由。

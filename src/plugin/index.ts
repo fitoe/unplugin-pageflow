@@ -374,7 +374,7 @@ const factory: UnpluginFactory<PageFlowOptions | undefined> = (options) => {
   }
   const pluginDist = `${normalizeFile(resolve(pluginRoot, 'dist'))}/`
   const moduleFile = normalizeFile(fileURLToPath(import.meta.url))
-  const packaged = moduleFile.includes('/dist/') || resolve(process.cwd()) !== pluginRoot
+  const packaged = moduleFile.includes('/dist/')
   const clientEntryFile = resolve(pluginRoot, packaged ? 'dist/client/mount.js' : 'src/client/mount.ts')
   const clientEntry = toViteFsPath(pathToFileURL(clientEntryFile))
   const runtimeEntry = toViteFsPath(pathToFileURL(resolve(pluginRoot, packaged ? 'dist/runtime/client.js' : 'src/runtime/client.ts')))

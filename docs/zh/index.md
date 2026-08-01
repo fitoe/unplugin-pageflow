@@ -2,13 +2,13 @@
 layout: home
 
 title: PageFlow
-titleTemplate: 一次看清整个应用
-description: 把所有页面和页面之间的跳转放到一张清晰、随代码更新的画布上。
+titleTemplate: 完整网站页面流
+description: 用上帝视角全览整站所有页面，和页面上的接口、测试，掌握站点全貌。
 
 hero:
   name: PageFlow
-  text: 一次看清整个应用。
-  tagline: 页面越来越多，跳转越来越绕，没人能轻松说清用户会走到哪里。PageFlow 把所有页面和它们之间的去向放到一张图里。
+  text: 完整网站页面流
+  tagline: 用上帝视角全览整站所有页面，和页面上的接口、测试，掌握站点全貌
   image:
     src: /pageflow-demo.svg
     alt: PageFlow 动画展示应用页面重组及导航路径
@@ -21,27 +21,27 @@ hero:
       link: https://github.com/fitoe/unplugin-pageflow
 
 features:
-  - icon: 🧭
-    title: 所有页面，一张图
-    details: 不用来回翻文件和浏览器标签，也能知道应用里到底有哪些页面。
-  - icon: ◫
-    title: 看到真实页面
-    details: 直接预览代码实际运行出来的界面，不再依赖旧截图和流程图。
-  - icon: ⤳
-    title: 看清每次跳转
-    details: 一个按钮会去哪里，一个页面如何进入下一个页面，都能直接看到。
-  - icon: ◈
-    title: 页面再多也不乱
-    details: 把相关页面收进分组，从应用全貌逐步进入一条具体流程。
-  - icon: ✓
-    title: 找到页面对应的测试
-    details: 在页面旁查看并运行相关的单元测试、组件测试和端到端测试。
-  - icon: ⏻
-    title: 只在开发时运行
-    details: PageFlow 用来帮助开发，不会给正式上线的应用增加运行代码。
+  - icon: 🗺️
+    title: 整站全貌
+    details: 所有页面集中在一张图里，网站再大，也能快速看清整体结构。
+  - icon: 🖥️
+    title: 真实页面
+    details: 直接查看代码实际运行出的页面，不再依赖过期的截图和流程图。
+  - icon: 🔀
+    title: 页面流向
+    details: 清楚看到页面之间如何跳转，快速理清用户从哪里来、会去哪里。
+  - icon: 🔌
+    title: 页面接口
+    details: 查看每个页面调用了哪些接口，以及接口实际返回了什么内容。
+  - icon: 🧪
+    title: 页面测试
+    details: 将测试与对应页面放在一起，哪些已经覆盖、哪些仍有风险，一目了然。
+  - icon: 🔄
+    title: 始终同步
+    details: 页面、跳转、接口和测试随开发实时更新，不再手工维护站点地图。
 ---
 
-<FrameworkGrid title="支持的框架" link="/zh/reference/compatibility" />
+<FrameworkGrid bundler-title="支持的打包器" title="支持的框架" link="/zh/integrations/" />
 
 ## 页面越多，越难看全
 

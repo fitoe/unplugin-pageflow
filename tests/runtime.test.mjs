@@ -174,20 +174,25 @@ test('discovers Vue Router routes and reports rendered navigation hotspots', asy
     assert.equal(window.__UNPLUGIN_PAGEFLOW_PENDING_REQUESTS__(), 0)
 
     container.append(' Visible Name ')
+    const visibleInput = window.document.createElement('input')
+    visibleInput.value = 'X'
+    container.append(visibleInput)
     const apiRequest = window.fetch('/api/profile')
     resolvePreviewRequest({
       status: 200,
       headers: { get: () => 'application/json' },
-      clone: () => ({ json: async () => ({ name: 'Visible Name', secret: 'Hidden Value' }) }),
+      clone: () => ({ json: async () => ({ name: 'Visible Name', secret: 'Hidden Value', code: 'X', items: Array.from({ length: 25 }, (_, id) => ({ id })) }) }),
     })
     await apiRequest
     await new Promise(resolve => setTimeout(resolve, 20))
     const apiResult = parentMessages.find(item => item.message.type === 'unplugin-pageflow:api-result')?.message.result
     assert.equal(apiResult.url, '/api/profile')
-    assert.deepEqual(apiResult.fields.map(field => [field.path, field.used]), [
+    assert.deepEqual(apiResult.fields.slice(0, 3).map(field => [field.path, field.used]), [
       ['name', true],
       ['secret', false],
+      ['code', true],
     ])
+    assert.equal(apiResult.fields.some(field => field.path === 'items[24].id'), true)
 
     assert.equal(requests[0].url, '/__unplugin-pageflow/api/page')
     assert.deepEqual(JSON.parse(requests[0].init.body), {

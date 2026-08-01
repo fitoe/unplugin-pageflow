@@ -31,7 +31,7 @@ import { FrameAnimation } from './client/frame-animation'
 import { PreviewFrameRegistry } from './client/preview-frame-registry'
 import { decodePreviewMessage } from './client/preview-message'
 import { buildApiFieldTree } from './client/api-field-tree'
-import { configuredUsers, loadUserSessions, saveUserSessions } from './client/user-sessions'
+import { cachedPreviewUsers, loadUserSessions, saveUserSessions, visibleSessionUsers } from './client/user-sessions'
 import ApiFieldTree from './components/ApiFieldTree.vue'
 import { focusTargetSetKey, planPageUpdate } from './client/page-update'
 import {
@@ -103,7 +103,8 @@ const previewMode = ref<PageFlowPreviewMode>(storedPreviewMode())
 const thumbnailTier = ref<PageFlowThumbnailTier>('full')
 const thumbnailResources = ref<Record<string, string>>({})
 const navigationLocations = ref<Record<string, string>>({})
-const users = ref([...new Set([...configuredUsers(props.config.previewRoles), ...initialUserSessions.users, '默认用户'])])
+const users = ref(visibleSessionUsers(initialUserSessions.users, props.config.previewRoles, cachedPreviewUsers()))
+const userNotes = ref<Record<string, string>>(initialUserSessions.notes)
 const activeUser = ref(users.value.includes(initialUserSessions.activeUser ?? '') ? initialUserSessions.activeUser : users.value[0])
 const pageUsers = ref<Record<string, string>>(Object.fromEntries(
   Object.entries(initialUserSessions.pageUsers).filter(([, user]) => users.value.includes(user)),
@@ -772,12 +773,23 @@ function previewUrl(path: string) {
 
 function selectActiveUser(user: string) {
   activeUser.value = user
-  saveUserSessions({ users: users.value, activeUser: user, pageUsers: pageUsers.value })
+  saveUserSessions({ users: users.value, notes: userNotes.value, activeUser: user, pageUsers: pageUsers.value })
 }
 
 function selectPageUser(pageId: string, user: string) {
   pageUsers.value = { ...pageUsers.value, [pageId]: user }
-  saveUserSessions({ users: users.value, activeUser: activeUser.value, pageUsers: pageUsers.value })
+  saveUserSessions({ users: users.value, notes: userNotes.value, activeUser: activeUser.value, pageUsers: pageUsers.value })
+}
+
+function setUserNote(user: string, note: string) {
+  userNotes.value = { ...userNotes.value, [user]: note.trim() }
+  saveUserSessions({ users: users.value, notes: userNotes.value, activeUser: activeUser.value, pageUsers: pageUsers.value })
+}
+
+function editUserNote(user: string) {
+  const note = window.prompt(`输入 ${user} 的备注`, userNotes.value[user] ?? '')
+  if (note == null) return
+  setUserNote(user, note)
 }
 
 function addUser() {
@@ -1959,20 +1971,32 @@ onUnmounted(() => {
           type="button"
           :class="{ active: previewMode === id }"
           :aria-pressed="previewMode === id"
+          :aria-label="mode.label"
+          :title="mode.label"
           @click="setPreviewMode(id)"
-        >{{ mode.label }}</button>
+        >
+          <svg v-if="id === 'mobile'" viewBox="0 0 20 20" aria-hidden="true">
+            <rect x="5.5" y="2.5" width="9" height="15" rx="1.5" />
+            <path d="M8.5 5h3M9 15.5h2" />
+          </svg>
+          <svg v-else-if="id === 'tablet'" viewBox="0 0 20 20" aria-hidden="true">
+            <rect x="3.5" y="2.5" width="13" height="15" rx="1.5" />
+            <path d="M8.5 5h3M9 15.5h2" />
+          </svg>
+          <svg v-else viewBox="0 0 20 20" aria-hidden="true">
+            <rect x="2.5" y="3" width="15" height="10.5" rx="1.5" />
+            <path d="M10 13.5v3M6.5 16.5h7" />
+          </svg>
+        </button>
       </div>
       <details class="user-menu">
         <summary :title="activeUser">{{ activeUser?.slice(0, 1).toUpperCase() }}</summary>
         <div class="user-menu-popover">
           <small>切换用户</small>
-          <button
-            v-for="user in users"
-            :key="user"
-            type="button"
-            :class="{ active: user === activeUser }"
-            @click="selectActiveUser(user)"
-          ><span>{{ user.slice(0, 1).toUpperCase() }}</span>{{ user }}</button>
+          <div v-for="user in users" :key="user" class="user-menu-item" :class="{ active: user === activeUser }">
+            <button type="button" class="user-select" @click="selectActiveUser(user)"><span>{{ user.slice(0, 1).toUpperCase() }}</span>{{ user }}</button>
+            <button type="button" class="user-note" :title="userNotes[user] || '添加备注'" @click="editUserNote(user)">{{ userNotes[user] || '备注' }}</button>
+          </div>
           <button type="button" class="add-user" @click="addUser"><span>＋</span>添加用户</button>
         </div>
       </details>
@@ -1996,7 +2020,7 @@ onUnmounted(() => {
             :data-page-id="page.id"
           >
             <select
-              v-if="users.length > 1"
+              v-if="users.length > 1 && page.id === focusedPageId"
               class="page-user-select"
               :value="pageUsers[page.id] ?? activeUser"
               aria-label="当前页面用户"
@@ -2004,7 +2028,7 @@ onUnmounted(() => {
             >
               <option v-for="user in users" :key="user" :value="user">{{ user }}</option>
             </select>
-            <span v-else class="page-user-label">{{ users[0] }}</span>
+            <span v-else-if="page.id === focusedPageId" class="page-user-label">{{ users[0] }}</span>
             <iframe
               :ref="element => setPreviewFrame(page.id, element as Element | null)"
               :key="`${previewMode}:${page.id}:${pageUsers[page.id] ?? activeUser}`"

@@ -63,6 +63,32 @@ http://localhost:5173/__unplugin-pageflow/
 
 端口跟随你的 Vite 开发服务器。Vue Router 路由会自动发现；uni-app 项目还会读取 `pages.json` 中的首页、标题和页面顺序。
 
+### 本地联调 PageFlow 源码
+
+宿主项目始终从构建入口加载插件，不要直接导入 TypeScript 源码：
+
+```ts
+import PageFlow from 'unplugin-pageflow'
+```
+
+在 PageFlow 仓库持续构建：
+
+```bash
+pnpm dev:plugin
+```
+
+宿主项目通过本地链接使用该仓库：
+
+```json
+{
+  "devDependencies": {
+    "unplugin-pageflow": "link:C:/Users/imjzq/Projects/PageFlow"
+  }
+}
+```
+
+重新执行一次 `pnpm install` 并启动宿主项目。客户端改动构建到 `dist` 后，PageFlow 页面会自动刷新；插件服务端入口改动后需重启宿主开发服务器。
+
 ## 基本工作流
 
 1. 打开 PageFlow，先从路由分组查看应用全貌。

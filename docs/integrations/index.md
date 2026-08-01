@@ -82,3 +82,7 @@ pageflow-next --dir . --host 127.0.0.1 --port 3000
 ```
 
 The sidecar is not used in production builds.
+
+## uni-app
+
+PageFlow supports current Vite-based uni-app projects and reads their generated routes during development.

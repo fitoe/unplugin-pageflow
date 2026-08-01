@@ -10,17 +10,27 @@ import { findVueRouterAdapter } from './adapters/vue-router'
 import { findBrowserHistoryAdapter } from './adapters/browser-history'
 
 const apiInspectionEnabled = new URLSearchParams(window.location.search).has('__unplugin_pageflow_inspect')
+const MAXIMUM_API_FIELDS = 2_000
+const MAXIMUM_API_ARRAY_ITEMS = 100
 
-function apiFields(value: unknown, path = '', fields: Array<{ path: string, value: string, used: boolean }> = []) {
-  if (fields.length >= 300) return fields
+function renderedPageValues() {
+  const values = [document.body?.innerText ?? '']
+  document.querySelectorAll<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>('input, textarea, select')
+    .forEach(element => values.push(element.value))
+  document.querySelectorAll<HTMLElement>('[aria-label], [title], img[alt]')
+    .forEach(element => values.push(element.getAttribute('aria-label') ?? '', element.getAttribute('title') ?? '', element.getAttribute('alt') ?? ''))
+  return values.join('\n')
+}
+
+function apiFields(value: unknown, path = '', fields: Array<{ path: string, value: string, used: boolean }> = [], pageValues = renderedPageValues()) {
+  if (fields.length >= MAXIMUM_API_FIELDS) return fields
   if (Array.isArray(value)) {
-    value.slice(0, 20).forEach((item, index) => apiFields(item, `${path}[${index}]`, fields))
+    value.slice(0, MAXIMUM_API_ARRAY_ITEMS).forEach((item, index) => apiFields(item, `${path}[${index}]`, fields, pageValues))
   } else if (value && typeof value === 'object') {
-    Object.entries(value).forEach(([key, item]) => apiFields(item, path ? `${path}.${key}` : key, fields))
+    Object.entries(value).forEach(([key, item]) => apiFields(item, path ? `${path}.${key}` : key, fields, pageValues))
   } else if (path) {
     const rendered = value == null ? String(value) : String(value)
-    const text = document.body?.innerText ?? ''
-    fields.push({ path, value: rendered.length > 160 ? `${rendered.slice(0, 157)}…` : rendered, used: rendered.length >= 2 && text.includes(rendered) })
+    fields.push({ path, value: rendered.length > 160 ? `${rendered.slice(0, 157)}…` : rendered, used: rendered !== '' && pageValues.includes(rendered) })
   }
   return fields
 }

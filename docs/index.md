@@ -10,7 +10,7 @@ hero:
   text: See your whole app at once.
   tagline: As pages multiply, navigation gets harder to follow. PageFlow puts every page and every path between them on one clear canvas.
   image:
-    src: /pageflow-demo.svg?v=20260801-6
+    src: /pageflow-demo.svg?v=20260801-20
     alt: Animated PageFlow map reorganizing application pages and navigation paths
   actions:
     - theme: brand
@@ -21,27 +21,27 @@ hero:
       link: https://github.com/fitoe/unplugin-pageflow
 
 features:
-  - icon: 🧭
-    title: Every page, one view
-    details: Stop opening files and browser tabs just to remember what the app contains.
-  - icon: ◫
-    title: See the real page
-    details: Preview the interface your code actually renders, not an old screenshot or diagram.
-  - icon: ⤳
-    title: Follow every path
-    details: See where a button or link goes and how one page leads to the next.
-  - icon: ◈
-    title: Keep large apps readable
-    details: Group related pages and zoom from the whole app into one part of the flow.
-  - icon: ✓
-    title: Find the tests for a page
-    details: See and run the unit, component, and end-to-end tests connected to each page.
-  - icon: ⏻
-    title: Development only
-    details: Use PageFlow while building the app. Nothing is added to the production experience.
+  - icon: 🗺️
+    title: The whole site
+    details: Bring every page into one map and understand the structure of even a large website at a glance.
+  - icon: 🖥️
+    title: Real pages
+    details: See the interface your code actually renders instead of relying on outdated screenshots and diagrams.
+  - icon: 🔀
+    title: Page flows
+    details: Follow how pages connect and quickly understand where people come from and where they can go.
+  - icon: 🔌
+    title: Page APIs
+    details: See which APIs each page calls and inspect what those APIs actually return.
+  - icon: 🧪
+    title: Page tests
+    details: Keep tests beside their pages so coverage and remaining risks are easy to spot.
+  - icon: 🔄
+    title: Always in sync
+    details: Pages, navigation, APIs, and tests update with development, without a hand-maintained site map.
 ---
 
-<FrameworkGrid title="Supported frameworks" link="/reference/compatibility" />
+<FrameworkGrid bundler-title="Supported bundlers" title="Supported frameworks" link="/integrations/" />
 
 ## More pages, less visibility
 

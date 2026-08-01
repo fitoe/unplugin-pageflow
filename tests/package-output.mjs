@@ -33,6 +33,8 @@ for (const adapter of ['react-router', 'sveltekit', 'solid-start', 'next', 'qwik
 const clientOutput = await readFile('dist/client/mount.js', 'utf8')
 const pluginOutput = await readFile('dist/plugin/index.js', 'utf8')
 const packageManifest = JSON.parse(await readFile('package.json', 'utf8'))
+assert.equal(packageManifest.exports['./source'].import, './src/plugin/index.ts')
+assert.equal(packageManifest.exports['.'].import, './dist/plugin/index.js')
 assert.equal(packageManifest.exports['./nuxt'].import, './dist/nuxt/index.js')
 assert.equal(packageManifest.exports['./astro'].import, './dist/astro/index.js')
 for (const adapter of ['react-router', 'sveltekit', 'solid-start', 'next', 'qwik-city']) {
@@ -41,7 +43,10 @@ for (const adapter of ['react-router', 'sveltekit', 'solid-start', 'next', 'qwik
 assert.equal(packageManifest.bin['pageflow-next'], './dist/next/index.js')
 assert.match(await readFile('dist/next/index.js', 'utf8'), /^#!\/usr\/bin\/env node/)
 const packagedAssets = await readdir('dist/assets')
-assert.deepEqual(packageManifest.dependencies, { unplugin: '^2.3.5' })
+assert.deepEqual(packageManifest.dependencies, {
+  unplugin: '^2.3.5',
+  'vue-json-pretty': '^2.6.0',
+})
 assert.match(clientOutput, /origin\.createCanvas/)
 assert.doesNotMatch(clientOutput, /from\s*["']vue["']/)
 assert.match(clientOutput, /leafer-canvas-view/)
