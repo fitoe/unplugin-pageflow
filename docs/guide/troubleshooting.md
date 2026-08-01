@@ -35,5 +35,5 @@ Check the automatic association rules, then add an explicit `pageTests` mapping.
 
 ## Next.js sidecar fails
 
-Confirm the application is running, the sidecar host and port are available, and both surfaces use the expected same-origin setup. See the [Next.js guide](/integrations/next).
+Confirm the application is running, the sidecar host and port are available, and both surfaces use the expected same-origin setup. See the [Next.js guide](/en/integrations/next).
 

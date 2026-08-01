@@ -50,6 +50,6 @@ Open that URL to explore the route map. Scroll to zoom, drag the canvas to move,
 
 ## Next steps
 
-- [Choose another framework integration](/integrations/)
-- [Configure dynamic route parameters](/reference/configuration#dynamic-route-parameters)
-- [Review preview limitations and safety](/reference/limitations)
+- [Choose another framework integration](/en/integrations/)
+- [Configure dynamic route parameters](/en/reference/configuration#dynamic-route-parameters)
+- [Review preview limitations and safety](/en/reference/limitations)

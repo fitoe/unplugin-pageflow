@@ -42,7 +42,7 @@ PageFlow.vite({
 
 ## Page state
 
-Native controls and scroll positions can be restored automatically. Use [`definePageFlowState`](/guide/state) for application-specific Vue state.
+Native controls and scroll positions can be restored automatically. Use [`definePageFlowState`](/en/guide/state) for application-specific Vue state.
 
 ## Limitations
 

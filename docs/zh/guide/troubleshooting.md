@@ -35,5 +35,5 @@ PageFlow 会发现受支持的链接和字面量目标。动态计算的程序�
 
 ## Next.js sidecar 无法启动
 
-确认应用已启动、Host 和端口可用，并检查同源设置。参见 [Next.js 接入指南](/zh/integrations/next)。
+确认应用已启动、Host 和端口可用，并检查同源设置。参见 [Next.js 接入指南](/integrations/next)。
 

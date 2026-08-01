@@ -15,7 +15,7 @@ hero:
   actions:
     - theme: brand
       text: Get started
-      link: /guide/getting-started
+      link: /en/guide/getting-started
     - theme: alt
       text: View on GitHub
       link: https://github.com/fitoe/unplugin-pageflow
@@ -41,7 +41,7 @@ features:
     details: Pages, navigation, APIs, and tests update with development, without a hand-maintained site map.
 ---
 
-<FrameworkGrid bundler-title="Supported bundlers" title="Supported frameworks" link="/integrations/" />
+<FrameworkGrid bundler-title="Supported bundlers" title="Supported frameworks" link="/en/integrations/" />
 
 ## More pages, less visibility
 
@@ -57,25 +57,25 @@ pnpm add -D unplugin-pageflow
 
 Add PageFlow to your development configuration, start the application, then open the URL printed by the plugin.
 
-[Read the getting started guide →](/guide/getting-started)
+[Read the getting started guide →](/en/guide/getting-started)
 
 ## Explore PageFlow
 
 ### Learn the workflow
 
-- [Understand pages, links, hotspots, previews, and route groups](/guide/concepts)
-- [Navigate the infinite canvas](/guide/canvas)
-- [Provide safe values for dynamic routes](/guide/dynamic-routes)
-- [Preserve native controls and application state](/guide/state)
+- [Understand pages, links, hotspots, previews, and route groups](/en/guide/concepts)
+- [Navigate the infinite canvas](/en/guide/canvas)
+- [Provide safe values for dynamic routes](/en/guide/dynamic-routes)
+- [Preserve native controls and application state](/en/guide/state)
 
 ### Connect your development tools
 
-- [Associate and run page tests](/guide/page-tests)
-- [Scale to large projects with bounded rendering and caching](/guide/large-projects)
-- [Learn how route discovery and previews work](/guide/how-it-works)
+- [Associate and run page tests](/en/guide/page-tests)
+- [Scale to large projects with bounded rendering and caching](/en/guide/large-projects)
+- [Learn how route discovery and previews work](/en/guide/how-it-works)
 
 ### Find answers
 
-- [Check framework compatibility](/reference/compatibility)
-- [Troubleshoot previews, routes, navigation, and tests](/guide/troubleshooting)
-- [Read frequently asked questions](/guide/faq)
+- [Check framework compatibility](/en/reference/compatibility)
+- [Troubleshoot previews, routes, navigation, and tests](/en/guide/troubleshooting)
+- [Read frequently asked questions](/en/guide/faq)

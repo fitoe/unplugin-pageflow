@@ -30,7 +30,7 @@ Persistent thumbnails are stored in `.unplugin-pageflow/cache`. The directory ca
 
 ## Which frameworks are supported?
 
-See the current [compatibility matrix](/reference/compatibility).
+See the current [compatibility matrix](/en/reference/compatibility).
 
 ## How do I report a bug?
 

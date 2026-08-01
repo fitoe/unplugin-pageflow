@@ -15,7 +15,7 @@ hero:
   actions:
     - theme: brand
       text: 快速开始
-      link: /zh/guide/getting-started
+      link: /guide/getting-started
     - theme: alt
       text: 查看 GitHub
       link: https://github.com/fitoe/unplugin-pageflow
@@ -41,7 +41,7 @@ features:
     details: 页面、跳转、接口和测试随开发实时更新，不再手工维护站点地图。
 ---
 
-<FrameworkGrid bundler-title="支持的打包器" title="支持的框架" link="/zh/integrations/" />
+<FrameworkGrid bundler-title="支持的打包器" title="支持的框架" link="/integrations/" />
 
 ## 页面越多，越难看全
 
@@ -57,25 +57,25 @@ pnpm add -D unplugin-pageflow
 
 在开发配置中加入 PageFlow，启动应用，然后打开插件输出的访问地址。
 
-[阅读快速开始指南 →](/zh/guide/getting-started)
+[阅读快速开始指南 →](/guide/getting-started)
 
 ## 深入了解 PageFlow
 
 ### 学习基本工作流
 
-- [理解页面、连接、热点、预览和路由组](/zh/guide/concepts)
-- [浏览无限画布](/zh/guide/canvas)
-- [为动态路由提供安全示例值](/zh/guide/dynamic-routes)
-- [恢复原生控件和应用状态](/zh/guide/state)
+- [理解页面、连接、热点、预览和路由组](/guide/concepts)
+- [浏览无限画布](/guide/canvas)
+- [为动态路由提供安全示例值](/guide/dynamic-routes)
+- [恢复原生控件和应用状态](/guide/state)
 
 ### 连接开发工具
 
-- [关联并运行页面测试](/zh/guide/page-tests)
-- [使用有界渲染和缓存支持大型项目](/zh/guide/large-projects)
-- [了解路由发现和页面预览的工作原理](/zh/guide/how-it-works)
+- [关联并运行页面测试](/guide/page-tests)
+- [使用有界渲染和缓存支持大型项目](/guide/large-projects)
+- [了解路由发现和页面预览的工作原理](/guide/how-it-works)
 
 ### 查找答案
 
-- [查看框架兼容性](/zh/reference/compatibility)
-- [排查页面、路由、导航和测试问题](/zh/guide/troubleshooting)
-- [阅读常见问题](/zh/guide/faq)
+- [查看框架兼容性](/reference/compatibility)
+- [排查页面、路由、导航和测试问题](/guide/troubleshooting)
+- [阅读常见问题](/guide/faq)

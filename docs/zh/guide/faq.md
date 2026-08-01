@@ -30,7 +30,7 @@
 
 ## 支持哪些框架？
 
-请查看最新的[兼容性矩阵](/zh/reference/compatibility)。
+请查看最新的[兼容性矩阵](/reference/compatibility)。
 
 ## 如何报告问题？
 

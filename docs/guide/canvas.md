@@ -30,5 +30,5 @@ PageFlow captures stale pages in a bounded queue. The selected page and visible 
 - Start from the home or primary entry route.
 - Enter one route group at a time in large applications.
 - Use test data before focusing pages that perform initialization writes.
-- If a page never becomes ready, add an [explicit readiness signal](/reference/configuration#preview-readiness).
+- If a page never becomes ready, add an [explicit readiness signal](/en/reference/configuration#preview-readiness).
 

@@ -7,55 +7,55 @@ export default defineConfig({
   cleanUrls: true,
   lastUpdated: true,
   srcExclude: ['smoke-test-plan.md'],
+  rewrites(id) {
+    if (id.startsWith('zh/')) return id.slice(3)
+    if (/^(?:ja|uk|fr|de|ko|pt|bn|it|fa|ru|cs|zh-hk|pl)\//.test(id)) return id
+    return `en/${id}`
+  },
   head: [
     ['meta', { name: 'theme-color', content: '#646cff' }],
   ],
   locales: {
     root: {
-      label: 'English',
-      lang: 'en-US',
-    },
-    zh: {
       label: '简体中文',
       lang: 'zh-CN',
-      link: '/zh/',
       description: '在无限画布上查看应用的所有页面和导航路径。',
       themeConfig: {
         nav: [
-          { text: '指南', link: '/zh/guide/getting-started' },
-          { text: '框架接入', link: '/zh/integrations/' },
-          { text: '参考', link: '/zh/reference/compatibility' },
+          { text: '指南', link: '/guide/getting-started' },
+          { text: '框架接入', link: '/integrations/' },
+          { text: '参考', link: '/reference/compatibility' },
         ],
         sidebar: [
           {
             text: '指南',
             items: [
-              { text: '快速开始', link: '/zh/guide/getting-started' },
-              { text: '基本概念', link: '/zh/guide/concepts' },
-              { text: '使用画布', link: '/zh/guide/canvas' },
-              { text: '动态路由', link: '/zh/guide/dynamic-routes' },
-              { text: '页面状态恢复', link: '/zh/guide/state' },
-              { text: '页面测试', link: '/zh/guide/page-tests' },
-              { text: '大型项目与缓存', link: '/zh/guide/large-projects' },
-              { text: '工作原理', link: '/zh/guide/how-it-works' },
-              { text: '故障排查', link: '/zh/guide/troubleshooting' },
-              { text: '常见问题', link: '/zh/guide/faq' },
+              { text: '快速开始', link: '/guide/getting-started' },
+              { text: '基本概念', link: '/guide/concepts' },
+              { text: '使用画布', link: '/guide/canvas' },
+              { text: '动态路由', link: '/guide/dynamic-routes' },
+              { text: '页面状态恢复', link: '/guide/state' },
+              { text: '页面测试', link: '/guide/page-tests' },
+              { text: '大型项目与缓存', link: '/guide/large-projects' },
+              { text: '工作原理', link: '/guide/how-it-works' },
+              { text: '故障排查', link: '/guide/troubleshooting' },
+              { text: '常见问题', link: '/guide/faq' },
             ],
           },
           {
             text: '框架接入',
             items: [
-              { text: '框架总览', link: '/zh/integrations/' },
-              { text: 'Vite + Vue Router', link: '/zh/integrations/vite-vue' },
-              { text: 'Next.js', link: '/zh/integrations/next' },
+              { text: '框架总览', link: '/integrations/' },
+              { text: 'Vite + Vue Router', link: '/integrations/vite-vue' },
+              { text: 'Next.js', link: '/integrations/next' },
             ],
           },
           {
             text: '参考',
             items: [
-              { text: '兼容性', link: '/zh/reference/compatibility' },
-              { text: '配置', link: '/zh/reference/configuration' },
-              { text: '限制与安全', link: '/zh/reference/limitations' },
+              { text: '兼容性', link: '/reference/compatibility' },
+              { text: '配置', link: '/reference/configuration' },
+              { text: '限制与安全', link: '/reference/limitations' },
             ],
           },
         ],
@@ -72,43 +72,105 @@ export default defineConfig({
         },
       },
     },
+    en: {
+      label: 'English',
+      lang: 'en-US',
+      link: '/en/',
+    },
+    ja: {
+      label: '日本語',
+      lang: 'ja-JP',
+      link: '/ja/',
+      description: 'すべてのページと遷移経路を、一枚のキャンバスで確認できます。',
+      themeConfig: {
+        nav: [
+          { text: 'ガイド', link: '/ja/guide/getting-started' },
+          { text: 'フレームワーク連携', link: '/ja/integrations/' },
+          { text: 'リファレンス', link: '/ja/reference/compatibility' },
+        ],
+        sidebar: [
+          {
+            text: 'ガイド',
+            items: [
+              { text: 'はじめに', link: '/ja/guide/getting-started' },
+              { text: '基本概念', link: '/ja/guide/concepts' },
+              { text: 'キャンバスの使い方', link: '/ja/guide/canvas' },
+              { text: '動的ルート', link: '/ja/guide/dynamic-routes' },
+              { text: 'ページ状態', link: '/ja/guide/state' },
+              { text: 'ページテスト', link: '/ja/guide/page-tests' },
+              { text: '大規模プロジェクト', link: '/ja/guide/large-projects' },
+              { text: '仕組み', link: '/ja/guide/how-it-works' },
+              { text: 'トラブルシューティング', link: '/ja/guide/troubleshooting' },
+              { text: 'よくある質問', link: '/ja/guide/faq' },
+            ],
+          },
+          {
+            text: 'フレームワーク連携',
+            items: [
+              { text: '連携一覧', link: '/ja/integrations/' },
+              { text: 'Vite + Vue Router', link: '/ja/integrations/vite-vue' },
+              { text: 'Next.js', link: '/ja/integrations/next' },
+            ],
+          },
+          {
+            text: 'リファレンス',
+            items: [
+              { text: '互換性', link: '/ja/reference/compatibility' },
+              { text: '設定', link: '/ja/reference/configuration' },
+              { text: '制限と安全性', link: '/ja/reference/limitations' },
+            ],
+          },
+        ],
+        outline: { label: 'このページの内容' },
+        lastUpdated: { text: '最終更新' },
+        docFooter: { prev: '前のページ', next: '次のページ' },
+        editLink: {
+          pattern: 'https://github.com/fitoe/unplugin-pageflow/edit/master/docs/:path',
+          text: 'GitHub で編集',
+        },
+        footer: {
+          message: 'MIT ライセンスで公開されています。',
+          copyright: 'Copyright © 2026 PageFlow contributors',
+        },
+      },
+    },
   },
   themeConfig: {
     nav: [
-      { text: 'Guide', link: '/guide/getting-started' },
-      { text: 'Integrations', link: '/integrations/' },
-      { text: 'Reference', link: '/reference/compatibility' },
+      { text: 'Guide', link: '/en/guide/getting-started' },
+      { text: 'Integrations', link: '/en/integrations/' },
+      { text: 'Reference', link: '/en/reference/compatibility' },
     ],
     sidebar: [
       {
         text: 'Guide',
         items: [
-          { text: 'Getting started', link: '/guide/getting-started' },
-          { text: 'Core concepts', link: '/guide/concepts' },
-          { text: 'Using the canvas', link: '/guide/canvas' },
-          { text: 'Dynamic routes', link: '/guide/dynamic-routes' },
-          { text: 'Page state', link: '/guide/state' },
-          { text: 'Page tests', link: '/guide/page-tests' },
-          { text: 'Large projects and caching', link: '/guide/large-projects' },
-          { text: 'How PageFlow works', link: '/guide/how-it-works' },
-          { text: 'Troubleshooting', link: '/guide/troubleshooting' },
-          { text: 'FAQ', link: '/guide/faq' },
+          { text: 'Getting started', link: '/en/guide/getting-started' },
+          { text: 'Core concepts', link: '/en/guide/concepts' },
+          { text: 'Using the canvas', link: '/en/guide/canvas' },
+          { text: 'Dynamic routes', link: '/en/guide/dynamic-routes' },
+          { text: 'Page state', link: '/en/guide/state' },
+          { text: 'Page tests', link: '/en/guide/page-tests' },
+          { text: 'Large projects and caching', link: '/en/guide/large-projects' },
+          { text: 'How PageFlow works', link: '/en/guide/how-it-works' },
+          { text: 'Troubleshooting', link: '/en/guide/troubleshooting' },
+          { text: 'FAQ', link: '/en/guide/faq' },
         ],
       },
       {
         text: 'Integrations',
         items: [
-          { text: 'Framework overview', link: '/integrations/' },
-          { text: 'Vite + Vue Router', link: '/integrations/vite-vue' },
-          { text: 'Next.js', link: '/integrations/next' },
+          { text: 'Framework overview', link: '/en/integrations/' },
+          { text: 'Vite + Vue Router', link: '/en/integrations/vite-vue' },
+          { text: 'Next.js', link: '/en/integrations/next' },
         ],
       },
       {
         text: 'Reference',
         items: [
-          { text: 'Compatibility', link: '/reference/compatibility' },
-          { text: 'Configuration', link: '/reference/configuration' },
-          { text: 'Limitations and safety', link: '/reference/limitations' },
+          { text: 'Compatibility', link: '/en/reference/compatibility' },
+          { text: 'Configuration', link: '/en/reference/configuration' },
+          { text: 'Limitations and safety', link: '/en/reference/limitations' },
         ],
       },
     ],
@@ -119,7 +181,7 @@ export default defineConfig({
       provider: 'local',
       options: {
         locales: {
-          zh: {
+          root: {
             translations: {
               button: {
                 buttonText: '搜索',

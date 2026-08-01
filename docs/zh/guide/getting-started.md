@@ -62,6 +62,6 @@ import PageFlow from 'unplugin-pageflow'
 
 ## 下一步
 
-- [选择其他框架接入方式](/zh/integrations/)
-- [配置动态路由参数](/zh/reference/configuration#动态路由参数)
-- [了解预览限制与安全注意事项](/zh/reference/limitations)
+- [选择其他框架接入方式](/integrations/)
+- [配置动态路由参数](/reference/configuration#动态路由参数)
+- [了解预览限制与安全注意事项](/reference/limitations)

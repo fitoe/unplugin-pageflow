@@ -42,7 +42,7 @@ PageFlow.vite({
 
 ## 页面状态
 
-原生控件和滚动位置可以自动恢复。应用特有的 Vue 状态可使用 [`definePageFlowState`](/zh/guide/state) 接入。
+原生控件和滚动位置可以自动恢复。应用特有的 Vue 状态可使用 [`definePageFlowState`](/guide/state) 接入。
 
 ## 限制
 

@@ -8,7 +8,12 @@ defineProps<{
 }>()
 
 const bundlers = [
-  { name: 'Vite', anchor: 'vite-and-vue-router', icon: 'https://wsrv.nl/?url=vite.dev/logo.svg&w=112&h=112&fit=contain&output=png' },
+  { name: 'Vite', href: 'https://vite.dev/', icon: 'https://wsrv.nl/?url=cdn.simpleicons.org/vite/646CFF&w=112&h=112&fit=contain&output=png' },
+  { name: 'Rollup', href: 'https://rollupjs.org/', icon: 'https://wsrv.nl/?url=cdn.simpleicons.org/rollupdotjs/EC4A3F&w=112&h=112&fit=contain&output=png' },
+  { name: 'webpack', href: 'https://webpack.js.org/', icon: 'https://wsrv.nl/?url=cdn.simpleicons.org/webpack/8DD6F9&w=112&h=112&fit=contain&output=png' },
+  { name: 'Rspack', href: 'https://rspack.rs/', icon: 'https://wsrv.nl/?url=assets.rspack.rs/rspack/rspack-logo.svg&w=112&h=112&fit=contain&output=png' },
+  { name: 'esbuild', href: 'https://esbuild.github.io/', icon: 'https://wsrv.nl/?url=cdn.simpleicons.org/esbuild/FFCF00&w=112&h=112&fit=contain&output=png' },
+  { name: 'Rolldown', href: 'https://rolldown.rs/', icon: 'https://wsrv.nl/?url=cdn.simpleicons.org/rolldown/FF3E00&w=112&h=112&fit=contain&output=png' },
 ]
 
 const frameworks = [
@@ -28,7 +33,7 @@ const frameworks = [
   <section class="framework-section">
     <h2>{{ bundlerTitle }}</h2>
     <div class="bundler-grid">
-      <a v-for="bundler in bundlers" :key="bundler.name" :href="withBase(`${link}#${bundler.anchor}`)" class="framework-card">
+      <a v-for="bundler in bundlers" :key="bundler.name" :href="bundler.href" class="framework-card">
         <span class="framework-icon"><img :src="bundler.icon" :alt="`${bundler.name} logo`" loading="lazy"></span>
         <strong>{{ bundler.name }}</strong>
       </a>
@@ -55,9 +60,14 @@ const frameworks = [
 }
 
 .bundler-grid {
-  display: flex;
+  display: grid;
+  grid-auto-columns: minmax(88px, 112px);
+  grid-auto-flow: column;
   justify-content: center;
+  gap: 8px;
+  overflow-x: auto;
   margin-bottom: 32px;
+  padding-bottom: 8px;
 }
 
 .framework-grid {

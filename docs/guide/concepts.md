@@ -28,7 +28,7 @@ Large route trees are collapsed into decks. Enter a deck to inspect its children
 
 ## Next
 
-- [Learn the canvas controls](/guide/canvas)
-- [Configure dynamic routes](/guide/dynamic-routes)
-- [See how PageFlow works](/guide/how-it-works)
+- [Learn the canvas controls](/en/guide/canvas)
+- [Configure dynamic routes](/en/guide/dynamic-routes)
+- [See how PageFlow works](/en/guide/how-it-works)
 

@@ -28,7 +28,7 @@ PageFlow 会把应用路由和导航目标转换成一张可探索的关系图�
 
 ## 下一步
 
-- [学习画布操作](/zh/guide/canvas)
-- [配置动态路由](/zh/guide/dynamic-routes)
-- [了解工作原理](/zh/guide/how-it-works)
+- [学习画布操作](/guide/canvas)
+- [配置动态路由](/guide/dynamic-routes)
+- [了解工作原理](/guide/how-it-works)
 
