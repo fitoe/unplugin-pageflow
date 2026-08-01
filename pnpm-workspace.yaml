@@ -3,4 +3,7 @@ allowBuilds:
   esbuild: true
   sharp: true
 overrides:
-  vite-plugin-solid: 2.10.2
+  vite-plugin-solid: 2.11.14
+peerDependencyRules:
+  allowedVersions:
+    '@builder.io/qwik>vite': '8'
