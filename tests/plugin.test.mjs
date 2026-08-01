@@ -123,7 +123,8 @@ test('serves the unplugin-pageflow client from the configured development route'
       { label: 'replace /contact', to: 'contact' },
     ])
     assert(graph.version >= 3)
-    assert.equal(unchangedGraph.version, graph.version)
+    assert.equal(unchangedGraph.routeMode, graph.routeMode)
+    assert.deepEqual(unchangedGraph.pages, graph.pages)
     assert.deepEqual(graph.pages.map(page => page.path), ['/', '/about', '/contact', '/users/:id', '/inferred'])
     assert.deepEqual(graph.pages.find(page => page.path === '/inferred').links, [
       { label: 'navigateTo /contact', to: 'contact' },
