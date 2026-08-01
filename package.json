@@ -74,7 +74,7 @@
   "homepage": "https://github.com/fitoe/unplugin-pageflow#readme",
   "publishConfig": {
     "access": "public",
-    "registry": "https://registry.npmjs.org"
+    "registry": "https://registry.npmjs.org/"
   },
   "keywords": [
     "vue",
