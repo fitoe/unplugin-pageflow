@@ -3,6 +3,11 @@ dist
 *.tsbuildinfo
 .playwright-mcp/
 .unplugin-pageflow/
+.astro/
+.nuxt/
+.next/
+.next-pageflow-*/
+.svelte-kit/
 docs/.vitepress/cache/
 docs/.vitepress/dist/
 

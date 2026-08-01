@@ -18,6 +18,7 @@ export function resolvePreviewUrl(
   origin = window.location.origin,
   routeMode: PageFlowRouteMode = 'history',
   navigationLocation?: string,
+  user?: string,
 ) {
   const params = config.dynamicParams[path] ?? {}
   const resolvedPath = navigationLocation ?? path.replace(/:([A-Za-z0-9_]+)(\([^)]*\))?[?+*]?/g, (_token, name: string, pattern?: string) => {
@@ -25,7 +26,7 @@ export function resolvePreviewUrl(
     return encodeURIComponent(value)
   })
   const base = new URL(config.appUrl.endsWith('/') ? config.appUrl : `${config.appUrl}/`, origin)
-  const role = previewRole(path, config)
+  const role = user ?? previewRole(path, config)
   if (routeMode === 'hash') {
     base.searchParams.set('__unplugin-pageflow_preview', '1')
     if (role) base.searchParams.set('__unplugin-pageflow_role', role)

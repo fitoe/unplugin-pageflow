@@ -37,6 +37,18 @@ header {
   letter-spacing: .1em;
 }
 
+.user-menu { position: relative; flex: none; }
+.user-menu summary { display: grid; width: 28px; height: 28px; border: 1px solid #555a5e; border-radius: 50%; color: #fff; background: #ff795d; cursor: pointer; font: 500 11px 'DM Mono'; list-style: none; place-items: center; }
+.user-menu summary::-webkit-details-marker { display: none; }
+.user-menu-popover { position: absolute; z-index: 20; top: 35px; right: 0; width: 180px; padding: 8px; border: 1px solid #414549; border-radius: 6px; background: #24272a; box-shadow: 0 10px 28px #0008; }
+.user-menu-popover small { display: block; padding: 3px 7px 7px; color: #858a8e; font: 9px 'DM Mono'; }
+.user-menu-popover button { display: flex; align-items: center; gap: 8px; width: 100%; padding: 6px 7px; border: 0; border-radius: 4px; color: #c9ccce; background: transparent; cursor: pointer; text-align: left; font: 11px 'DM Sans'; }
+.user-menu-popover button:hover, .user-menu-popover button.active { color: #fff; background: #393d40; }
+.user-menu-popover button.add-user { margin-top: 5px; border-top: 1px solid #3b3f42; border-radius: 0 0 4px 4px; }
+.user-menu-popover button span { display: grid; width: 20px; height: 20px; border-radius: 50%; color: #fff; background: #59636c; font: 8px 'DM Mono'; place-items: center; }
+.page-user-select, .page-user-label { position: absolute; z-index: 2; top: 7px; right: 7px; max-width: calc(100% - 14px); padding: 3px 6px; border: 1px solid #ffffff2e; border-radius: 10px; color: #fff; background: #202326d9; box-shadow: 0 2px 8px #0004; font: 8px 'DM Mono'; pointer-events: auto; }
+.page-user-select { cursor: pointer; outline: none; }
+
 .viewport-switch {
   display: flex;
   margin-left: auto;

@@ -31,6 +31,7 @@ import { FrameAnimation } from './client/frame-animation'
 import { PreviewFrameRegistry } from './client/preview-frame-registry'
 import { decodePreviewMessage } from './client/preview-message'
 import { buildApiFieldTree } from './client/api-field-tree'
+import { configuredUsers, loadUserSessions, saveUserSessions } from './client/user-sessions'
 import ApiFieldTree from './components/ApiFieldTree.vue'
 import { focusTargetSetKey, planPageUpdate } from './client/page-update'
 import {
@@ -67,6 +68,7 @@ const previewModes = {
   pc: { label: 'PC', width: 1440, height: 900 },
 } as const
 const PREVIEW_MODE_STORAGE_KEY = 'unplugin-pageflow:preview-mode'
+const initialUserSessions = loadUserSessions()
 
 function storedPreviewMode(): PageFlowPreviewMode {
   try {
@@ -101,6 +103,11 @@ const previewMode = ref<PageFlowPreviewMode>(storedPreviewMode())
 const thumbnailTier = ref<PageFlowThumbnailTier>('full')
 const thumbnailResources = ref<Record<string, string>>({})
 const navigationLocations = ref<Record<string, string>>({})
+const users = ref([...new Set([...configuredUsers(props.config.previewRoles), ...initialUserSessions.users, '默认用户'])])
+const activeUser = ref(users.value.includes(initialUserSessions.activeUser ?? '') ? initialUserSessions.activeUser : users.value[0])
+const pageUsers = ref<Record<string, string>>(Object.fromEntries(
+  Object.entries(initialUserSessions.pageUsers).filter(([, user]) => users.value.includes(user)),
+))
 const settledTransform = ref<CanvasTransform>({ x: 0, y: 0, scaleX: 1, scaleY: 1 })
 const livePreviewId = ref<string>()
 const focusedPageId = ref<string>()
@@ -754,12 +761,30 @@ function scheduleInitialSceneReveal() {
 }
 
 function previewUrl(path: string) {
-  const resolved = resolvePreviewUrl(path, props.config, window.location.origin, routeMode.value, navigationLocations.value[path])
   const page = pages.value.find(item => item.path === path)
+  const user = page ? pageUsers.value[page.id] ?? activeUser.value : activeUser.value
+  const resolved = resolvePreviewUrl(path, props.config, window.location.origin, routeMode.value, navigationLocations.value[path], user)
   if (!page || page.id !== focusedPageId.value) return resolved
   const url = new URL(resolved, window.location.origin)
   url.searchParams.set('__unplugin_pageflow_inspect', '1')
   return `${url.pathname}${url.search}${url.hash}`
+}
+
+function selectActiveUser(user: string) {
+  activeUser.value = user
+  saveUserSessions({ users: users.value, activeUser: user, pageUsers: pageUsers.value })
+}
+
+function selectPageUser(pageId: string, user: string) {
+  pageUsers.value = { ...pageUsers.value, [pageId]: user }
+  saveUserSessions({ users: users.value, activeUser: activeUser.value, pageUsers: pageUsers.value })
+}
+
+function addUser() {
+  const name = window.prompt('输入用户名')?.trim()
+  if (!name) return
+  if (!users.value.includes(name)) users.value = [...users.value, name]
+  selectActiveUser(name)
 }
 
 function pageThumbnailRevision(page: PageFlowPage) {
@@ -1937,7 +1962,20 @@ onUnmounted(() => {
           @click="setPreviewMode(id)"
         >{{ mode.label }}</button>
       </div>
-      <span class="mode">DEV ONLY</span>
+      <details class="user-menu">
+        <summary :title="activeUser">{{ activeUser?.slice(0, 1).toUpperCase() }}</summary>
+        <div class="user-menu-popover">
+          <small>切换用户</small>
+          <button
+            v-for="user in users"
+            :key="user"
+            type="button"
+            :class="{ active: user === activeUser }"
+            @click="selectActiveUser(user)"
+          ><span>{{ user.slice(0, 1).toUpperCase() }}</span>{{ user }}</button>
+          <button type="button" class="add-user" @click="addUser"><span>＋</span>添加用户</button>
+        </div>
+      </details>
     </header>
     <section class="workspace" :class="{ 'scene-ready': initialSceneReady }">
       <div ref="canvas" class="canvas"></div>
@@ -1957,9 +1995,19 @@ onUnmounted(() => {
             }"
             :data-page-id="page.id"
           >
+            <select
+              v-if="users.length > 1"
+              class="page-user-select"
+              :value="pageUsers[page.id] ?? activeUser"
+              aria-label="当前页面用户"
+              @change="selectPageUser(page.id, ($event.target as HTMLSelectElement).value)"
+            >
+              <option v-for="user in users" :key="user" :value="user">{{ user }}</option>
+            </select>
+            <span v-else class="page-user-label">{{ users[0] }}</span>
             <iframe
               :ref="element => setPreviewFrame(page.id, element as Element | null)"
-              :key="`${previewMode}:${page.id}`"
+              :key="`${previewMode}:${page.id}:${pageUsers[page.id] ?? activeUser}`"
               :src="previewUrl(page.path)"
               :title="`${page.title} preview`"
               :style="{
