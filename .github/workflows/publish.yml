@@ -34,7 +34,10 @@ jobs:
       - name: Verify package
         run: pnpm run check
 
+      - name: Install release tooling
+        run: npm install --prefix "$RUNNER_TEMP/semantic-release" --no-package-lock --no-save semantic-release@25.0.8 @semantic-release/npm@13.1.5
+
       - name: Release
-        run: npx --yes --package semantic-release@25.0.8 --package @semantic-release/npm@13.1.5 semantic-release
+        run: "$RUNNER_TEMP/semantic-release/node_modules/.bin/semantic-release"
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
