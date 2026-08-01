@@ -35,11 +35,13 @@ test('scans visible page accessibility, interaction, and visual issues', async (
       <a id="nested" href="/next">下一页<button>详情</button></a>
       <span id="caption" style="font-size: 10px">说明</span>
       <span id="nested-caption" style="font-size: 10px"><span id="nested-caption-text" style="font-size: 10px">内层</span>外层</span>
+      <div id="service-card" style="background-color: white"><a id="small-card-link" href="/service">查看服务</a></div>
     `
     browser.document.querySelectorAll('*').forEach((element) => {
       element.getBoundingClientRect = () => ({ x: 0, y: 0, top: 0, left: 0, right: 60, bottom: 48, width: 60, height: 48, toJSON() {} })
     })
     browser.document.querySelector('#unnamed').getBoundingClientRect = () => ({ x: 0, y: 0, top: 0, left: 0, right: 20, bottom: 20, width: 20, height: 20, toJSON() {} })
+    browser.document.querySelector('#service-card').getBoundingClientRect = () => ({ x: 0, y: 0, top: 0, left: 0, right: 300, bottom: 100, width: 300, height: 100, toJSON() {} })
     Object.defineProperties(browser.document.documentElement, {
       clientWidth: { configurable: true, value: 375 },
       scrollWidth: { configurable: true, value: 420 },
@@ -60,6 +62,7 @@ test('scans visible page accessibility, interaction, and visual issues', async (
     assert.ok(ruleIds.includes('invalid-link-target'))
     assert.ok(ruleIds.includes('missing-image-dimensions'))
     assert.ok(ruleIds.includes('low-text-contrast'))
+    assert.ok(ruleIds.includes('incomplete-link-area'))
     assert.equal(diagnostics.some(item => item.ruleId === 'missing-accessible-name' && item.selector === '#named'), false)
     assert.equal(diagnostics.some(item => item.ruleId === 'missing-accessible-name' && item.selector === '#email'), false)
     assert.equal(diagnostics.some(item => item.ruleId === 'missing-accessible-name' && item.selector === '#search'), false)
@@ -82,6 +85,17 @@ test('scans visible page accessibility, interaction, and visual issues', async (
     assert.ok(diagnostics.some(item => item.ruleId === 'font-size-too-small' && item.selector === '#nested-caption-text'))
     assert.equal(new Set(diagnostics.map(item => item.id)).size, diagnostics.length)
     assert.ok(diagnostics.filter(item => item.selector).every(item => item.selector.startsWith('#')))
+
+    const configuredDiagnostics = scanCustomPageDiagnostics({
+      minimumFontSize: 9,
+      minimumTapSize: 10,
+      ignoreSelectors: ['#empty-link', '[invalid-selector'],
+      rules: { 'missing-alt': false },
+    })
+    assert.equal(configuredDiagnostics.some(item => item.ruleId === 'missing-alt'), false)
+    assert.equal(configuredDiagnostics.some(item => item.ruleId === 'font-size-too-small'), false)
+    assert.equal(configuredDiagnostics.some(item => item.ruleId === 'tap-target-too-small'), false)
+    assert.equal(configuredDiagnostics.some(item => item.selector === '#empty-link'), false)
 
     const cached = await scanPageDiagnostics()
     assert.strictEqual(await scanPageDiagnostics(), cached)

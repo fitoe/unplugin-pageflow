@@ -14,6 +14,34 @@ export interface PageFlowOptions {
   pageTests?: Record<string, string[]>
   /** Explicit test commands. Placeholders: {file}, {name}. Commands run without a shell. */
   testCommands?: Partial<Record<PageFlowTestKind, PageFlowTestCommand>>
+  diagnostics?: PageFlowDiagnosticOptions
+  apiDiagnostics?: PageFlowApiDiagnosticOptions
+}
+
+export interface PageFlowApiDiagnosticOptions {
+  slowRequestMs?: number
+  largeResponseBytes?: number
+  duplicateWindowMs?: number
+}
+
+export interface ResolvedPageFlowApiDiagnosticOptions {
+  slowRequestMs: number
+  largeResponseBytes: number
+  duplicateWindowMs: number
+}
+
+export interface PageFlowDiagnosticOptions {
+  minimumFontSize?: number
+  minimumTapSize?: number
+  ignoreSelectors?: string[]
+  rules?: Record<string, boolean>
+}
+
+export interface ResolvedPageFlowDiagnosticOptions {
+  minimumFontSize: number
+  minimumTapSize: number
+  ignoreSelectors: string[]
+  rules: Record<string, boolean>
 }
 
 export type PageFlowFramework = 'auto' | 'uni-app' | 'vue' | 'nuxt' | 'astro' | 'react-router' | 'sveltekit' | 'solid-start' | 'next' | 'qwik-city' | 'vite'
@@ -29,6 +57,8 @@ export interface ResolvedPageFlowOptions {
   groupNames: Record<string, string>
   pageTests: Record<string, string[]>
   testCommands: Partial<Record<PageFlowTestKind, PageFlowTestCommand>>
+  diagnostics: ResolvedPageFlowDiagnosticOptions
+  apiDiagnostics: ResolvedPageFlowApiDiagnosticOptions
 }
 
 export interface PageFlowRuntimeRoute {
@@ -69,6 +99,7 @@ export interface PageFlowPage {
   revision?: string
   accent: string
   links: PageFlowLink[]
+  diagnostics?: PageFlowDiagnostic[]
 }
 
 export interface PageFlowThumbnailRecord {
@@ -106,6 +137,10 @@ export interface PageFlowApiResult {
   url: string
   status: number
   duration: number
+  occurredAt?: number
+  responseSize?: number
+  occurrences?: number
+  lastIntervalMs?: number
   fields: PageFlowApiField[]
 }
 
@@ -146,6 +181,7 @@ export interface PageFlowDiagnostic {
   targetLabel?: string
   measured?: Record<string, string | number>
   source?: 'pageflow' | 'axe'
+  navigation?: { method: string, target: string }
 }
 
 export interface PageFlowLighthouseIssue {

@@ -11,4 +11,6 @@ mountPageFlow(document.querySelector('#app'), {
   groupNames: {},
   pageTests: {},
   testCommands: {},
+  diagnostics: { minimumFontSize: 12, minimumTapSize: 44, ignoreSelectors: [], rules: {} },
+  apiDiagnostics: { slowRequestMs: 1_000, largeResponseBytes: 500_000, duplicateWindowMs: 1_000 },
 })

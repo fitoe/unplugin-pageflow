@@ -34,6 +34,7 @@ import { createThumbnailCache } from './thumbnail-cache.ts'
 import { isPageFlowTestFile, PageTestIndex } from './page-tests.ts'
 import { createPageTestResultCache } from './page-test-results.ts'
 import { runPageFlowLighthouse } from './lighthouse.ts'
+import { extractEventNavigationDiagnostics } from './source-diagnostics.ts'
 import { PAGEFLOW_TEST_EVENT } from '../shared/protocol.ts'
 
 const ACCENTS = ['#ff795d', '#7c6cff', '#26b99a', '#e7ad43', '#dd648e']
@@ -62,6 +63,25 @@ function normalizePreviewPath(path: string) {
   return `/${path.replace(/^\/+|\/+$/g, '')}/`
 }
 
+function resolveDiagnosticOptions(options: PageFlowOptions['diagnostics'] = {}) {
+  const positiveNumber = (value: number | undefined, fallback: number) => Number.isFinite(value) && value! > 0 ? value! : fallback
+  return {
+    minimumFontSize: positiveNumber(options.minimumFontSize, 12),
+    minimumTapSize: positiveNumber(options.minimumTapSize, 44),
+    ignoreSelectors: [...new Set((options.ignoreSelectors ?? []).map(selector => selector.trim()).filter(Boolean))],
+    rules: options.rules ?? {},
+  }
+}
+
+function resolveApiDiagnosticOptions(options: PageFlowOptions['apiDiagnostics'] = {}) {
+  const nonNegativeNumber = (value: number | undefined, fallback: number) => Number.isFinite(value) && value! >= 0 ? value! : fallback
+  return {
+    slowRequestMs: nonNegativeNumber(options.slowRequestMs, 1_000),
+    largeResponseBytes: nonNegativeNumber(options.largeResponseBytes, 500_000),
+    duplicateWindowMs: nonNegativeNumber(options.duplicateWindowMs, 1_000),
+  }
+}
+
 function resolveOptions(options: PageFlowOptions = {}): ResolvedPageFlowOptions {
   return {
     enabled: options.enabled ?? true,
@@ -74,6 +94,8 @@ function resolveOptions(options: PageFlowOptions = {}): ResolvedPageFlowOptions 
     groupNames: options.groupNames ?? {},
     pageTests: options.pageTests ?? {},
     testCommands: options.testCommands ?? {},
+    diagnostics: resolveDiagnosticOptions(options.diagnostics),
+    apiDiagnostics: resolveApiDiagnosticOptions(options.apiDiagnostics),
   }
 }
 
@@ -96,6 +118,12 @@ async function loadProjectOptions(root: string, options: PageFlowOptions = {}) {
     groupNames: options.groupNames ?? stored.groupNames,
     pageTests: options.pageTests ?? stored.pageTests,
     testCommands: options.testCommands ?? stored.testCommands,
+    diagnostics: {
+      ...stored.diagnostics,
+      ...options.diagnostics,
+      rules: { ...stored.diagnostics?.rules, ...options.diagnostics?.rules },
+    },
+    apiDiagnostics: { ...stored.apiDiagnostics, ...options.apiDiagnostics },
   })
 }
 
@@ -136,6 +164,7 @@ async function readUniAppConfig(root: string) {
         pages?: PageConfig[]
         subPackages?: SubPackageConfig[]
         subpackages?: SubPackageConfig[]
+        tabBar?: { list?: Array<{ pagePath?: unknown }> }
       }
       const normalizePath = (path: string) => `/${path.replace(/^\/+|\/+$/g, '')}`
       const titlesByPath = new Map<string, string>()
@@ -158,21 +187,25 @@ async function readUniAppConfig(root: string) {
         homePath: typeof home === 'string' && home.trim() ? normalizePath(home) : undefined,
         titlesByPath,
         routeOrderByPath,
+        tabPaths: new Set((config.tabBar?.list ?? []).flatMap(item => typeof item.pagePath === 'string' ? [normalizePath(item.pagePath)] : [])),
       }
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error
     }
   }
-  return { homePath: undefined, titlesByPath: new Map<string, string>(), routeOrderByPath: new Map<string, number>() }
+  return { homePath: undefined, titlesByPath: new Map<string, string>(), routeOrderByPath: new Map<string, number>(), tabPaths: new Set<string>() }
 }
 
 function createGraph(
   routes: PageFlowRuntimeRoute[],
   reportedPages: Map<string, PageFlowRuntimePage>,
   staticLinksByFile: Map<string, PageFlowRuntimeLink[]>,
+  staticDiagnosticsByFile: Map<string, import('../shared/types.ts').PageFlowDiagnostic[]>,
   configuredTitlesByPath: Map<string, string>,
   routeOrderByPath: Map<string, number>,
   sourceRevisionsByFile: Map<string, string>,
+  tabPaths: Set<string>,
+  diagnosticRules: Record<string, boolean>,
   version: number,
   routeMode: PageFlowRouteMode,
   uniAppHomePath?: string,
@@ -203,6 +236,11 @@ function createGraph(
           ?? route.path,
         accent: ACCENTS[index % ACCENTS.length],
         links: [],
+        diagnostics: sourceEntryForPath(staticDiagnosticsByFile, configuredPath)
+          ?? (route.componentFile
+            ? [...staticDiagnosticsByFile.entries()].find(([file]) => file === route.componentFile || file.endsWith(route.componentFile!))?.[1]
+            : undefined)
+          ?? [],
       }
     })
   const idsByPath = new Map(pages.map(page => [page.path, page.id]))
@@ -239,6 +277,37 @@ function createGraph(
       links.set(`${target}:${hotspotKey}:${link.location ?? ''}`, { label: link.label, to: target, location: link.location, hotspot: link.hotspot })
     })
     page.links = [...links.values()]
+    const navigationDiagnostics: import('../shared/types.ts').PageFlowDiagnostic[] = []
+    for (const item of page.diagnostics ?? []) {
+      const navigation = item.navigation
+      if (!navigation) continue
+      const targetPath = navigation.target.split(/[?#]/, 1)[0]
+      if (!resolveTarget(targetPath) && diagnosticRules['invalid-navigation-target'] !== false) {
+        navigationDiagnostics.push({
+          ...item,
+          id: `invalid-navigation-target:${item.id}`,
+          ruleId: 'invalid-navigation-target',
+          severity: 'error',
+          title: '跳转目标不存在',
+          description: `项目路由中没有找到 ${targetPath}，请检查路径或页面是否已删除。`,
+        })
+      }
+      const targetsTab = tabPaths.has(targetPath)
+      const wrongTabMethod = navigation.method === 'switchTab' ? !targetsTab : navigation.method === 'navigateTo' ? targetsTab : false
+      if (wrongTabMethod && diagnosticRules['navigation-method-mismatch'] !== false) {
+        navigationDiagnostics.push({
+          ...item,
+          id: `navigation-method-mismatch:${item.id}`,
+          ruleId: 'navigation-method-mismatch',
+          severity: 'warning',
+          title: '导航方法与目标页面不匹配',
+          description: navigation.method === 'switchTab'
+            ? `${targetPath} 不是 Tab 页面，不应使用 switchTab。`
+            : `${targetPath} 是 Tab 页面，应使用 switchTab。`,
+        })
+      }
+    }
+    page.diagnostics = [...(page.diagnostics ?? []), ...navigationDiagnostics]
   })
 
   return { pages, routeMode, version }
@@ -396,8 +465,10 @@ const factory: UnpluginFactory<PageFlowOptions | undefined> = (options) => {
   let uniAppHomePath: string | undefined
   let configuredTitlesByPath = new Map<string, string>()
   let routeOrderByPath = new Map<string, number>()
+  let tabPaths = new Set<string>()
   const reportedPages = new Map<string, PageFlowRuntimePage>()
   const staticLinksByFile = new Map<string, PageFlowRuntimeLink[]>()
+  const staticDiagnosticsByFile = new Map<string, import('../shared/types.ts').PageFlowDiagnostic[]>()
   const sourceRevisionsByFile = new Map<string, string>()
   const eventResponses = new Set<ServerResponse>()
   let cachedClientStyle: Buffer | undefined
@@ -421,7 +492,7 @@ const factory: UnpluginFactory<PageFlowOptions | undefined> = (options) => {
   }
 
   const rebuildGraph = (updatedPath?: string) => {
-    graph = createGraph(routes, reportedPages, staticLinksByFile, configuredTitlesByPath, routeOrderByPath, sourceRevisionsByFile, graph.version + 1, routeMode, uniAppHomePath)
+    graph = createGraph(routes, reportedPages, staticLinksByFile, staticDiagnosticsByFile, configuredTitlesByPath, routeOrderByPath, sourceRevisionsByFile, tabPaths, resolved.diagnostics.rules, graph.version + 1, routeMode, uniAppHomePath)
     if (updatedPath) {
       const page = graph.pages.find(item => item.path === updatedPath)
       if (page) sendPageUpdate?.(page)
@@ -431,13 +502,19 @@ const factory: UnpluginFactory<PageFlowOptions | undefined> = (options) => {
   const recordSource = (code: string, id: string) => {
     const file = normalizeFile(id)
     const nextLinks = extractStaticLinks(code)
+    const nextDiagnostics = extractEventNavigationDiagnostics(code, file)
+      .filter(item => resolved.diagnostics.rules[item.ruleId] !== false)
     const currentLinks = staticLinksByFile.get(file) ?? []
+    const currentDiagnostics = staticDiagnosticsByFile.get(file) ?? []
     const nextRevision = createHash('sha256').update(code).digest('hex').slice(0, 16)
     const linksChanged = JSON.stringify(currentLinks) !== JSON.stringify(nextLinks)
+    const diagnosticsChanged = JSON.stringify(currentDiagnostics) !== JSON.stringify(nextDiagnostics)
     const revisionChanged = sourceRevisionsByFile.get(file) !== nextRevision
-    if (!linksChanged && !revisionChanged) return false
+    if (!linksChanged && !diagnosticsChanged && !revisionChanged) return false
     if (nextLinks.length) staticLinksByFile.set(file, nextLinks)
     else staticLinksByFile.delete(file)
+    if (nextDiagnostics.length) staticDiagnosticsByFile.set(file, nextDiagnostics)
+    else staticDiagnosticsByFile.delete(file)
     sourceRevisionsByFile.set(file, nextRevision)
     return true
   }
@@ -553,6 +630,7 @@ const factory: UnpluginFactory<PageFlowOptions | undefined> = (options) => {
           if (resolved.framework === 'auto' && uniAppHomePath) resolved.framework = 'uni-app'
           configuredTitlesByPath = uniAppConfig.titlesByPath
           routeOrderByPath = uniAppConfig.routeOrderByPath
+          tabPaths = uniAppConfig.tabPaths
         } catch (error) {
           server.config.logger.warn(`unplugin-pageflow could not read pages.json: ${error instanceof Error ? error.message : error}`)
         }

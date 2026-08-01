@@ -42,6 +42,7 @@ test('serves the unplugin-pageflow client from the configured development route'
       { id: 'contact', name: 'contact', path: '/contact', title: 'Contact' },
       { id: 'user', name: 'user', path: '/users/:id', title: 'User' },
       { id: 'inferred', name: 'inferred', path: '/inferred', title: 'Inferred' },
+      { id: 'source-check', name: 'source-check', path: '/source-check', title: 'Source check', componentFile: 'C:/project/src/source-check.vue' },
     ]
 
     const routeUpdate = await fetch(`${origin}/__unplugin-pageflow/api/routes`, {
@@ -60,6 +61,11 @@ test('serves the unplugin-pageflow client from the configured development route'
     await pageflowPlugin.transform('export default {}', `${componentFile}?vue&type=template`)
     await pageflowPlugin.transform("uni.navigateTo({ url: '/contact' })", 'C:/project/src/inferred.vue')
     await pageflowPlugin.transform('export default {}', 'C:/project/src/inferred.vue?vue&type=script')
+    await pageflowPlugin.transform(`<template>
+      <button @click="uni.navigateTo({ url: '/missing' })">Missing</button>
+      <navigator url="/about" @click="uni.navigateTo({ url: '/about' })">Duplicate</navigator>
+      <button @click="uni.switchTab({ url: '/contact' })">Wrong method</button>
+    </template>`, 'C:/project/src/source-check.vue')
     const staticGraph = await (await fetch(`${origin}/__unplugin-pageflow/api/graph`)).json()
     const eventResponse = await fetch(`${origin}/__unplugin-pageflow/api/events`, { signal: eventController.signal })
     const eventReader = eventResponse.body.getReader()
@@ -122,10 +128,19 @@ test('serves the unplugin-pageflow client from the configured development route'
       { label: 'redirectTo /users/42', to: 'user' },
       { label: 'replace /contact', to: 'contact' },
     ])
+    const sourceRules = staticGraph.pages.find(page => page.id === 'source-check').diagnostics.map(item => item.ruleId)
+    assert.deepEqual(sourceRules, [
+      'event-navigation',
+      'event-navigation',
+      'duplicate-navigation',
+      'event-navigation',
+      'invalid-navigation-target',
+      'navigation-method-mismatch',
+    ])
     assert(graph.version >= 3)
     assert.equal(unchangedGraph.routeMode, graph.routeMode)
     assert.deepEqual(unchangedGraph.pages, graph.pages)
-    assert.deepEqual(graph.pages.map(page => page.path), ['/', '/about', '/contact', '/users/:id', '/inferred'])
+    assert.deepEqual(graph.pages.map(page => page.path), ['/', '/about', '/contact', '/users/:id', '/inferred', '/source-check'])
     assert.deepEqual(graph.pages.find(page => page.path === '/inferred').links, [
       { label: 'navigateTo /contact', to: 'contact' },
     ])

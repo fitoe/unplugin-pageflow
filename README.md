@@ -173,7 +173,7 @@ pageflow-next --dir . --host 127.0.0.1 --port 3000
 聚焦页面后打开右侧“诊断”标签：
 
 - axe-core 检查 WCAG、ARIA、可访问名称、标题结构和颜色对比度。
-- PageFlow 检查字号、点击区域、横向溢出、图片尺寸、无效链接等页面规则。
+- PageFlow 检查字号、点击区域、横向溢出、图片尺寸、无效链接、重复导航、失效路由、导航方法，以及可改用链接的纯跳转事件。
 - “运行审计”按需启动 Lighthouse，返回性能、无障碍、最佳实践和 SEO 分数。
 - 下载按钮导出当前页面的 JSON 报告；报告不包含 Cookie、Token 或浏览器存储。
 
@@ -243,6 +243,10 @@ PageFlow.vite({
 测试命令只有显式配置后才可运行，并通过 `spawn`、`shell: false` 执行。结果缓存在 `.unplugin-pageflow/cache`；测试文件内容变化后自动失效。
 
 完整选项见[配置参考](./docs/zh/reference/configuration.md)。
+
+页面诊断支持在 `.pageflow` 中配置字号与点击区域阈值、忽略 selector，以及按 `ruleId` 关闭规则。
+
+接口面板会标记 HTTP 失败、慢请求、大响应和短时间重复请求；阈值可通过 `.pageflow` 的 `apiDiagnostics` 配置。
 
 ## 快照与性能
 

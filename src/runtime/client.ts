@@ -36,7 +36,7 @@ function apiFields(value: unknown, path = '', fields: Array<{ path: string, valu
   return fields
 }
 
-function reportApiResult(method: string, url: string, status: number, duration: number, value: unknown) {
+function reportApiResult(method: string, url: string, status: number, duration: number, value: unknown, responseSize = 0) {
   if (!apiInspectionEnabled || window.parent === window || url.includes('/__unplugin-pageflow/')) return
   window.parent.postMessage({
     type: PAGEFLOW_API_RESULT_MESSAGE,
@@ -46,6 +46,8 @@ function reportApiResult(method: string, url: string, status: number, duration: 
       url,
       status,
       duration: Math.round(duration),
+      occurredAt: Date.now(),
+      responseSize,
       fields: apiFields(value),
     },
   }, window.location.origin)
@@ -80,13 +82,24 @@ function trackPreviewRequests() {
       const contentType = response.headers?.get?.('content-type') ?? ''
       if (apiInspectionEnabled && typeof response.clone === 'function') {
         const clone = response.clone()
-        const value = contentType.includes('json')
-          ? clone.json()
-          : clone.text().then(text => /^[\s]*[\[{]/.test(text) ? JSON.parse(text) : Promise.reject())
-        void value.then(data => requestAnimationFrame(() => reportApiResult(method, url, response.status, performance.now() - startedAt, data)))
-          .catch(() => undefined)
+        const text = typeof clone.text === 'function' ? clone.text() : undefined
+        if (text) void text.then((text) => {
+          let value: unknown = text
+          if (contentType.includes('json') || /^[\s]*[\[{]/.test(text)) {
+            try { value = JSON.parse(text) } catch {}
+          }
+          const size = new TextEncoder().encode(text).byteLength
+          requestAnimationFrame(() => reportApiResult(method, url, response.status, performance.now() - startedAt, value, size))
+        }).catch(() => requestAnimationFrame(() => reportApiResult(method, url, response.status, performance.now() - startedAt, undefined)))
+        else if (typeof clone.json === 'function')
+          void clone.json().then(value => requestAnimationFrame(() => reportApiResult(method, url, response.status, performance.now() - startedAt, value)))
+            .catch(() => undefined)
       }
       return response
+    }, (error) => {
+      if (apiInspectionEnabled)
+        requestAnimationFrame(() => reportApiResult(method, url, 0, performance.now() - startedAt, undefined))
+      throw error
     }).finally(() => update(-1))
   }
 
@@ -107,15 +120,15 @@ function trackPreviewRequests() {
       const contentType = this.getResponseHeader('content-type') ?? ''
       if (!apiInspectionEnabled || !current) return
       try {
-        const value = this.responseType === 'json' && this.response != null
-          ? this.response
-          : (() => {
-              const text = this.responseText
-              if (!contentType.includes('json') && !/^[\s]*[\[{]/.test(text)) return undefined
-              return JSON.parse(text)
-            })()
-        if (value === undefined) return
-        requestAnimationFrame(() => reportApiResult(current.method, this.responseURL || current.url, this.status, performance.now() - current.startedAt, value))
+        const text = this.responseType === '' || this.responseType === 'text' ? this.responseText : ''
+        let value: unknown = this.responseType === 'json' && this.response != null ? this.response : text
+        if (text && (contentType.includes('json') || /^[\s]*[\[{]/.test(text))) {
+          try { value = JSON.parse(text) } catch {}
+        }
+        const size = text ? new TextEncoder().encode(text).byteLength
+          : this.response instanceof Blob ? this.response.size
+            : this.response instanceof ArrayBuffer ? this.response.byteLength : 0
+        requestAnimationFrame(() => reportApiResult(current.method, this.responseURL || current.url, this.status, performance.now() - current.startedAt, value, size))
       } catch {}
     }, { once: true })
     return originalSend.apply(this, args)
@@ -543,7 +556,7 @@ export async function startPageFlowRuntime(config: ResolvedPageFlowOptions) {
             window.parent.postMessage({
               type: PAGEFLOW_DIAGNOSTICS_RESULT_MESSAGE,
               path: page.path,
-              diagnostics: await scanPageDiagnostics(),
+              diagnostics: await scanPageDiagnostics(config.diagnostics),
             }, window.location.origin)
           }
         })

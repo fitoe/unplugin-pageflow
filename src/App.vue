@@ -44,7 +44,9 @@ import { FrameAnimation } from './client/frame-animation'
 import { PreviewFrameRegistry } from './client/preview-frame-registry'
 import { decodePreviewMessage } from './client/preview-message'
 import { createDiagnosticReport, diagnosticReportFilename } from './client/diagnostic-report'
+import { createPageChecks, type PageFlowPageCheckStatus } from './client/page-checks'
 import { buildApiFieldTree } from './client/api-field-tree'
+import { createApiIssues, type PageFlowApiIssue } from './client/api-diagnostics'
 import { cachedPreviewUsers, configuredUsers, loadUserSessions, saveUserSessions, visibleSessionUsers } from './client/user-sessions'
 import LayoutWorker from './client/layout.worker?worker&inline'
 import ApiFieldTree from './components/ApiFieldTree.vue'
@@ -169,10 +171,18 @@ const searchRoot = ref<HTMLDivElement>()
 const canvas = ref<HTMLDivElement>()
 const connectionCanvas = ref<HTMLDivElement>()
 const overlayWorld = ref<HTMLDivElement>()
+const focusedPageChecks = computed(() => {
+  const page = pages.value.find(item => item.id === focusedPageId.value)
+  if (!page) return []
+  const checks = createPageChecks(page, pages.value, focusedPageTests.value)
+  return focusedTestsLoading.value || focusedTestsFailed.value ? checks.filter(item => item.id !== 'tests') : checks
+})
+const focusedTestIssueCount = computed(() => focusedPageChecks.value.filter(item => item.status !== 'passed').length
+  + focusedPageTests.value.filter(test => test.status === 'failed').length)
 
 const panelTabs = computed(() => [
-  { value: 'api', label: '接口', badge: focusedApiResults.value.length, slot: 'api' },
-  { value: 'tests', label: '测试', badge: focusedPageTests.value.length, slot: 'tests' },
+  { value: 'api', label: '接口', badge: focusedApiIssues.value.length, slot: 'api' },
+  { value: 'tests', label: '测试', badge: focusedTestIssueCount.value, slot: 'tests' },
   { value: 'diagnostics', label: '诊断', badge: focusedDiagnostics.value.filter(item => item.severity === 'error').length, slot: 'diagnostics' },
 ])
 const headerUserMenuItems = computed(() => [
@@ -343,6 +353,7 @@ const focusScene = computed(() => createFocusScene({
 }))
 const connectionPaths = computed(() => focusScene.value?.connections ?? [])
 const focusedApiResults = computed(() => focusedPageId.value ? apiResultsByPage.value[focusedPageId.value] ?? [] : [])
+const focusedApiIssues = computed(() => createApiIssues(focusedApiResults.value, props.config.apiDiagnostics))
 interface FocusedDiagnosticGroup {
   value: string
   label: string
@@ -452,7 +463,24 @@ function exportFocusedDiagnostics() {
 
 const testKindLabels: Record<PageFlowPageTest['kind'], string> = { e2e: 'E2E', component: '组件', unit: '单元' }
 const testStatusLabels: Record<PageFlowPageTest['status'], string> = { unknown: '未运行', passed: '通过', failed: '失败', skipped: '跳过' }
+const pageCheckStatusLabels: Record<PageFlowPageCheckStatus, string> = { passed: '通过', failed: '失败', uncovered: '未覆盖' }
 const runnableFocusedTests = computed(() => focusedPageTests.value.filter(test => test.runnable))
+
+function pageCheckColor(status: PageFlowPageCheckStatus) {
+  return status === 'passed' ? 'success' : status === 'failed' ? 'error' : 'warning'
+}
+
+function locateFocusedPage() {
+  const pageId = focusedPageId.value
+  const position = pageId ? positions.value.get(pageId) : undefined
+  if (!pageId || !position || !leafer || !canvas.value) return
+  flyToPage(pageId, position, undefined, undefined, fitFocusedPreviewTransform(
+    position,
+    pagePreviewHeight(pageId),
+    { width: canvas.value.clientWidth, height: canvas.value.clientHeight },
+    SELECTED_PAGE_SCALE,
+  ))
+}
 
 function testStatusLabel(test: PageFlowPageTest) {
   if (test.duration == null) return testStatusLabels[test.status]
@@ -575,6 +603,15 @@ const apiMethodColors = {
 
 function apiMethodColor(method: string) {
   return apiMethodColors[method.toUpperCase() as keyof typeof apiMethodColors] ?? 'neutral'
+}
+
+function apiIssueColor(status: PageFlowApiIssue['status']) {
+  return status === 'failed' ? 'error' : 'warning'
+}
+
+function apiIssueLabel(issue: PageFlowApiIssue) {
+  const result = focusedApiResults.value.find(item => item.id === issue.resultId)
+  return result ? `${result.method.toUpperCase()} ${apiRoute(result.url)}` : issue.title
 }
 
 function visibleApiFieldTree(result: PageFlowApiResult) {
@@ -1812,9 +1849,17 @@ function handlePreviewMessage(event: MessageEvent) {
   if (message.type === 'api-result') {
     if (!sourcePageId) return
     const current = apiResultsByPage.value[sourcePageId] ?? []
+    const previous = current.find(item => item.id === message.result.id)
+    const result = previous ? {
+      ...message.result,
+      occurrences: (previous.occurrences ?? 1) + 1,
+      lastIntervalMs: previous.occurredAt != null && message.result.occurredAt != null
+        ? Math.max(0, message.result.occurredAt - previous.occurredAt)
+        : undefined,
+    } : { ...message.result, occurrences: 1 }
     apiResultsByPage.value = {
       ...apiResultsByPage.value,
-      [sourcePageId]: [...current.filter(item => item.id !== message.result.id), message.result].slice(-30),
+      [sourcePageId]: [...current.filter(item => item.id !== result.id), result].slice(-30),
     }
     return
   }
@@ -1848,7 +1893,8 @@ function handlePreviewMessage(event: MessageEvent) {
     window.clearTimeout(diagnosticsTimer)
     diagnosticsInFlightPageId = undefined
     diagnosticsLoading.value = false
-    focusedDiagnostics.value = message.diagnostics
+    const sourceDiagnostics = pages.value.find(page => page.id === sourcePageId)?.diagnostics ?? []
+    focusedDiagnostics.value = [...sourceDiagnostics, ...message.diagnostics]
     if (diagnosticsRefreshQueued) requestFocusedDiagnostics()
     return
   }
@@ -2467,6 +2513,27 @@ onUnmounted(() => {
       <UTabs v-model="panelTab" class="api-panel-tabs" :items="panelTabs" variant="link" aria-label="页面详情">
         <template #api>
           <div v-if="focusedApiResults.length" class="api-panel-list">
+            <div v-if="focusedApiIssues.length" class="border-b border-default py-3">
+              <div class="text-sm font-medium text-highlighted">接口检查</div>
+              <div class="mt-2 divide-y divide-default">
+                <div
+                  v-for="issue in focusedApiIssues"
+                  :key="issue.resultId"
+                  class="cursor-pointer py-2"
+                  role="button"
+                  tabindex="0"
+                  @click="openApiResultId = issue.resultId"
+                  @keydown.enter="openApiResultId = issue.resultId"
+                  @keydown.space.prevent="openApiResultId = issue.resultId"
+                >
+                  <div class="flex items-center gap-2">
+                    <div class="min-w-0 flex-1 truncate text-sm text-highlighted">{{ apiIssueLabel(issue) }}</div>
+                    <UBadge :label="issue.status === 'failed' ? '失败' : '警告'" :color="apiIssueColor(issue.status)" variant="soft" size="sm" />
+                  </div>
+                  <div class="mt-1 text-xs leading-5 text-muted">{{ issue.descriptions.join(' · ') }}</div>
+                </div>
+              </div>
+            </div>
             <UAccordion v-model="openApiResultId" :items="apiAccordionItems">
               <template #leading="{ item: result }">
                 <UBadge :label="result.method" :color="apiMethodColor(result.method)" variant="soft" size="sm" />
@@ -2500,9 +2567,31 @@ onUnmounted(() => {
           <div v-else class="api-panel-waiting">等待页面接口响应…</div>
         </template>
         <template #tests>
-          <div v-if="focusedTestsLoading" class="api-panel-waiting">正在整理页面测试…</div>
-          <div v-else-if="focusedTestsFailed" class="api-panel-waiting">页面测试加载失败</div>
-          <div v-else-if="focusedPageTests.length" class="api-panel-list">
+          <div class="api-panel-list">
+            <div class="border-b border-default py-3">
+              <div class="text-sm font-medium text-highlighted">页面检查</div>
+              <div class="mt-2 divide-y divide-default">
+                <div
+                  v-for="check in focusedPageChecks"
+                  :key="check.id"
+                  class="cursor-pointer py-2"
+                  role="button"
+                  tabindex="0"
+                  @click="locateFocusedPage"
+                  @keydown.enter="locateFocusedPage"
+                  @keydown.space.prevent="locateFocusedPage"
+                >
+                  <div class="flex items-center gap-2">
+                    <div class="min-w-0 flex-1 text-sm text-highlighted">{{ check.title }}</div>
+                    <UBadge :label="pageCheckStatusLabels[check.status]" :color="pageCheckColor(check.status)" variant="soft" size="sm" />
+                  </div>
+                  <div class="mt-1 text-xs leading-5 text-muted">{{ check.description }}</div>
+                </div>
+              </div>
+            </div>
+            <div v-if="focusedTestsLoading" class="api-panel-waiting">正在整理页面测试…</div>
+            <div v-else-if="focusedTestsFailed" class="api-panel-waiting">页面测试加载失败</div>
+            <div v-else-if="focusedPageTests.length">
             <div class="sticky top-0 z-10 flex items-center gap-2 border-b border-default bg-default py-2">
               <div class="min-w-0 flex-1">
                 <div class="text-sm font-medium text-highlighted">页面测试</div>
@@ -2565,8 +2654,9 @@ onUnmounted(() => {
                 </div>
               </div>
             </div>
+            </div>
+            <div v-else class="api-panel-waiting">暂未发现属于此页面的测试</div>
           </div>
-          <div v-else class="api-panel-waiting">暂未发现属于此页面的测试</div>
         </template>
         <template #diagnostics>
           <div class="api-panel-list">
