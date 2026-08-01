@@ -13,15 +13,19 @@ export interface PageCardOptions {
   scale?: number
   highlighted?: boolean
   hideMeta?: boolean
+  dark?: boolean
 }
 
 export function createPageCardGroup(options: PageCardOptions) {
   const { page, x, y, previewHeight, tiles, thumbnailSource } = options
+  const primary = options.dark ? '#f5f5f5' : '#262626'
+  const secondary = options.dark ? '#a3a3a3' : '#737373'
+  const muted = options.dark ? '#737373' : '#a3a3a3'
   const group = new Group({ x, y, scaleX: options.scale ?? 1, scaleY: options.scale ?? 1, hittable: false })
   group.add(new Rect({
     width: PAGE_CARD_WIDTH,
     height: previewHeight,
-    fill: '#fff',
+    fill: options.dark ? '#171717' : '#fff',
     shadow: options.highlighted
       ? { x: 0, y: 16, blur: 42, color: '#090a0b78' }
       : { x: 0, y: 8, blur: 20, color: '#090a0b40' },
@@ -41,13 +45,13 @@ export function createPageCardGroup(options: PageCardOptions) {
     }))
   })
   if (!hasThumbnail) {
-    group.add(new Text({ x: 16, y: Math.max(16, previewHeight - 54), width: PAGE_CARD_WIDTH - 32, text: page.title, fill: '#242628', fontSize: 18, fontWeight: 700, textWrap: 'none', textOverflow: 'ellipsis' }))
-    group.add(new Text({ x: 16, y: Math.max(38, previewHeight - 29), width: PAGE_CARD_WIDTH - 32, text: page.path, fill: '#6f7478', fontFamily: 'DM Mono', fontSize: 10, textWrap: 'none', textOverflow: 'ellipsis' }))
+    group.add(new Text({ x: 16, y: Math.max(16, previewHeight - 54), width: PAGE_CARD_WIDTH - 32, text: page.title, fill: primary, fontSize: 18, fontWeight: 700, textWrap: 'none', textOverflow: 'ellipsis' }))
+    group.add(new Text({ x: 16, y: Math.max(38, previewHeight - 29), width: PAGE_CARD_WIDTH - 32, text: page.path, fill: secondary, fontFamily: 'DM Mono', fontSize: 10, textWrap: 'none', textOverflow: 'ellipsis' }))
   }
   if (!options.hideMeta) {
-    group.add(new Text({ x: 0, y: previewHeight + 12, width: PAGE_CARD_WIDTH - 28, text: page.title, fill: '#3f4347', fontSize: 13, fontWeight: 700, textWrap: 'none', textOverflow: 'ellipsis', cursor: 'default' }))
-    group.add(new Text({ x: PAGE_CARD_WIDTH - 20, y: previewHeight + 10, width: 20, text: '→', fill: '#6f7478', fontSize: 15, textAlign: 'right', cursor: 'pointer' }))
-    group.add(new Text({ x: 0, y: previewHeight + 38, width: PAGE_CARD_WIDTH, text: options.copied ? '已复制' : page.path, fill: '#969b9f', fontFamily: 'DM Mono', fontSize: 10, textWrap: 'none', textOverflow: 'ellipsis', cursor: 'pointer' }))
+    group.add(new Text({ x: 0, y: previewHeight + 12, width: PAGE_CARD_WIDTH - 28, text: page.title, fill: primary, fontSize: 13, fontWeight: 700, textWrap: 'none', textOverflow: 'ellipsis', cursor: 'default' }))
+    group.add(new Text({ x: PAGE_CARD_WIDTH - 20, y: previewHeight + 10, width: 20, text: '→', fill: secondary, fontSize: 15, textAlign: 'right', cursor: 'pointer' }))
+    group.add(new Text({ x: 0, y: previewHeight + 38, width: PAGE_CARD_WIDTH, text: options.copied ? '已复制' : page.path, fill: muted, fontFamily: 'DM Mono', fontSize: 10, textWrap: 'none', textOverflow: 'ellipsis', cursor: 'pointer' }))
   }
   return group
 }
@@ -60,6 +64,7 @@ export interface PageDeckOptions {
   count: number
   layerPages: PageFlowPage[]
   createLayer(page: PageFlowPage, x: number, y: number): Group
+  dark?: boolean
 }
 
 export function createPageDeckGroup(options: PageDeckOptions) {
@@ -70,6 +75,6 @@ export function createPageDeckGroup(options: PageDeckOptions) {
     card.opacity = Math.max(0.36, 1 - layer * 0.16)
     group.add(card)
   })
-  group.add(new Text({ x: 0, y: options.previewHeight + 12, width: PAGE_CARD_WIDTH, text: `${options.label} · ${options.count}`, fill: '#3f4347', fontSize: 13, fontWeight: 700, textWrap: 'none', textOverflow: 'ellipsis', cursor: 'default' }))
+  group.add(new Text({ x: 0, y: options.previewHeight + 12, width: PAGE_CARD_WIDTH, text: `${options.label} · ${options.count}`, fill: options.dark ? '#f5f5f5' : '#262626', fontSize: 13, fontWeight: 700, textWrap: 'none', textOverflow: 'ellipsis', cursor: 'default' }))
   return group
 }

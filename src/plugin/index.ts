@@ -7,7 +7,9 @@ import { readFile, readdir, stat, writeFile } from 'node:fs/promises'
 import { existsSync, readFileSync } from 'node:fs'
 import type { ServerResponse } from 'node:http'
 import { dirname, resolve } from 'node:path'
+import { StringDecoder } from 'node:string_decoder'
 import { fileURLToPath, pathToFileURL } from 'node:url'
+import { stripVTControlCharacters } from 'node:util'
 import type {
   PageFlowGraph,
   PageFlowOptions,
@@ -324,8 +326,8 @@ async function readPage(request: AsyncIterable<Uint8Array | string>): Promise<Pa
   return { path: value.path, title, links }
 }
 
-function pageflowHtml(base = '/', styleUrl?: string, versionUrl?: string) {
-  const clientUrl = `${base.endsWith('/') ? base : `${base}/`}@id/${PAGEFLOW_CLIENT_ID}`
+function pageflowHtml(base = '/', styleUrl?: string, versionUrl?: string, clientVersion?: string) {
+  const clientUrl = `${base.endsWith('/') ? base : `${base}/`}@id/${PAGEFLOW_CLIENT_ID}${clientVersion ? `?v=${encodeURIComponent(clientVersion)}` : ''}`
   return `<!doctype html>
 <html lang="en">
   <head>
@@ -381,6 +383,11 @@ const factory: UnpluginFactory<PageFlowOptions | undefined> = (options) => {
   const clientEntry = toViteFsPath(pathToFileURL(clientEntryFile))
   const runtimeEntry = toViteFsPath(pathToFileURL(resolve(pluginRoot, packaged ? 'dist/runtime/client.js' : 'src/runtime/client.ts')))
   const clientStyleFile = useBuiltClient ? resolve(pluginRoot, 'dist/style.css') : undefined
+  const clientFiles = [clientEntryFile, clientStyleFile].filter((file): file is string => Boolean(file))
+  const getClientVersion = async () => {
+    const versions = await Promise.all(clientFiles.map(file => stat(file).then(info => info.mtimeMs).catch(() => 0)))
+    return String(Math.max(...versions))
+  }
   let graph: PageFlowGraph = { pages: [], routeMode: 'history', version: 0 }
   let routes: PageFlowRuntimeRoute[] = []
   let routeMode: PageFlowRouteMode = 'history'
@@ -462,14 +469,17 @@ const factory: UnpluginFactory<PageFlowOptions | undefined> = (options) => {
     enforce: 'pre',
     resolveId(id) {
       if (id === PAGEFLOW_CONFIG_ID) return PAGEFLOW_CONFIG_RESOLVED_ID
-      if (id === PAGEFLOW_CLIENT_ID) return PAGEFLOW_CLIENT_RESOLVED_ID
+      if (id === PAGEFLOW_CLIENT_ID || id.startsWith(`${PAGEFLOW_CLIENT_ID}?`))
+        return `${PAGEFLOW_CLIENT_RESOLVED_ID}${id.slice(PAGEFLOW_CLIENT_ID.length)}`
       if (id === PAGEFLOW_RUNTIME_ID) return PAGEFLOW_RUNTIME_RESOLVED_ID
     },
     load(id) {
       if (id === PAGEFLOW_CONFIG_RESOLVED_ID)
         return `export default ${JSON.stringify(resolved)}`
-      if (id === PAGEFLOW_CLIENT_RESOLVED_ID)
-        return `import config from '${PAGEFLOW_CONFIG_ID}'; import { mountPageFlow } from '${clientEntry}'; mountPageFlow(document.querySelector('#app'), config)`
+      if (id === PAGEFLOW_CLIENT_RESOLVED_ID || id.startsWith(`${PAGEFLOW_CLIENT_RESOLVED_ID}?`)) {
+        const versionQuery = id.slice(PAGEFLOW_CLIENT_RESOLVED_ID.length)
+        return `import config from '${PAGEFLOW_CONFIG_ID}'; import { mountPageFlow } from '${clientEntry}${versionQuery}'; mountPageFlow(document.querySelector('#app'), config)`
+      }
       if (id === PAGEFLOW_RUNTIME_RESOLVED_ID && resolved.framework === 'qwik-city')
         return `import config from '${PAGEFLOW_CONFIG_ID}'; if (typeof window !== 'undefined') import('${runtimeEntry}').then(({ startPageFlowRuntime }) => startPageFlowRuntime(config))`
       if (id === PAGEFLOW_RUNTIME_RESOLVED_ID)
@@ -538,6 +548,7 @@ const factory: UnpluginFactory<PageFlowOptions | undefined> = (options) => {
         try {
           const uniAppConfig = await readUniAppConfig(projectRoot)
           uniAppHomePath = uniAppConfig.homePath
+          if (resolved.framework === 'auto' && uniAppHomePath) resolved.framework = 'uni-app'
           configuredTitlesByPath = uniAppConfig.titlesByPath
           routeOrderByPath = uniAppConfig.routeOrderByPath
         } catch (error) {
@@ -626,26 +637,30 @@ const factory: UnpluginFactory<PageFlowOptions | undefined> = (options) => {
               })
               runningPageTests.set(id, child)
               let output = ''
-              const append = (chunk: Buffer) => { output = `${output}${chunk}`.slice(-100_000) }
-              child.stdout.on('data', append)
-              child.stderr.on('data', append)
+              const stdoutDecoder = new StringDecoder('utf8')
+              const stderrDecoder = new StringDecoder('utf8')
+              const append = (chunk: string) => { output = `${output}${chunk}`.slice(-100_000) }
+              child.stdout.on('data', chunk => append(stdoutDecoder.write(chunk)))
+              child.stderr.on('data', chunk => append(stderrDecoder.write(chunk)))
               const timeoutMs = Math.min(Math.max(command.timeoutMs ?? 120_000, 1_000), 1_800_000)
               let timedOut = false
               const timeout = setTimeout(() => {
                 timedOut = true
-                append(Buffer.from(`\nPageFlow stopped this test after ${timeoutMs}ms.`))
+                append(`\nPageFlow stopped this test after ${timeoutMs}ms.`)
                 void terminateProcessTree(child)
               }, timeoutMs)
               const exitCode = await new Promise<number>((resolveExit, reject) => {
                 child.once('error', reject)
                 child.once('close', code => resolveExit(code ?? 1))
               }).finally(() => clearTimeout(timeout))
+              append(stdoutDecoder.end())
+              append(stderrDecoder.end())
               const cancelled = cancelledPageTests.has(id)
-              if (cancelled) append(Buffer.from('\nPageFlow cancelled this test.'))
+              if (cancelled) append('\nPageFlow cancelled this test.')
               const result = {
                 status: cancelled ? 'skipped' as const : !timedOut && exitCode === 0 ? 'passed' as const : 'failed' as const,
                 duration: Date.now() - startedAt,
-                output: output.trim(),
+                output: stripVTControlCharacters(output).trim(),
               }
               await pageTestResultCache?.write(test, result).catch(error =>
                 server.config.logger.warn(`unplugin-pageflow could not persist a test result: ${error instanceof Error ? error.message : error}`),
@@ -713,11 +728,9 @@ const factory: UnpluginFactory<PageFlowOptions | undefined> = (options) => {
           }
 
           if (pathname === clientVersionPath && request.method === 'GET') {
-            const files = [clientEntryFile, clientStyleFile].filter((file): file is string => Boolean(file))
-            const versions = await Promise.all(files.map(file => stat(file).then(info => info.mtimeMs).catch(() => 0)))
             response.setHeader('Content-Type', 'text/plain; charset=utf-8')
             response.setHeader('Cache-Control', 'no-store')
-            response.end(String(Math.max(...versions)))
+            response.end(await getClientVersion())
             return
           }
 
@@ -869,7 +882,7 @@ const factory: UnpluginFactory<PageFlowOptions | undefined> = (options) => {
 
           response.statusCode = 200
           response.setHeader('Content-Type', 'text/html; charset=utf-8')
-          response.end(pageflowHtml(server.config.base, clientStyleFile ? stylePath : undefined, clientVersionPath))
+          response.end(pageflowHtml(server.config.base, clientStyleFile ? stylePath : undefined, clientVersionPath, await getClientVersion()))
         })
 
         server.httpServer?.once('listening', () => {

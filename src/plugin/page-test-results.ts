@@ -1,5 +1,6 @@
 import { mkdir, readFile, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
+import { stripVTControlCharacters } from 'node:util'
 import type { PageFlowPageTest } from '../shared/types.ts'
 
 const RESULTS_FILE = 'test-results.json'
@@ -37,7 +38,11 @@ export function createPageTestResultCache(cacheDirectory: string) {
     async read(test: PageFlowPageTest): Promise<TestResult | undefined> {
       const stored = (await results())[test.id]
       if (!stored || !test.revision || stored.revision !== test.revision) return
-      return { status: stored.status, duration: stored.duration, output: stored.output }
+      return {
+        status: stored.status,
+        duration: stored.duration,
+        output: stored.output == null ? undefined : stripVTControlCharacters(stored.output),
+      }
     },
 
     async write(test: PageFlowPageTest, result: TestResult) {
@@ -45,7 +50,7 @@ export function createPageTestResultCache(cacheDirectory: string) {
       const value = await results()
       value[test.id] = {
         ...result,
-        output: result.output?.slice(-MAXIMUM_OUTPUT_LENGTH),
+        output: result.output == null ? undefined : stripVTControlCharacters(result.output).slice(-MAXIMUM_OUTPUT_LENGTH),
         revision: test.revision,
         updatedAt: Date.now(),
       }

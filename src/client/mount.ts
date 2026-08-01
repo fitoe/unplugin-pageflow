@@ -6,6 +6,8 @@ import type { ResolvedPageFlowOptions } from '../shared/types'
 
 export function mountPageFlow(target: Element | null, config: ResolvedPageFlowOptions) {
   if (!target) throw new Error('unplugin-pageflow mount target was not found')
-  document.documentElement.classList.add('dark')
+  const storedColorMode = localStorage.getItem('unplugin-pageflow:color-mode')
+  const dark = storedColorMode === 'dark' || (storedColorMode !== 'light' && matchMedia('(prefers-color-scheme: dark)').matches)
+  document.documentElement.classList.toggle('dark', dark)
   return createApp(App, { config }).use(ui).mount(target)
 }

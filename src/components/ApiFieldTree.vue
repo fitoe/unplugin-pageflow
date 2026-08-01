@@ -22,17 +22,19 @@ function displayValue(value: string | undefined) {
 
 <template>
   <UTree
+    class="api-field-tree"
     :items="nodes"
     :default-expanded="defaultExpanded"
     :get-key="node => node.key"
     :on-select="event => event.preventDefault()"
   >
     <template #item="{ item, expanded, handleToggle }">
-      <span v-if="item.children.length" aria-hidden="true" @click.stop="handleToggle">{{ expanded ? '▾' : '▸' }}</span>
-      <span>{{ item.label }}</span>
-      <span>:</span>
-      <span v-if="item.children.length">{{ branchSummary(item) }}</span>
-      <span v-else>{{ displayValue(item.value) }}</span>
+      <span v-if="item.children.length" class="api-tree-toggle" aria-hidden="true" @click.stop="handleToggle">{{ expanded ? '▾' : '▸' }}</span>
+      <span class="api-tree-key">{{ item.label }}</span>
+      <span class="api-tree-colon">:</span>
+      <span class="api-tree-value" :class="{ branch: item.children.length }">
+        {{ item.children.length ? branchSummary(item) : displayValue(item.value) }}
+      </span>
     </template>
   </UTree>
 </template>

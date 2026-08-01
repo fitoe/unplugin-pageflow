@@ -1,7 +1,12 @@
 <script setup lang="ts">
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
+import UAccordion from '@nuxt/ui/components/Accordion.vue'
+import UAvatar from '@nuxt/ui/components/Avatar.vue'
+import UBadge from '@nuxt/ui/components/Badge.vue'
+import UButton from '@nuxt/ui/components/Button.vue'
 import UCollapsible from '@nuxt/ui/components/Collapsible.vue'
 import UDropdownMenu from '@nuxt/ui/components/DropdownMenu.vue'
+import UHeader from '@nuxt/ui/components/Header.vue'
 import UInputMenu from '@nuxt/ui/components/InputMenu.vue'
 import UTabs from '@nuxt/ui/components/Tabs.vue'
 import { Leafer, Text, Group, MoveEvent, Path, ZoomEvent } from 'leafer-ui'
@@ -39,6 +44,7 @@ import { cachedPreviewUsers, configuredUsers, loadUserSessions, saveUserSessions
 import LayoutWorker from './client/layout.worker?worker&inline'
 import ApiFieldTree from './components/ApiFieldTree.vue'
 import { focusTargetSetKey, planPageUpdate } from './client/page-update'
+import { initialPreviewMode } from './client/preview-mode'
 import {
   fetchThumbnailManifest,
   fullThumbnailTiles,
@@ -83,10 +89,9 @@ const initialUserSessions = loadUserSessions()
 
 function storedPreviewMode(): PageFlowPreviewMode {
   try {
-    const mode = localStorage.getItem(PREVIEW_MODE_STORAGE_KEY)
-    return mode && mode in previewModes ? mode as PageFlowPreviewMode : 'mobile'
+    return initialPreviewMode(localStorage.getItem(PREVIEW_MODE_STORAGE_KEY), props.config.framework)
   } catch {
-    return 'mobile'
+    return initialPreviewMode(null, props.config.framework)
   }
 }
 
@@ -146,6 +151,7 @@ const readyPreviewIds = ref(new Set<string>())
 const routeMode = ref<PageFlowRouteMode>('history')
 const capturePreviewId = ref<string>()
 const copiedPath = ref<string>()
+const darkMode = ref(document.documentElement.classList.contains('dark'))
 const searchOpen = ref(false)
 const searchSelection = ref<string>()
 const searchRoot = ref<HTMLDivElement>()
@@ -322,9 +328,22 @@ const connectionPaths = computed(() => focusScene.value?.connections ?? [])
 const focusedApiResults = computed(() => focusedPageId.value ? apiResultsByPage.value[focusedPageId.value] ?? [] : [])
 
 const testKindLabels: Record<PageFlowPageTest['kind'], string> = { e2e: 'E2E', component: '组件', unit: '单元' }
-const testSourceLabels: Record<PageFlowPageTest['source'], string> = { config: '显式配置', import: '组件引用', route: '页面路由', convention: '同名文件' }
 const testStatusLabels: Record<PageFlowPageTest['status'], string> = { unknown: '未运行', passed: '通过', failed: '失败', skipped: '跳过' }
 const runnableFocusedTests = computed(() => focusedPageTests.value.filter(test => test.runnable))
+
+function testStatusLabel(test: PageFlowPageTest) {
+  if (test.duration == null) return testStatusLabels[test.status]
+  const duration = test.duration >= 1000
+    ? `${Number((test.duration / 1000).toFixed(1))}s`
+    : `${test.duration}ms`
+  return `${testStatusLabels[test.status]} · ${duration}`
+}
+
+const ansiControlPattern = new RegExp(`${String.fromCharCode(27)}\\[[0-?]*[ -/]*[@-~]`, 'g')
+
+function cleanTestOutput(output: string) {
+  return output.replace(ansiControlPattern, '')
+}
 const focusedTestSummary = computed(() => focusedPageTests.value.reduce((summary, test) => {
   summary[test.status]++
   return summary
@@ -405,6 +424,34 @@ function toggleApiResult(id: string) {
 
 function visibleApiFields(result: PageFlowApiResult) {
   return expandedApiResults.value.has(result.id) ? result.fields : result.fields.filter(field => field.used)
+}
+
+function apiRoute(url: string) {
+  let pathname = url.split(/[?#]/, 1)[0]
+  try {
+    pathname = new URL(url, 'http://pageflow.local').pathname
+  } catch {
+    // Keep the path extracted from malformed or non-standard request URLs.
+  }
+  return pathname.replace(/^\/(?:api|(?:prod|dev|test|stage)-api)(?=\/|$)/, '') || '/'
+}
+
+const apiAccordionItems = computed(() => focusedApiResults.value.map(result => ({
+  ...result,
+  value: result.id,
+  label: apiRoute(result.url),
+})))
+
+const apiMethodColors = {
+  GET: 'success',
+  POST: 'info',
+  PUT: 'warning',
+  PATCH: 'secondary',
+  DELETE: 'error',
+} as const
+
+function apiMethodColor(method: string) {
+  return apiMethodColors[method.toUpperCase() as keyof typeof apiMethodColors] ?? 'neutral'
 }
 
 function visibleApiFieldTree(result: PageFlowApiResult) {
@@ -1644,6 +1691,7 @@ function createCardGroup(page: PageFlowPage, x: number, y: number, scale = 1, hi
     tiles: compactOnly ? (compact ? [compact] : []) : pageThumbnailTiles(page),
     thumbnailSource,
     copied: copiedPath.value === page.path,
+    dark: darkMode.value,
   })
 }
 
@@ -1657,7 +1705,16 @@ function createDeckGroup(page: PageFlowPage, x: number, y: number) {
     count: deck.pages.length,
     layerPages: visibleDeckLayerPages(page.id),
     createLayer: (deckPage, layerX, layerY) => createCardGroup(deckPage, layerX, layerY, 1, false, true, true),
+    dark: darkMode.value,
   })
+}
+
+function toggleColorMode() {
+  darkMode.value = !darkMode.value
+  document.documentElement.classList.toggle('dark', darkMode.value)
+  localStorage.setItem('unplugin-pageflow:color-mode', darkMode.value ? 'dark' : 'light')
+  cardNodes?.clear()
+  scheduleCanvasRender()
 }
 function renderCanvasScene() {
   if (!leafer) return
@@ -1757,6 +1814,7 @@ function renderCanvasScene() {
         return `${deckPage.id}:${deckPage.title}:${compact ? thumbnailSource(compact) ?? '' : ''}`
       }) ?? []),
       focusTargets.has(page.id),
+      darkMode.value,
       ...tiles.map(record => `${record.slot}:${thumbnailSource(record) ?? ''}:${record.tileTop ?? 0}:${record.height}`),
     ].join('|')
     cardNodes?.upsert(page.id, cardSignature, () => {
@@ -1778,9 +1836,9 @@ function renderCanvasScene() {
           || (Math.abs((connection.centerX ?? 0.5) - hover.centerX) < 0.002
             && Math.abs((connection.centerY ?? 0.5) - hover.centerY) < 0.002)))
       const opacity = hover && highlighted ? 0.5 + hoverFadeProgress * 0.5 : 0.5
-      connectionNodes?.upsert(connection.id, connection.d, () => new Path({
+      connectionNodes?.upsert(connection.id, `${connection.d}:${darkMode.value}`, () => new Path({
           path: connection.d,
-          stroke: '#ff79b8',
+          stroke: darkMode.value ? '#d4d4d4' : '#525252',
           strokeWidth: 2,
           strokeScaleFixed: true,
           endArrow: 'triangle',
@@ -2041,9 +2099,17 @@ onUnmounted(() => {
 
 <template>
   <main @dragstart.prevent>
-    <header>
-      <div class="brand"><span>✦</span> unplugin-pageflow</div>
-      <div class="crumb">{{ routeDeckView.decks.length }} 组 / {{ pages.length }} 页</div>
+    <UHeader
+      :toggle="false"
+      :ui="{
+        container: 'h-full max-w-none px-[18px]',
+        center: 'flex-1 gap-6',
+        right: 'gap-6',
+      }"
+    >
+      <template #left>
+        <div class="brand"><span>✦</span> unplugin-pageflow</div>
+      </template>
       <div ref="searchRoot" class="quick-search">
         <UInputMenu
           v-model:open="searchOpen"
@@ -2051,6 +2117,8 @@ onUnmounted(() => {
           :items="pages"
           value-key="id"
           label-key="title"
+          description-key="path"
+          :filter-fields="['title', 'path']"
           icon="i-lucide-search"
           placeholder="搜索页面…"
           open-on-focus
@@ -2058,42 +2126,48 @@ onUnmounted(() => {
           @update:model-value="selectSearchPage"
         >
           <template #trailing><kbd>⌘K</kbd></template>
-          <template #item="{ item }">
-            <span>{{ item.title }}</span>
-            <code>{{ item.path }}</code>
-          </template>
           <template #empty>没有匹配页面</template>
         </UInputMenu>
       </div>
-      <div class="viewport-switch-layout">
-        <UTabs
-          :model-value="previewMode"
-          :items="viewportTabs"
-          :content="false"
-          aria-label="Preview viewport"
-          @update:model-value="value => value && setPreviewMode(value as PageFlowPreviewMode)"
-        >
-        </UTabs>
-      </div>
-      <div class="user-menu">
-        <UDropdownMenu :items="headerUserMenuItems" :content="{ align: 'end', sideOffset: 7 }">
-          <button type="button" :title="activeUser">
-            {{ activeUser?.slice(0, 1).toUpperCase() }}
-          </button>
-          <template #item-leading="{ item }">
-            <span>{{ item.user?.slice(0, 1).toUpperCase() }}</span>
-          </template>
-          <template #item-trailing="{ item }">
-            <button v-if="item.user" type="button" :aria-label="`编辑 ${item.user} 的备注`" :title="userNotes[item.user] || '添加备注'" @click.stop.prevent="editUserNote(item.user)">
-              <svg viewBox="0 0 16 16" aria-hidden="true">
-                <path d="M10.8 2.2a1.4 1.4 0 0 1 2 2L5.2 11.8 2.5 12.5l.7-2.7z" />
-                <path d="m9.8 3.2 2 2" />
-              </svg>
+      <template #right>
+        <div class="viewport-switch-layout">
+          <UTabs
+            :model-value="previewMode"
+            :items="viewportTabs"
+            :content="false"
+            aria-label="Preview viewport"
+            @update:model-value="value => value && setPreviewMode(value as PageFlowPreviewMode)"
+          >
+          </UTabs>
+        </div>
+        <UButton
+          color="neutral"
+          variant="ghost"
+          size="sm"
+          :icon="darkMode ? 'i-lucide-sun' : 'i-lucide-moon'"
+          :aria-label="darkMode ? '切换到浅色模式' : '切换到暗黑模式'"
+          @click="toggleColorMode"
+        />
+        <div class="user-menu">
+          <UDropdownMenu :items="headerUserMenuItems" :content="{ align: 'end', sideOffset: 7 }">
+            <button type="button" :title="activeUser" :aria-label="`当前用户：${activeUser}`">
+              <UAvatar :alt="activeUser" size="sm" />
             </button>
-          </template>
-        </UDropdownMenu>
-      </div>
-    </header>
+            <template #item-leading="{ item }">
+              <span>{{ item.user?.slice(0, 1).toUpperCase() }}</span>
+            </template>
+            <template #item-trailing="{ item }">
+              <button v-if="item.user" type="button" :aria-label="`编辑 ${item.user} 的备注`" :title="userNotes[item.user] || '添加备注'" @click.stop.prevent="editUserNote(item.user)">
+                <svg viewBox="0 0 16 16" aria-hidden="true">
+                  <path d="M10.8 2.2a1.4 1.4 0 0 1 2 2L5.2 11.8 2.5 12.5l.7-2.7z" />
+                  <path d="m9.8 3.2 2 2" />
+                </svg>
+              </button>
+            </template>
+          </UDropdownMenu>
+        </div>
+      </template>
+    </UHeader>
     <section class="workspace" :class="{ 'scene-ready': initialSceneReady }">
       <div ref="canvas" class="canvas"></div>
       <div class="preview-overlay" @wheel="handleOverlayWheel">
@@ -2146,69 +2220,107 @@ onUnmounted(() => {
       </div>
       <div ref="connectionCanvas" class="connection-canvas"></div>
       <aside v-if="focusedPageId" class="api-panel">
-      <UTabs v-model="panelTab" :items="panelTabs" aria-label="页面详情">
+      <UTabs v-model="panelTab" class="api-panel-tabs" :items="panelTabs" variant="link" aria-label="页面详情">
         <template #api>
           <div v-if="focusedApiResults.length" class="api-panel-list">
-          <UCollapsible
-            v-for="result in focusedApiResults"
-            :key="result.id"
-            :open="openApiResultId === result.id"
-            @update:open="openApiResultId = $event ? result.id : undefined"
-          >
-            <button type="button">
-              <span class="api-method">{{ result.method }}</span>
-              <code>{{ result.url }}</code>
-              <small :class="{ error: result.status >= 400 }">{{ result.status }} · {{ result.duration }}ms</small>
-            </button>
-            <template #content>
-              <div v-if="visibleApiFields(result).length" class="api-fields">
-                <ApiFieldTree :nodes="visibleApiFieldTree(result)" />
-              </div>
-              <div v-else class="api-empty">页面暂未展示返回字段</div>
-              <button v-if="result.fields.some(field => !field.used)" type="button" class="api-expand" @click="toggleApiResult(result.id)">
-                {{ expandedApiResults.has(result.id) ? '收起未使用字段' : `展开 ${result.fields.filter(field => !field.used).length} 个未使用字段` }}
-              </button>
-            </template>
-          </UCollapsible>
+            <UAccordion v-model="openApiResultId" :items="apiAccordionItems">
+              <template #leading="{ item: result }">
+                <UBadge :label="result.method" :color="apiMethodColor(result.method)" variant="soft" size="sm" />
+              </template>
+              <template #default="{ item: result }">
+                <span class="min-w-0">
+                  <span class="block truncate">{{ result.label }}</span>
+                  <span class="block text-xs text-muted">{{ result.status }} · {{ result.duration }}ms</span>
+                </span>
+              </template>
+              <template #body="{ item: result }">
+                <div>
+                  <div v-if="visibleApiFields(result).length" class="api-fields">
+                    <ApiFieldTree :nodes="visibleApiFieldTree(result)" />
+                  </div>
+                  <div v-else class="api-empty">页面暂未展示返回字段</div>
+                  <UButton
+                    v-if="result.fields.some(field => !field.used)"
+                    color="neutral"
+                    variant="link"
+                    size="xs"
+                    :trailing-icon="expandedApiResults.has(result.id) ? 'i-lucide-chevron-up' : 'i-lucide-chevron-down'"
+                    @click="toggleApiResult(result.id)"
+                  >
+                    {{ expandedApiResults.has(result.id) ? '隐藏未使用字段' : `显示未使用字段（${result.fields.filter(field => !field.used).length}）` }}
+                  </UButton>
+                </div>
+              </template>
+            </UAccordion>
           </div>
           <div v-else class="api-panel-waiting">等待页面接口响应…</div>
         </template>
         <template #tests>
           <div v-if="focusedTestsLoading" class="api-panel-waiting">正在整理页面测试…</div>
           <div v-else-if="focusedTestsFailed" class="api-panel-waiting">页面测试加载失败</div>
-          <div v-else-if="focusedPageTests.length" class="api-panel-list page-test-list">
-          <div class="page-test-toolbar">
-            <span>通过 {{ focusedTestSummary.passed }} · 失败 {{ focusedTestSummary.failed }} · 未运行 {{ focusedTestSummary.unknown }}</span>
-            <button v-if="runnableFocusedTests.length" type="button" :class="{ stop: runningAllPageTests }" @click="runningAllPageTests ? stopAllFocusedPageTests() : runAllFocusedPageTests()">
-              {{ runningAllPageTests ? '停止运行' : `运行全部 ${runnableFocusedTests.length}` }}
-            </button>
-          </div>
-          <section v-for="test in focusedPageTests" :key="test.id" class="page-test">
-            <div class="page-test-heading">
-              <strong>{{ test.name }}</strong>
-              <span>{{ testKindLabels[test.kind] }}</span>
-            </div>
-            <code :title="test.file">{{ test.file }}{{ test.line ? `:${test.line}` : '' }}</code>
-            <div class="page-test-meta">
-              <span>{{ testSourceLabels[test.source] }}</span>
-              <span :class="test.status">{{ testStatusLabels[test.status] }}{{ test.duration != null ? ` · ${test.duration}ms` : '' }}</span>
-              <button
-                v-if="test.runnable"
-                type="button"
-                :class="{ stop: runningPageTestIds.has(test.id) }"
-                :disabled="runningAllPageTests && !runningPageTestIds.has(test.id)"
-                @click="runningPageTestIds.has(test.id) ? cancelFocusedPageTest(test) : runFocusedPageTest(test)"
+          <div v-else-if="focusedPageTests.length" class="api-panel-list">
+            <div class="sticky top-0 z-10 flex items-center gap-2 border-b border-default bg-default py-2">
+              <div class="min-w-0 flex-1">
+                <div class="text-sm font-medium text-highlighted">页面测试</div>
+                <div class="mt-0.5 text-xs text-muted">
+                  {{ focusedPageTests.length }} 项 · {{ focusedTestSummary.passed }} 通过 · {{ focusedTestSummary.failed }} 失败 · {{ focusedTestSummary.unknown }} 未运行
+                </div>
+              </div>
+              <UButton
+                v-if="runnableFocusedTests.length"
+                class="shrink-0"
+                :color="runningAllPageTests ? 'error' : 'primary'"
+                :variant="runningAllPageTests ? 'soft' : 'outline'"
+                size="xs"
+                :icon="runningAllPageTests ? 'i-lucide-square' : 'i-lucide-play'"
+                @click="runningAllPageTests ? stopAllFocusedPageTests() : runAllFocusedPageTests()"
               >
-                {{ runningPageTestIds.has(test.id) ? '取消' : '运行' }}
-              </button>
+                {{ runningAllPageTests ? '停止' : `运行全部 ${runnableFocusedTests.length}` }}
+              </UButton>
             </div>
-            <UCollapsible v-if="test.output">
-              <button type="button">查看输出</button>
-              <template #content>
-                <pre class="page-test-output">{{ test.output }}</pre>
-              </template>
-            </UCollapsible>
-          </section>
+            <div class="divide-y divide-default">
+              <div v-for="test in focusedPageTests" :key="test.id" class="py-3">
+                <div class="min-w-0">
+                  <div class="flex items-center gap-2">
+                    <div class="min-w-0 flex-1 break-words text-sm font-medium leading-5 text-highlighted" :title="`${test.file}${test.line ? `:${test.line}` : ''}`">
+                      {{ test.name }}
+                    </div>
+                    <UButton
+                      class="shrink-0"
+                      :color="runningPageTestIds.has(test.id) ? 'error' : 'neutral'"
+                      :variant="runningPageTestIds.has(test.id) ? 'soft' : 'ghost'"
+                      size="sm"
+                      :icon="runningPageTestIds.has(test.id) ? 'i-lucide-square' : 'i-lucide-play'"
+                      :aria-label="runningPageTestIds.has(test.id) ? `取消 ${test.name}` : `运行 ${test.name}`"
+                      :title="test.runnable ? undefined : `未配置 ${testKindLabels[test.kind]} 测试命令`"
+                      :disabled="!test.runnable || (runningAllPageTests && !runningPageTestIds.has(test.id))"
+                      @click="runningPageTestIds.has(test.id) ? cancelFocusedPageTest(test) : runFocusedPageTest(test)"
+                    />
+                  </div>
+                  <UCollapsible v-if="test.output">
+                    <UButton
+                      class="mt-1 p-0"
+                      :color="test.status === 'passed' ? 'success' : test.status === 'failed' ? 'error' : 'neutral'"
+                      variant="link"
+                      size="xs"
+                      trailing-icon="i-lucide-chevron-down"
+                    >
+                      {{ testStatusLabel(test) }}
+                    </UButton>
+                    <template #content>
+                      <pre class="page-test-output">{{ cleanTestOutput(test.output) }}</pre>
+                    </template>
+                  </UCollapsible>
+                  <div
+                    v-else-if="test.status !== 'unknown'"
+                    class="mt-1 text-xs"
+                    :class="test.status === 'passed' ? 'text-success' : test.status === 'failed' ? 'text-error' : 'text-muted'"
+                  >
+                    {{ testStatusLabel(test) }}
+                  </div>
+                </div>
+              </div>
+            </div>
           </div>
           <div v-else class="api-panel-waiting">暂未发现属于此页面的测试</div>
         </template>
@@ -2216,6 +2328,6 @@ onUnmounted(() => {
       </aside>
     </section>
     <div class="zoom"><button type="button" @click="zoomCanvas('in')">+</button><span>{{ zoomPercent }}%</span><button type="button" @click="zoomCanvas('out')">−</button></div>
-    <footer><span><i></i> {{ status }}</span><span>Last synced just now</span></footer>
+    <footer><span><i></i> {{ status }}</span><span>{{ routeDeckView.decks.length }} 组 / {{ pages.length }} 页</span></footer>
   </main>
 </template>
