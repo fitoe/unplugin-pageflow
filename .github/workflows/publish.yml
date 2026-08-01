@@ -3,6 +3,8 @@ name: Publish to npm
 on:
   push:
     branches: [master, main]
+    paths-ignore:
+      - 'docs/**'
 
 permissions:
   contents: write
