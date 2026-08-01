@@ -41,6 +41,8 @@ features:
     details: PageFlow 用来帮助开发，不会给正式上线的应用增加运行代码。
 ---
 
+<FrameworkGrid title="支持的框架" link="/zh/reference/compatibility" />
+
 ## 页面越多，越难看全
 
 应用变大后，很少有人能在一个地方看到全部内容。开发看路由文件，设计看原型，测试看用例，每个人还要在脑子里记住一部分流程。这些信息很快就会对不上。

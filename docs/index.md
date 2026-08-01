@@ -41,6 +41,8 @@ features:
     details: Use PageFlow while building the app. Nothing is added to the production experience.
 ---
 
+<FrameworkGrid title="Supported frameworks" link="/reference/compatibility" />
+
 ## More pages, less visibility
 
 As an app grows, no one sees all of it in one place. Developers read route files, designers check mockups, testers follow test cases, and everyone keeps part of the flow in their head. Those views quickly drift apart.

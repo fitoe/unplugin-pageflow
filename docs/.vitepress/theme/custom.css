@@ -1,0 +1,13 @@
+@media (min-width: 960px) {
+  .VPHero.has-image .image-container {
+    width: 100%;
+    height: auto;
+    aspect-ratio: 1000 / 620;
+  }
+
+  .VPHero.has-image .image-src {
+    width: 100%;
+    max-width: none;
+    max-height: none;
+  }
+}
