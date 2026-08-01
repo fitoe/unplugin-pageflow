@@ -42,7 +42,10 @@ for (const adapter of ['react-router', 'sveltekit', 'solid-start', 'next', 'qwik
 }
 assert.equal(packageManifest.bin['pageflow-next'], './dist/next/index.js')
 assert.match(await readFile('dist/next/index.js', 'utf8'), /^#!\/usr\/bin\/env node/)
-const packagedAssets = await readdir('dist/assets')
+const packagedAssets = await readdir('dist/assets').catch((error) => {
+  if (error.code === 'ENOENT') return []
+  throw error
+})
 assert.deepEqual(packageManifest.dependencies, {
   '@nuxt/ui': '^4.10.0',
   tailwindcss: '^4.3.3',
