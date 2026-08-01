@@ -35,6 +35,6 @@ jobs:
         run: pnpm run check
 
       - name: Release
-        run: npx --yes semantic-release@25
+        run: npx --yes --package semantic-release@25.0.8 --package @semantic-release/npm@13.1.5 semantic-release
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
