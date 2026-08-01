@@ -1,4 +1,4 @@
-import type { PageFlowGraph, PageFlowPage, PageFlowPageTest, ResolvedPageFlowOptions } from '../shared/types'
+import type { PageFlowGraph, PageFlowLighthouseReport, PageFlowLighthouseSession, PageFlowPage, PageFlowPageTest, ResolvedPageFlowOptions } from '../shared/types'
 import { PAGEFLOW_GRAPH_EVENT, PAGEFLOW_PAGE_EVENT, PAGEFLOW_TEST_EVENT } from '../shared/protocol'
 
 export async function fetchPageFlowGraph(config: ResolvedPageFlowOptions) {
@@ -20,6 +20,19 @@ export async function fetchPageFlowTests(config: ResolvedPageFlowOptions, path: 
   const response = await fetch(`${config.previewPath}api/tests?path=${encodeURIComponent(path)}`)
   if (!response.ok) throw new Error(`Failed to load page tests: ${response.status}`)
   return response.json() as Promise<PageFlowPageTest[]>
+}
+
+export async function runPageFlowLighthouse(config: ResolvedPageFlowOptions, path: string, session?: PageFlowLighthouseSession): Promise<PageFlowLighthouseReport> {
+  const response = await fetch(`${config.previewPath}api/lighthouse`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ path, session }),
+  })
+  if (!response.ok) {
+    const body = await response.json().catch(() => ({})) as { error?: string }
+    throw new Error(body.error || `Lighthouse audit failed (${response.status})`)
+  }
+  return response.json()
 }
 
 export async function runPageFlowTest(config: ResolvedPageFlowOptions, path: string, id: string) {

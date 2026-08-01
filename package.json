@@ -90,9 +90,9 @@
     "docs:dev": "vitepress dev docs --host 127.0.0.1 --port 4854",
     "docs:build": "vitepress build docs",
     "docs:preview": "vitepress preview docs",
-    "dev:plugin": "concurrently -k -n plugin,client \"tsup src/plugin/index.ts src/runtime/client.ts src/runtime/state.ts src/nuxt/index.ts src/astro/index.ts src/react-router/index.ts src/sveltekit/index.ts src/solid-start/index.ts src/next/index.ts src/qwik-city/index.ts --format esm --dts --splitting false --out-dir dist --external unplugin --external vue --external vue-router --external nuxt/kit --external astro --external next --external vite --tsconfig tsconfig.app.json --watch\" \"vite build --config vite.package.config.ts --watch\"",
+    "dev:plugin": "concurrently -k -n plugin,client \"tsup src/plugin/index.ts src/runtime/client.ts src/runtime/state.ts src/nuxt/index.ts src/astro/index.ts src/react-router/index.ts src/sveltekit/index.ts src/solid-start/index.ts src/next/index.ts src/qwik-city/index.ts --format esm --dts --splitting false --out-dir dist --external unplugin --external axe-core --external lighthouse --external chrome-launcher --external puppeteer-core --external vue --external vue-router --external nuxt/kit --external astro --external next --external vite --tsconfig tsconfig.app.json --watch\" \"vite build --config vite.package.config.ts --watch\"",
     "build": "npm run build:plugin && npm run build:demo",
-    "build:plugin": "tsup src/plugin/index.ts src/runtime/client.ts src/runtime/state.ts src/nuxt/index.ts src/astro/index.ts src/react-router/index.ts src/sveltekit/index.ts src/solid-start/index.ts src/next/index.ts src/qwik-city/index.ts --format esm --dts --splitting false --clean --out-dir dist --external unplugin --external vue --external vue-router --external nuxt/kit --external astro --external next --external vite --tsconfig tsconfig.app.json && node scripts/add-next-shebang.mjs && vite build --config vite.package.config.ts",
+    "build:plugin": "tsup src/plugin/index.ts src/runtime/client.ts src/runtime/state.ts src/nuxt/index.ts src/astro/index.ts src/react-router/index.ts src/sveltekit/index.ts src/solid-start/index.ts src/next/index.ts src/qwik-city/index.ts --format esm --dts --splitting false --clean --out-dir dist --external unplugin --external axe-core --external lighthouse --external chrome-launcher --external puppeteer-core --external vue --external vue-router --external nuxt/kit --external astro --external next --external vite --tsconfig tsconfig.app.json && node scripts/add-next-shebang.mjs && vite build --config vite.package.config.ts",
     "build:demo": "tsc -b && vite build",
     "build:playground": "vite build --config playground/basic/vite.config.ts",
     "check": "npm run build:plugin && npm test && npm run build:demo && npm run check:package && npm run build:playground && npm run check:production && npm run pack:check",
@@ -108,6 +108,10 @@
   },
   "dependencies": {
     "@nuxt/ui": "^4.10.0",
+    "axe-core": "^4.12.1",
+    "chrome-launcher": "^1.2.1",
+    "lighthouse": "^13.4.1",
+    "puppeteer-core": "^25.4.0",
     "tailwindcss": "^4.3.3",
     "unplugin": "^2.3.5"
   },

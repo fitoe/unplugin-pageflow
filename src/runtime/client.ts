@@ -4,7 +4,8 @@ import type {
 } from '../shared/types'
 import { PAGEFLOW_PREVIEW_PARAM } from './index'
 import { startPageFlowDomStatePersistence } from './state'
-import { PAGEFLOW_API_RESULT_MESSAGE, PAGEFLOW_HOTSPOT_HOVER_MESSAGE, PAGEFLOW_NAVIGATE_MESSAGE, PAGEFLOW_NETWORK_EVENT, PAGEFLOW_PAGE_REPORTED_MESSAGE, PAGEFLOW_READY_EVENT, PAGEFLOW_SCAN_MESSAGE, PAGEFLOW_SCAN_RESULT_MESSAGE } from '../shared/protocol'
+import { PAGEFLOW_API_RESULT_MESSAGE, PAGEFLOW_DIAGNOSTIC_HIGHLIGHT_MESSAGE, PAGEFLOW_DIAGNOSTICS_RESULT_MESSAGE, PAGEFLOW_DIAGNOSTICS_SCAN_MESSAGE, PAGEFLOW_HOTSPOT_HOVER_MESSAGE, PAGEFLOW_NAVIGATE_MESSAGE, PAGEFLOW_NETWORK_EVENT, PAGEFLOW_PAGE_REPORTED_MESSAGE, PAGEFLOW_READY_EVENT, PAGEFLOW_SCAN_MESSAGE, PAGEFLOW_SCAN_RESULT_MESSAGE } from '../shared/protocol'
+import { highlightDiagnosticElement, scanPageDiagnostics } from './diagnostics'
 import type { PageFlowRouterAdapter } from './adapters/types'
 import { findVueRouterAdapter } from './adapters/vue-router'
 import { findBrowserHistoryAdapter } from './adapters/browser-history'
@@ -528,11 +529,28 @@ export async function startPageFlowRuntime(config: ResolvedPageFlowOptions) {
   if (!runtimeWindow.__UNPLUGIN_PAGEFLOW_SCAN_BOUND__) {
     runtimeWindow.__UNPLUGIN_PAGEFLOW_SCAN_BOUND__ = true
     window.addEventListener('message', event => {
-      if (event.origin !== window.location.origin || event.data?.type !== PAGEFLOW_SCAN_MESSAGE) return
-      void scanRenderedPage(router!).then(page => {
-        if (window.parent !== window)
-          window.parent.postMessage({ type: PAGEFLOW_SCAN_RESULT_MESSAGE, page }, window.location.origin)
-      })
+      if (event.origin !== window.location.origin) return
+      if (event.data?.type === PAGEFLOW_SCAN_MESSAGE) {
+        void scanRenderedPage(router!).then(page => {
+          if (window.parent !== window)
+            window.parent.postMessage({ type: PAGEFLOW_SCAN_RESULT_MESSAGE, page }, window.location.origin)
+        })
+        return
+      }
+      if (event.data?.type === PAGEFLOW_DIAGNOSTICS_SCAN_MESSAGE) {
+        void scanRenderedPage(router!).then(async (page) => {
+          if (window.parent !== window) {
+            window.parent.postMessage({
+              type: PAGEFLOW_DIAGNOSTICS_RESULT_MESSAGE,
+              path: page.path,
+              diagnostics: await scanPageDiagnostics(),
+            }, window.location.origin)
+          }
+        })
+        return
+      }
+      if (event.data?.type === PAGEFLOW_DIAGNOSTIC_HIGHLIGHT_MESSAGE && typeof event.data.selector === 'string')
+        highlightDiagnosticElement(event.data.selector)
     })
   }
   if (previewMode && !runtimeWindow.__UNPLUGIN_PAGEFLOW_SCROLL_SCAN_BOUND__) {

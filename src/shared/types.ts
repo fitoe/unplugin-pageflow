@@ -131,3 +131,40 @@ export interface PageFlowPageTest {
   runnable?: boolean
   revision?: string
 }
+
+export type PageFlowDiagnosticSeverity = 'error' | 'warning' | 'suggestion'
+export type PageFlowDiagnosticCategory = 'accessibility' | 'visual' | 'interaction'
+
+export interface PageFlowDiagnostic {
+  id: string
+  ruleId: string
+  severity: PageFlowDiagnosticSeverity
+  category: PageFlowDiagnosticCategory
+  title: string
+  description: string
+  selector?: string
+  targetLabel?: string
+  measured?: Record<string, string | number>
+  source?: 'pageflow' | 'axe'
+}
+
+export interface PageFlowLighthouseIssue {
+  id: string
+  title: string
+  description: string
+  score: number | null
+  displayValue?: string
+  helpUrl?: string
+}
+
+export interface PageFlowLighthouseReport {
+  url: string
+  fetchedAt: string
+  scores: Record<'performance' | 'accessibility' | 'best-practices' | 'seo', number | null>
+  issues: PageFlowLighthouseIssue[]
+}
+
+export interface PageFlowLighthouseSession {
+  localStorage: Record<string, string>
+  sessionStorage: Record<string, string>
+}

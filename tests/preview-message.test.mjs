@@ -30,6 +30,20 @@ test('decodes supported preview messages and rejects malformed payloads', async 
       links: [{ label: 'Detail', to: '/detail' }],
     })
     assert.deepEqual(decodePreviewMessage({
+      type: 'unplugin-pageflow:diagnostics-result',
+      path: '/home',
+      diagnostics: [
+        { id: 'missing-alt:#hero', ruleId: 'missing-alt', severity: 'error', category: 'accessibility', title: '图片缺少 alt', description: '补充替代文本。', selector: '#hero' },
+        { id: 2, ruleId: 'invalid' },
+      ],
+    }), {
+      type: 'diagnostics-result',
+      path: '/home',
+      diagnostics: [
+        { id: 'missing-alt:#hero', ruleId: 'missing-alt', severity: 'error', category: 'accessibility', title: '图片缺少 alt', description: '补充替代文本。', selector: '#hero' },
+      ],
+    })
+    assert.deepEqual(decodePreviewMessage({
       type: 'unplugin-pageflow:navigate',
       to: '/detail',
       location: '/detail?id=7',
@@ -45,6 +59,7 @@ test('decodes supported preview messages and rejects malformed payloads', async 
     assert.equal(decodePreviewMessage({ type: 'unplugin-pageflow:api-result', result: {} }), undefined)
     assert.equal(decodePreviewMessage({ type: 'unplugin-pageflow:scan-result', page: {} }), undefined)
     assert.equal(decodePreviewMessage({ type: 'unplugin-pageflow:navigate', to: 7 }), undefined)
+    assert.equal(decodePreviewMessage({ type: 'unplugin-pageflow:diagnostics-result', path: '/home' }), undefined)
     assert.equal(decodePreviewMessage({ type: 'unknown' }), undefined)
   } finally {
     await server.close()

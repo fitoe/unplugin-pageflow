@@ -1,6 +1,7 @@
-import type { PageFlowApiResult, PageFlowLink } from '../shared/types'
+import type { PageFlowApiResult, PageFlowDiagnostic, PageFlowLink } from '../shared/types'
 import {
   PAGEFLOW_API_RESULT_MESSAGE,
+  PAGEFLOW_DIAGNOSTICS_RESULT_MESSAGE,
   PAGEFLOW_HOTSPOT_HOVER_MESSAGE,
   PAGEFLOW_NAVIGATE_MESSAGE,
   PAGEFLOW_PAGE_REPORTED_MESSAGE,
@@ -12,6 +13,7 @@ export type PreviewMessage =
   | { type: 'page-reported' }
   | { type: 'hotspot-hover'; targets: string[]; hotspot?: { centerX: number; centerY: number } }
   | { type: 'scan-result'; path: string; links: PageFlowLink[] }
+  | { type: 'diagnostics-result'; path: string; diagnostics: PageFlowDiagnostic[] }
   | { type: 'navigate'; to: string; location?: string; hotspot: boolean }
 
 export function decodePreviewMessage(data: unknown): PreviewMessage | undefined {
@@ -42,6 +44,19 @@ export function decodePreviewMessage(data: unknown): PreviewMessage | undefined 
       path: message.page.path,
       links: Array.isArray(message.page.links) ? message.page.links : [],
     }
+  }
+  if (message.type === PAGEFLOW_DIAGNOSTICS_RESULT_MESSAGE) {
+    if (typeof message.path !== 'string' || !Array.isArray(message.diagnostics)) return
+    const diagnostics = message.diagnostics.filter((item: unknown): item is PageFlowDiagnostic => {
+      if (!item || typeof item !== 'object') return false
+      const diagnostic = item as Record<string, unknown>
+      return typeof diagnostic.id === 'string'
+        && typeof diagnostic.ruleId === 'string'
+        && typeof diagnostic.title === 'string'
+        && typeof diagnostic.description === 'string'
+        && ['error', 'warning', 'suggestion'].includes(String(diagnostic.severity))
+    })
+    return { type: 'diagnostics-result', path: message.path, diagnostics }
   }
   if (message.type === PAGEFLOW_NAVIGATE_MESSAGE) {
     if (typeof message.to !== 'string') return

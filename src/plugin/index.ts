@@ -12,6 +12,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url'
 import { stripVTControlCharacters } from 'node:util'
 import type {
   PageFlowGraph,
+  PageFlowLighthouseSession,
   PageFlowOptions,
   PageFlowPage,
   PageFlowRuntimeLink,
@@ -32,6 +33,7 @@ import {
 import { createThumbnailCache } from './thumbnail-cache.ts'
 import { isPageFlowTestFile, PageTestIndex } from './page-tests.ts'
 import { createPageTestResultCache } from './page-test-results.ts'
+import { runPageFlowLighthouse } from './lighthouse.ts'
 import { PAGEFLOW_TEST_EVENT } from '../shared/protocol.ts'
 
 const ACCENTS = ['#ff795d', '#7c6cff', '#26b99a', '#e7ad43', '#dd648e']
@@ -572,6 +574,7 @@ const factory: UnpluginFactory<PageFlowOptions | undefined> = (options) => {
           rebuildGraph()
         }
         pageTestIndex = new PageTestIndex(projectRoot, routes, resolved.pageTests)
+        let lighthouseRunning = false
 
         server.middlewares.use(async (request, response, next) => {
           const requestUrl = new URL(request.url ?? '/', 'http://unplugin-pageflow.local')
@@ -586,6 +589,44 @@ const factory: UnpluginFactory<PageFlowOptions | undefined> = (options) => {
           const clientVersionPath = `${resolved.previewPath}api/client-version`
           const groupNamePath = `${resolved.previewPath}api/group-name`
           const testsPath = `${resolved.previewPath}api/tests`
+          const lighthousePath = `${resolved.previewPath}api/lighthouse`
+
+          if (pathname === lighthousePath && request.method === 'POST') {
+            if (lighthouseRunning) {
+              response.statusCode = 409
+              response.end('A Lighthouse audit is already running')
+              return
+            }
+            lighthouseRunning = true
+            try {
+              const body = await readJson(request)
+              const pageLocation = typeof body.path === 'string' ? body.path.trim() : ''
+              if (!pageLocation.startsWith('/') || pageLocation.startsWith('//')) throw new Error('A local page path is required')
+              const sessionValue = body.session && typeof body.session === 'object' ? body.session as Record<string, unknown> : undefined
+              if (sessionValue && JSON.stringify(sessionValue).length > 262_144) throw new Error('Lighthouse session data is too large')
+              const validStorage = (value: unknown): value is Record<string, string> => Boolean(value)
+                && typeof value === 'object'
+                && !Array.isArray(value)
+                && Object.entries(value as Record<string, unknown>).length <= 500
+                && Object.entries(value as Record<string, unknown>).every(([key, item]) => key.length <= 500 && typeof item === 'string')
+              if (sessionValue && (!validStorage(sessionValue.localStorage) || !validStorage(sessionValue.sessionStorage)))
+                throw new Error('Invalid Lighthouse session data')
+              const session = sessionValue as PageFlowLighthouseSession | undefined
+              const protocol = server.config.server.https ? 'https' : 'http'
+              const host = request.headers.host
+              if (!host) throw new Error('Could not determine the development server address')
+              const report = await runPageFlowLighthouse(new URL(pageLocation, `${protocol}://${host}`).href, session, request.headers.cookie)
+              response.setHeader('Content-Type', 'application/json; charset=utf-8')
+              response.end(JSON.stringify(report))
+            } catch (error) {
+              response.statusCode = 500
+              response.setHeader('Content-Type', 'application/json; charset=utf-8')
+              response.end(JSON.stringify({ error: error instanceof Error ? error.message : 'Lighthouse audit failed' }))
+            } finally {
+              lighthouseRunning = false
+            }
+            return
+          }
 
           if (pathname === testsPath && request.method === 'GET') {
             try {

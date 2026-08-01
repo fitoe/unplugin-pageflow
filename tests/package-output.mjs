@@ -48,6 +48,10 @@ const packagedAssets = await readdir('dist/assets').catch((error) => {
 })
 assert.deepEqual(packageManifest.dependencies, {
   '@nuxt/ui': '^4.10.0',
+  'axe-core': '^4.12.1',
+  'chrome-launcher': '^1.2.1',
+  lighthouse: '^13.4.1',
+  'puppeteer-core': '^25.4.0',
   tailwindcss: '^4.3.3',
   unplugin: '^2.3.5',
 })

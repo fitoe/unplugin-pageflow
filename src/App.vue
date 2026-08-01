@@ -9,11 +9,15 @@ import UDropdownMenu from '@nuxt/ui/components/DropdownMenu.vue'
 import UHeader from '@nuxt/ui/components/Header.vue'
 import UInputMenu from '@nuxt/ui/components/InputMenu.vue'
 import UTabs from '@nuxt/ui/components/Tabs.vue'
-import { Leafer, Text, Group, MoveEvent, Path, ZoomEvent } from 'leafer-ui'
+import { Leafer, Text, Group, MoveEvent, Path, Rect, ZoomEvent } from 'leafer-ui'
 import '@leafer-in/view'
 import '@leafer-in/viewport'
 import type {
   PageFlowLink,
+  PageFlowDiagnostic,
+  PageFlowDiagnosticSeverity,
+  PageFlowLighthouseReport,
+  PageFlowLighthouseSession,
   PageFlowPage,
   PageFlowPageTest,
   PageFlowApiResult,
@@ -22,10 +26,10 @@ import type {
   PageFlowThumbnailRecord,
   ResolvedPageFlowOptions,
 } from './shared/types'
-import { cancelPageFlowTest, fetchPageFlowGraph, fetchPageFlowTests, reportPageTitle, runPageFlowTest, startRouteDiscovery, subscribeToPageFlowUpdates } from './client/graph'
+import { cancelPageFlowTest, fetchPageFlowGraph, fetchPageFlowTests, reportPageTitle, runPageFlowLighthouse, runPageFlowTest, startRouteDiscovery, subscribeToPageFlowUpdates } from './client/graph'
 import { planGraphUpdate } from './client/graph-update'
 import { resolvePreviewUrl, touchPreviewCache } from './client/preview'
-import { PAGEFLOW_SCAN_MESSAGE } from './shared/protocol'
+import { PAGEFLOW_DIAGNOSTIC_HIGHLIGHT_MESSAGE, PAGEFLOW_DIAGNOSTICS_SCAN_MESSAGE, PAGEFLOW_SCAN_MESSAGE } from './shared/protocol'
 import { forwardWheelToCanvas, PAGEFLOW_CANVAS_CONFIG, type PageFlowWheelInteraction } from './client/canvas'
 import { CaptureQueue } from './client/capture-queue'
 import { planNextCapture } from './client/capture-planner'
@@ -39,6 +43,7 @@ import { SceneNodeCache } from './client/scene-node-cache'
 import { FrameAnimation } from './client/frame-animation'
 import { PreviewFrameRegistry } from './client/preview-frame-registry'
 import { decodePreviewMessage } from './client/preview-message'
+import { createDiagnosticReport, diagnosticReportFilename } from './client/diagnostic-report'
 import { buildApiFieldTree } from './client/api-field-tree'
 import { cachedPreviewUsers, configuredUsers, loadUserSessions, saveUserSessions, visibleSessionUsers } from './client/user-sessions'
 import LayoutWorker from './client/layout.worker?worker&inline'
@@ -132,7 +137,13 @@ const focusedLinks = ref<PageFlowLink[]>([])
 const apiResultsByPage = ref<Record<string, PageFlowApiResult[]>>({})
 const expandedApiResults = ref(new Set<string>())
 const openApiResultId = ref<string>()
-const panelTab = ref<'api' | 'tests'>('api')
+const panelTab = ref<'api' | 'tests' | 'diagnostics'>('api')
+const focusedDiagnostics = ref<PageFlowDiagnostic[]>([])
+const diagnosticsLoading = ref(false)
+const diagnosticSeverity = ref<'all' | PageFlowDiagnosticSeverity>('all')
+const lighthouseReport = ref<PageFlowLighthouseReport>()
+const lighthouseLoading = ref(false)
+const lighthouseError = ref('')
 const focusedPageTests = ref<PageFlowPageTest[]>([])
 const focusedTestsLoading = ref(false)
 const focusedTestsFailed = ref(false)
@@ -162,6 +173,7 @@ const overlayWorld = ref<HTMLDivElement>()
 const panelTabs = computed(() => [
   { value: 'api', label: '接口', badge: focusedApiResults.value.length, slot: 'api' },
   { value: 'tests', label: '测试', badge: focusedPageTests.value.length, slot: 'tests' },
+  { value: 'diagnostics', label: '诊断', badge: focusedDiagnostics.value.filter(item => item.severity === 'error').length, slot: 'diagnostics' },
 ])
 const headerUserMenuItems = computed(() => [
   [{ type: 'label' as const, label: '切换用户' }],
@@ -208,9 +220,14 @@ const forcedThumbnailRefreshIds = new Set<string>()
 const manualCaptureIds = new Set<string>()
 const previewFrames = new PreviewFrameRegistry()
 const previewChangeVersions = new Map<string, number>()
+const pageUpdateRipples = new Map<string, { group: Group, animation: FrameAnimation }>()
 const capturesInProgress = new Set<string>()
 const focusedPageStateCache = new FocusedPageStateCache()
 let focusedLinksScannedPageId: string | undefined
+let diagnosticsTimer: number | undefined
+let diagnosticsRequestTimer: number | undefined
+let diagnosticsInFlightPageId: string | undefined
+let diagnosticsRefreshQueued = false
 const pendingThumbnailRecords: PageFlowThumbnailManifest = {}
 let captureBatchIds = new Set<string>()
 let focusExitPending = false
@@ -326,6 +343,112 @@ const focusScene = computed(() => createFocusScene({
 }))
 const connectionPaths = computed(() => focusScene.value?.connections ?? [])
 const focusedApiResults = computed(() => focusedPageId.value ? apiResultsByPage.value[focusedPageId.value] ?? [] : [])
+interface FocusedDiagnosticGroup {
+  value: string
+  label: string
+  severity: PageFlowDiagnosticSeverity
+  source?: PageFlowDiagnostic['source']
+  description: string
+  items: PageFlowDiagnostic[]
+}
+
+const focusedDiagnosticGroups = computed(() => {
+  const severityOrder: Record<PageFlowDiagnosticSeverity, number> = { error: 0, warning: 1, suggestion: 2 }
+  const groups = new Map<string, FocusedDiagnosticGroup>()
+  for (const item of focusedDiagnostics.value) {
+    const value = `${item.source ?? 'pageflow'}:${item.ruleId}:${item.severity}`
+    const group = groups.get(value)
+    if (group) group.items.push(item)
+    else groups.set(value, {
+      value,
+      label: item.title,
+      severity: item.severity,
+      source: item.source,
+      description: item.description,
+      items: [item],
+    })
+  }
+  return [...groups.values()].sort((left, right) => severityOrder[left.severity] - severityOrder[right.severity])
+})
+const filteredFocusedDiagnosticGroups = computed(() => diagnosticSeverity.value === 'all'
+  ? focusedDiagnosticGroups.value
+  : focusedDiagnosticGroups.value.filter(group => group.severity === diagnosticSeverity.value))
+const diagnosticSummary = computed(() => focusedDiagnostics.value.reduce((summary, item) => {
+  summary[item.severity]++
+  return summary
+}, { error: 0, warning: 0, suggestion: 0 }))
+const diagnosticSeverityOptions: Array<{ value: 'all' | PageFlowDiagnosticSeverity, label: string }> = [
+  { value: 'all', label: '全部' },
+  { value: 'error', label: '错误' },
+  { value: 'warning', label: '警告' },
+  { value: 'suggestion', label: '建议' },
+]
+const diagnosticSeverityLabels: Record<PageFlowDiagnosticSeverity, string> = {
+  error: '错误',
+  warning: '警告',
+  suggestion: '建议',
+}
+
+function diagnosticColor(severity: PageFlowDiagnosticSeverity) {
+  return severity === 'error' ? 'error' : severity === 'warning' ? 'warning' : 'info'
+}
+
+const lighthouseCategoryLabels: Record<keyof PageFlowLighthouseReport['scores'], string> = {
+  performance: '性能',
+  accessibility: '无障碍',
+  'best-practices': '最佳实践',
+  seo: 'SEO',
+}
+
+function lighthouseScoreColor(score: number | null) {
+  if (score == null) return 'neutral'
+  if (score >= 90) return 'success'
+  if (score >= 50) return 'warning'
+  return 'error'
+}
+
+async function runFocusedLighthouse() {
+  const page = pages.value.find(item => item.id === focusedPageId.value)
+  if (!page || lighthouseLoading.value) return
+  lighthouseLoading.value = true
+  lighthouseError.value = ''
+  try {
+    const frame = previewFrames.get(page.id)
+    let path = page.path
+    let session: PageFlowLighthouseSession | undefined
+    if (frame?.contentWindow) {
+      const location = new URL(frame.contentWindow.location.href)
+      location.searchParams.delete('__unplugin-pageflow_preview')
+      path = `${location.pathname}${location.search}${location.hash}`
+      const readStorage = (storage: Storage) => Object.fromEntries(Array.from({ length: storage.length }, (_, index) => {
+        const key = storage.key(index)
+        return key == null ? undefined : [key, storage.getItem(key) ?? ''] as const
+      }).filter(entry => entry != null))
+      session = {
+        localStorage: readStorage(frame.contentWindow.localStorage),
+        sessionStorage: readStorage(frame.contentWindow.sessionStorage),
+      }
+      if (JSON.stringify(session).length > 262_144) throw new Error('当前页面会话数据过大，无法安全传给 Lighthouse')
+    }
+    lighthouseReport.value = await runPageFlowLighthouse(props.config, path, session)
+  } catch (error) {
+    lighthouseError.value = error instanceof Error ? error.message : 'Lighthouse 审计失败'
+  } finally {
+    lighthouseLoading.value = false
+  }
+}
+
+function exportFocusedDiagnostics() {
+  const page = pages.value.find(item => item.id === focusedPageId.value)
+  if (!page) return
+  const report = createDiagnosticReport(page, focusedDiagnostics.value, lighthouseReport.value)
+  const url = URL.createObjectURL(new Blob([`${JSON.stringify(report, null, 2)}\n`], { type: 'application/json' }))
+  const link = document.createElement('a')
+  link.href = url
+  link.download = diagnosticReportFilename(page.path)
+  link.click()
+  URL.revokeObjectURL(url)
+}
 
 const testKindLabels: Record<PageFlowPageTest['kind'], string> = { e2e: 'E2E', component: '组件', unit: '单元' }
 const testStatusLabels: Record<PageFlowPageTest['status'], string> = { unknown: '未运行', passed: '通过', failed: '失败', skipped: '跳过' }
@@ -1108,6 +1231,58 @@ function requestFocusedPageScan(pageId: string) {
   previewFrames.get(pageId)?.contentWindow?.postMessage({ type: PAGEFLOW_SCAN_MESSAGE }, window.location.origin)
 }
 
+function requestFocusedDiagnostics() {
+  window.clearTimeout(diagnosticsRequestTimer)
+  diagnosticsRequestTimer = window.setTimeout(runFocusedDiagnostics, 300)
+}
+
+function runFocusedDiagnostics() {
+  const pageId = focusedPageId.value
+  const frame = pageId ? previewFrames.get(pageId) : undefined
+  if (!frame?.contentWindow) return
+  if (diagnosticsInFlightPageId === pageId) {
+    diagnosticsRefreshQueued = true
+    return
+  }
+  diagnosticsInFlightPageId = pageId
+  diagnosticsRefreshQueued = false
+  diagnosticsLoading.value = true
+  window.clearTimeout(diagnosticsTimer)
+  diagnosticsTimer = window.setTimeout(() => {
+    if (diagnosticsInFlightPageId !== pageId) return
+    diagnosticsInFlightPageId = undefined
+    diagnosticsLoading.value = false
+    if (diagnosticsRefreshQueued) requestFocusedDiagnostics()
+  }, 10_000)
+  frame.contentWindow.postMessage({ type: PAGEFLOW_DIAGNOSTICS_SCAN_MESSAGE }, window.location.origin)
+}
+
+function highlightDiagnostic(item: PageFlowDiagnostic) {
+  const pageId = focusedPageId.value
+  if (!pageId || !item.selector) return
+  const highlight = () => previewFrames.get(pageId)?.contentWindow?.postMessage({
+      type: PAGEFLOW_DIAGNOSTIC_HIGHLIGHT_MESSAGE,
+      selector: item.selector,
+    }, window.location.origin)
+  const position = positions.value.get(pageId)
+  if (!position || !leafer || !canvas.value) {
+    highlight()
+    return
+  }
+  const transform = fitFocusedPreviewTransform(
+    position,
+    pagePreviewHeight(pageId),
+    { width: canvas.value.clientWidth, height: canvas.value.clientHeight },
+    SELECTED_PAGE_SCALE,
+  )
+  flyToPage(pageId, position, highlight, undefined, transform)
+}
+
+function diagnosticMeasurement(item: PageFlowDiagnostic) {
+  if (!item.measured) return ''
+  return Object.entries(item.measured).map(([key, value]) => `${key}: ${value}`).join(' · ')
+}
+
 function requestFocusedLayout() {
   if (focusTransitionTargetId) return
   focusLayoutProgress = 0
@@ -1482,6 +1657,7 @@ async function handlePreviewLoad(pageId: string, frame: HTMLIFrameElement) {
     syncPreviewHotspots(pageId)
     readyPreviewIds.value = new Set(readyPreviewIds.value).add(pageId)
     requestFocusedPageScan(pageId)
+    if (pageId === focusedPageId.value) requestFocusedDiagnostics()
     const page = pages.value.find(item => item.id === pageId)
     const title = frame.contentDocument?.title.trim()
     if (page && title && title !== page.title) await reportPageTitle(props.config, page.path, title)
@@ -1643,8 +1819,10 @@ function handlePreviewMessage(event: MessageEvent) {
     return
   }
   if (message.type === 'page-reported') {
-    if (sourcePageId === focusedPageId.value)
+    if (sourcePageId === focusedPageId.value) {
       requestAnimationFrame(() => requestFocusedPageScan(sourcePageId))
+      requestAnimationFrame(requestFocusedDiagnostics)
+    }
     return
   }
   if (message.type === 'hotspot-hover') {
@@ -1663,6 +1841,15 @@ function handlePreviewMessage(event: MessageEvent) {
     focusedLinks.value = nextLinks
     if (targetsChanged) void requestFocusedLayout()
     else scheduleCanvasRender()
+    return
+  }
+  if (message.type === 'diagnostics-result') {
+    if (sourcePageId !== focusedPageId.value || message.path !== pages.value.find(page => page.id === sourcePageId)?.path) return
+    window.clearTimeout(diagnosticsTimer)
+    diagnosticsInFlightPageId = undefined
+    diagnosticsLoading.value = false
+    focusedDiagnostics.value = message.diagnostics
+    if (diagnosticsRefreshQueued) requestFocusedDiagnostics()
     return
   }
   const hotspotNavigation = message.hotspot
@@ -1938,10 +2125,52 @@ function applyPageUpdate(nextPage: PageFlowPage) {
     else if (plan.action === 'render') scheduleCanvasRender()
     return
   }
+  showPageUpdateRipple(nextPage)
   pages.value = plan.pages
   status.value = 'Routes synced'
   if (plan.action === 'layout') void requestFocusedLayout()
   else if (plan.action === 'render') scheduleCanvasRender()
+}
+
+function showPageUpdateRipple(page: PageFlowPage) {
+  const position = positions.value.get(page.id)
+  if (!leafer || !position) return
+  const previous = pageUpdateRipples.get(page.id)
+  previous?.animation.cancel()
+  if (previous) leafer.remove(previous.group, true)
+
+  const group = new Group({ hittable: false })
+  const rings = [0, 1, 2].map(() => new Rect({
+    fill: undefined,
+    stroke: page.accent || '#3b82f6',
+    strokeWidth: 2,
+    strokeScaleFixed: true,
+    cornerRadius: 10,
+    hittable: false,
+  }))
+  rings.forEach(ring => group.add(ring))
+  leafer.add(group)
+  const animation = new FrameAnimation(animationHost)
+  pageUpdateRipples.set(page.id, { group, animation })
+  animation.start(1_400, (progress) => {
+    const currentPosition = positions.value.get(page.id)
+    if (!currentPosition) return
+    rings.forEach((ring, index) => {
+      const ringProgress = Math.max(0, Math.min(1, (progress - index * 0.12) / 0.76))
+      const inset = 8 + ringProgress * 22
+      ring.set({
+        x: currentPosition[0] - inset,
+        y: currentPosition[1] - inset,
+        width: PAGE_CARD_WIDTH + inset * 2,
+        height: pageCardHeight(page.id) + inset * 2,
+        opacity: ringProgress > 0 ? (1 - ringProgress) * 0.75 : 0,
+      })
+    })
+  }, () => {
+    if (pageUpdateRipples.get(page.id)?.group !== group) return
+    leafer?.remove(group, true)
+    pageUpdateRipples.delete(page.id)
+  })
 }
 
 watch(requiredThumbnailRecords, records => {
@@ -1980,8 +2209,16 @@ watch(requiredThumbnailRecords, records => {
 
 watch([active, copiedPath], scheduleCanvasRender)
 watch(focusedPageId, () => {
+  window.clearTimeout(diagnosticsRequestTimer)
+  window.clearTimeout(diagnosticsTimer)
+  diagnosticsInFlightPageId = undefined
+  diagnosticsRefreshQueued = false
+  focusedDiagnostics.value = []
+  lighthouseReport.value = undefined
+  lighthouseError.value = ''
   previewFrames.forEach((_frame, pageId) => syncPreviewHotspots(pageId))
   void refreshFocusedTests()
+  requestAnimationFrame(requestFocusedDiagnostics)
 })
 
 onMounted(async () => {
@@ -2060,6 +2297,12 @@ onMounted(async () => {
 
 onUnmounted(() => {
   window.clearInterval(userSessionRefreshTimer)
+  window.clearTimeout(diagnosticsRequestTimer)
+  pageUpdateRipples.forEach(({ group, animation }) => {
+    animation.cancel()
+    leafer?.remove(group, true)
+  })
+  pageUpdateRipples.clear()
   window.removeEventListener('message', handlePreviewMessage)
   window.removeEventListener('keydown', handleSearchShortcut)
   canvas.value?.removeEventListener('click', handleCanvasClick)
@@ -2080,6 +2323,7 @@ onUnmounted(() => {
   clearTimeout(copiedPathTimer)
   clearTimeout(layoutTimeout)
   clearTimeout(initialRevealTimer)
+  clearTimeout(diagnosticsTimer)
   thumbnailResourceGeneration++
   thumbnailResourceCache.dispose()
   previewFrames.dispose()
@@ -2323,6 +2567,128 @@ onUnmounted(() => {
             </div>
           </div>
           <div v-else class="api-panel-waiting">暂未发现属于此页面的测试</div>
+        </template>
+        <template #diagnostics>
+          <div class="api-panel-list">
+            <div class="sticky top-0 z-10 border-b border-default bg-default py-2">
+              <div class="flex items-center gap-2">
+                <div class="min-w-0 flex-1">
+                  <div class="text-sm font-medium text-highlighted">页面诊断</div>
+                  <div class="mt-0.5 text-xs text-muted">
+                    {{ diagnosticSummary.error }} 错误 · {{ diagnosticSummary.warning }} 警告 · {{ diagnosticSummary.suggestion }} 建议
+                  </div>
+                </div>
+                <UButton
+                  color="neutral"
+                  variant="ghost"
+                  size="sm"
+                  icon="i-lucide-refresh-cw"
+                  aria-label="重新扫描页面"
+                  :loading="diagnosticsLoading"
+                  @click="requestFocusedDiagnostics"
+                />
+                <UButton
+                  color="neutral"
+                  variant="ghost"
+                  size="sm"
+                  icon="i-lucide-download"
+                  aria-label="导出诊断报告"
+                  :disabled="!focusedDiagnostics.length && !lighthouseReport"
+                  @click="exportFocusedDiagnostics"
+                />
+              </div>
+              <div class="mt-2 flex flex-wrap gap-1.5">
+                <UButton
+                  v-for="option in diagnosticSeverityOptions"
+                  :key="option.value"
+                  :color="diagnosticSeverity === option.value ? 'primary' : 'neutral'"
+                  :variant="diagnosticSeverity === option.value ? 'soft' : 'ghost'"
+                  size="xs"
+                  @click="diagnosticSeverity = option.value"
+                >
+                  {{ option.label }}
+                </UButton>
+              </div>
+            </div>
+            <div class="border-b border-default py-3">
+              <div class="flex items-center gap-2">
+                <div class="min-w-0 flex-1">
+                  <div class="text-sm font-medium text-highlighted">Lighthouse</div>
+                  <div class="mt-0.5 text-xs text-muted">性能、无障碍、最佳实践与 SEO</div>
+                </div>
+                <UButton
+                  color="neutral"
+                  variant="outline"
+                  size="xs"
+                  icon="i-lucide-gauge"
+                  :loading="lighthouseLoading"
+                  @click="runFocusedLighthouse"
+                >
+                  {{ lighthouseReport ? '重新审计' : '运行审计' }}
+                </UButton>
+              </div>
+              <p v-if="lighthouseError" class="mt-2 text-xs text-error">{{ lighthouseError }}</p>
+              <template v-if="lighthouseReport">
+                <div class="mt-3 grid grid-cols-2 gap-2">
+                  <div v-for="(score, category) in lighthouseReport.scores" :key="category" class="flex items-center justify-between gap-2">
+                    <span class="text-xs text-muted">{{ lighthouseCategoryLabels[category] }}</span>
+                    <UBadge :label="score == null ? '—' : String(score)" :color="lighthouseScoreColor(score)" variant="soft" size="sm" />
+                  </div>
+                </div>
+                <UCollapsible v-if="lighthouseReport.issues.length" class="mt-2">
+                  <UButton color="neutral" variant="link" size="xs" trailing-icon="i-lucide-chevron-down" class="p-0">
+                    {{ lighthouseReport.issues.length }} 项待改进
+                  </UButton>
+                  <template #content>
+                    <div class="mt-1 divide-y divide-default">
+                      <div v-for="issue in lighthouseReport.issues" :key="issue.id" class="py-2">
+                        <div class="text-xs font-medium text-highlighted">{{ issue.title }}</div>
+                        <div v-if="issue.displayValue" class="mt-0.5 text-xs text-warning">{{ issue.displayValue }}</div>
+                        <div class="mt-1 text-xs leading-5 text-muted">{{ issue.description }}</div>
+                        <a v-if="issue.helpUrl" class="mt-1 inline-flex text-xs text-primary hover:underline" :href="issue.helpUrl" target="_blank" rel="noreferrer">查看修复说明</a>
+                      </div>
+                    </div>
+                  </template>
+                </UCollapsible>
+              </template>
+            </div>
+            <div v-if="diagnosticsLoading && !focusedDiagnostics.length" class="api-panel-waiting">正在扫描当前页面…</div>
+            <UAccordion v-else-if="filteredFocusedDiagnosticGroups.length" :items="filteredFocusedDiagnosticGroups">
+              <template #leading="{ item: group }">
+                <UBadge :label="diagnosticSeverityLabels[group.severity]" :color="diagnosticColor(group.severity)" variant="soft" size="sm" />
+              </template>
+              <template #default="{ item: group }">
+                <span class="flex min-w-0 items-center gap-2">
+                  <span class="min-w-0 truncate">{{ group.label }}</span>
+                  <UBadge v-if="group.items.length > 1" :label="String(group.items.length)" color="neutral" variant="soft" size="sm" />
+                </span>
+              </template>
+              <template #body="{ item: group }">
+                <div>
+                  <p class="text-xs leading-5 text-muted">{{ group.description }}</p>
+                  <div v-if="group.items.some(item => item.selector || diagnosticMeasurement(item))" class="mt-2 divide-y divide-default">
+                    <div
+                      v-for="(item, index) in group.items"
+                      :key="item.id"
+                      class="py-2"
+                      :class="item.selector ? 'cursor-pointer' : undefined"
+                      :role="item.selector ? 'button' : undefined"
+                      :tabindex="item.selector ? 0 : undefined"
+                      @click="item.selector && highlightDiagnostic(item)"
+                      @keydown.enter="item.selector && highlightDiagnostic(item)"
+                      @keydown.space.prevent="item.selector && highlightDiagnostic(item)"
+                    >
+                      <div class="min-w-0">
+                        <div class="text-xs text-muted">{{ item.targetLabel || `问题 ${index + 1}` }}</div>
+                        <div v-if="diagnosticMeasurement(item)" class="mt-0.5 text-xs text-dimmed">{{ diagnosticMeasurement(item) }}</div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </template>
+            </UAccordion>
+            <div v-else class="api-panel-waiting">未发现当前规则覆盖的问题</div>
+          </div>
         </template>
       </UTabs>
       </aside>
