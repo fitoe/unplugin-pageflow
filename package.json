@@ -138,7 +138,7 @@
     }
   },
   "overrides": {
-    "vite-plugin-solid": "2.10.2",
+    "vite-plugin-solid": "$vite-plugin-solid",
     "tsup": {
       "esbuild": "^0.28.1"
     }
