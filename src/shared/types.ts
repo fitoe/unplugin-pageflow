@@ -180,7 +180,7 @@ export interface PageFlowDiagnostic {
   selector?: string
   targetLabel?: string
   measured?: Record<string, string | number>
-  source?: 'pageflow' | 'axe'
+  source?: string
   navigation?: { method: string, target: string }
 }
 

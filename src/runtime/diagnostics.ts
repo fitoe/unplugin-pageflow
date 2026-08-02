@@ -1,5 +1,6 @@
 import type { PageFlowDiagnostic, PageFlowDiagnosticOptions, ResolvedPageFlowDiagnosticOptions } from '../shared/types'
 import type axeCore from 'axe-core'
+import { pageFlowInspectorRevision, runPageFlowInspectors } from './inspectors.ts'
 
 const INTERACTIVE_SELECTOR = 'a[href], button, input, select, textarea, [role="button"], [role="link"], [tabindex]:not([tabindex="-1"]), uni-button, uni-navigator'
 const IGNORED_SELECTOR = '[hidden], [aria-hidden="true"], [inert], [data-unplugin-pageflow-hotspot-layer], [data-unplugin-pageflow-diagnostic-highlight]'
@@ -369,6 +370,7 @@ function axeSeverity(ruleId: string, impact: axeCore.ImpactValue | null | undefi
 
 async function runPageDiagnostics(options: ResolvedPageFlowDiagnosticOptions) {
   const custom = scanCustomPageDiagnostics(options)
+  let builtIn: PageFlowDiagnostic[]
   try {
     const [{ default: axe }, { default: locale }] = await Promise.all([
       import('axe-core'),
@@ -396,13 +398,15 @@ async function runPageDiagnostics(options: ResolvedPageFlowDiagnosticOptions) {
         source: 'axe',
       }]
     }))
-    return deduplicateNestedDiagnostics([...new Map([
+    builtIn = deduplicateNestedDiagnostics([...new Map([
       ...custom.filter(item => !AXE_REPLACED_RULES.has(item.ruleId)),
       ...axeDiagnostics,
     ].map(item => [item.id, item])).values()])
   } catch {
-    return custom
+    builtIn = custom
   }
+  const inspectors = await runPageFlowInspectors({ document, location: window.location })
+  return deduplicateNestedDiagnostics([...builtIn, ...inspectors])
 }
 
 let diagnosticsRevision = 0
@@ -442,7 +446,7 @@ function trackDiagnosticMutations() {
 
 export function scanPageDiagnostics(input: PageFlowDiagnosticOptions = {}) {
   const options = resolveDiagnosticOptions(input)
-  const optionsKey = JSON.stringify(options)
+  const optionsKey = `${JSON.stringify(options)}:${pageFlowInspectorRevision()}`
   trackDiagnosticMutations()
   if (cachedDiagnostics?.revision === diagnosticsRevision && cachedDiagnostics.optionsKey === optionsKey) return Promise.resolve(cachedDiagnostics.diagnostics)
   if (diagnosticsInFlight?.revision === diagnosticsRevision && diagnosticsInFlight.optionsKey === optionsKey) return diagnosticsInFlight.promise
