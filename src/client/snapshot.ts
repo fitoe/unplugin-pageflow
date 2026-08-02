@@ -81,6 +81,7 @@ export function materializeMaskedIcons(root: Document | Element) {
     ? element.style
     : document.defaultView?.getComputedStyle(element)
   root.querySelector('[data-unplugin-pageflow-hotspot-layer]')?.remove()
+  root.querySelector('[data-unplugin-pageflow-launcher]')?.remove()
   root.querySelectorAll<HTMLElement>('.status-space').forEach(element => element.remove())
   root.querySelectorAll<HTMLElement>('uni-text > span').forEach(element => {
     const style = computedStyle(element)
@@ -187,10 +188,23 @@ export async function waitForPreviewReady(frame: HTMLIFrameElement, quietMs = 30
   const waitForImages = () => Promise.all(Array.from(document.querySelectorAll('img')).map(image =>
     image.complete && image.naturalWidth ? undefined : image.decode().catch(() => undefined),
   ))
-  await Promise.all([document.fonts?.ready, waitForImages()])
-  await waitForDomQuiet(frame, quietMs, timeoutMs)
-  await waitForImages()
-  await waitForDocumentStable(document, 4, 250, timeoutMs)
+  const hasCanvas = Boolean(document.querySelector('canvas'))
+  const mediaReady = Promise.all([document.fonts?.ready, waitForImages()])
+  if (hasCanvas)
+    await Promise.race([mediaReady, new Promise(resolve => setTimeout(resolve, Math.min(timeoutMs, 5000)))])
+  else
+    await mediaReady
+  if (hasCanvas) {
+    const startedAt = performance.now()
+    while ((frame.contentWindow as PageFlowWindow | null)?.__UNPLUGIN_PAGEFLOW_PENDING_REQUESTS__?.()
+      && performance.now() - startedAt < Math.min(timeoutMs, 5000))
+      await new Promise(resolve => setTimeout(resolve, 250))
+    await new Promise(resolve => setTimeout(resolve, quietMs))
+  } else {
+    await waitForDomQuiet(frame, quietMs, timeoutMs)
+    await waitForImages()
+    await waitForDocumentStable(document, 4, 250, timeoutMs)
+  }
   await new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve())))
 
   const body = document.body

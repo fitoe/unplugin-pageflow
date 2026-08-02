@@ -3,10 +3,10 @@ import test from 'node:test'
 import { Window } from 'happy-dom'
 import { createServer } from 'vite'
 
-test('captures the real page root and saves compact plus reversed full tiles', async () => {
+test('captures the real page root and saves a single full image when it fits', async () => {
   const window = new Window()
   Object.assign(globalThis, { HTMLElement: window.HTMLElement })
-  window.document.body.innerHTML = '<div class="wrapper"><main class="home-page pageflow-preview">Page</main></div>'
+  window.document.body.innerHTML = '<div class="wrapper"><main class="home-page pageflow-preview">Page</main></div><div class="teleported-dialog">Dialog</div>'
   const snapshot = { width: 786, height: 1704 }
   const compact = { width: 96, height: 208 }
   const tiles = [{ width: 786, height: 512 }, { width: 786, height: 512 }]
@@ -41,16 +41,58 @@ test('captures the real page root and saves compact plus reversed full tiles', a
         return { ...record, mimeType: 'image/webp', file: `${record.slot}.webp`, updatedAt: 1 }
       },
     })
-    assert.equal(renderTarget, window.document.querySelector('.home-page.pageflow-preview'))
+    assert.equal(renderTarget, window.document.body)
+    assert(renderTarget.querySelector('.teleported-dialog'))
     assert.deepEqual({ height: renderOptions.height, width: renderOptions.width, scale: renderOptions.scale }, { height: 852, width: 393, scale: 2 })
     assert.deepEqual(saved.map(record => [record.slot, record.height, record.tileTop]), [
       ['mobile:compact:home', 520, undefined],
-      ['mobile:full:home:tile:1', 156, 156],
-      ['mobile:full:home:tile:0', 156, 0],
+      ['mobile:full:home', 520, undefined],
     ])
-    assert.equal(records.length, 3)
+    assert.equal(records.length, 2)
     assert.equal(window.document.getElementById('unplugin-pageflow-snapshot-scrollbars'), null)
     assert.deepEqual([snapshot.width, snapshot.height, compact.width, compact.height], [0, 0, 0, 0])
+    assert.deepEqual(tiles, [{ width: 786, height: 512 }, { width: 786, height: 512 }])
+  } finally {
+    await server.close()
+    await window.happyDOM.close()
+  }
+})
+
+test('keeps full-image tiles for snapshots taller than the single-image limit', async () => {
+  const window = new Window()
+  Object.assign(globalThis, { HTMLElement: window.HTMLElement })
+  const snapshot = { width: 786, height: 5000 }
+  const compact = { width: 96, height: 611 }
+  const tiles = [{ width: 786, height: 512 }, { width: 786, height: 512 }]
+  const saved = []
+  const server = await createServer({ configFile: false, server: { middlewareMode: true }, appType: 'custom', logLevel: 'silent' })
+  try {
+    const { capturePageThumbnails } = await server.ssrLoadModule('/src/client/snapshot-capture.ts')
+    await capturePageThumbnails({
+      config: { enabled: true, previewPath: '/preview/', appUrl: '/', dynamicParams: {}, previewRoles: [], groupNames: {} },
+      document: window.document,
+      body: window.document.body,
+      pageId: 'long',
+      previewMode: 'pc',
+      mode: { width: 1920, height: 1080 },
+      revision: 'revision-1',
+      highResolution: true,
+    }, {
+      render: async () => snapshot,
+      resize: () => compact,
+      tileCount: () => 2,
+      extractTile: (_source, index) => tiles[index],
+      encode: async () => new Blob(['image'], { type: 'image/webp' }),
+      save: async (_config, record) => {
+        saved.push({ ...record })
+        return { ...record, mimeType: 'image/webp', file: `${record.slot}.webp`, updatedAt: 1 }
+      },
+    })
+    assert.deepEqual(saved.map(record => record.slot), [
+      'pc:compact:long',
+      'pc:full:long:tile:1',
+      'pc:full:long:tile:0',
+    ])
     assert(tiles.every(tile => tile.width === 0 && tile.height === 0))
   } finally {
     await server.close()
@@ -58,44 +100,46 @@ test('captures the real page root and saves compact plus reversed full tiles', a
   }
 })
 
-test('uses modern-screenshot first and falls back to html2canvas-pro', async () => {
+test('uses modern-screenshot and preserves canvas pages', async () => {
   const window = new Window()
   Object.assign(globalThis, { Element: window.Element, HTMLElement: window.HTMLElement })
   const target = window.document.createElement('main')
-  target.innerHTML = '<div data-unplugin-pageflow-hotspot-layer></div><span>Page</span>'
+  target.innerHTML = '<div data-unplugin-pageflow-hotspot-layer></div><div data-unplugin-pageflow-launcher></div><span>Page</span>'
   const modernCanvas = { width: 200, height: 300 }
-  const fallbackCanvas = { width: 100, height: 150 }
   const server = await createServer({ configFile: false, server: { middlewareMode: true }, appType: 'custom', logLevel: 'silent' })
   try {
-    const { renderSnapshotCanvas } = await server.ssrLoadModule('/src/client/snapshot-capture.ts')
+    const { hasMeaningfulSnapshotPixels, renderSnapshotCanvas } = await server.ssrLoadModule('/src/client/snapshot-capture.ts')
+    assert.equal(hasMeaningfulSnapshotPixels(new Uint8ClampedArray(16).fill(255)), false)
+    assert.equal(hasMeaningfulSnapshotPixels(new Uint8ClampedArray([
+      255, 255, 255, 255,
+      255, 255, 255, 255,
+      0, 80, 160, 255,
+      0, 80, 160, 255,
+    ])), true)
     let modernOptions
-    let fallbackCalls = 0
     const primary = await renderSnapshotCanvas(target, { backgroundColor: '#fff', height: 852, scale: 2, width: 393 }, {
       primary: async (_target, options) => {
         modernOptions = options
         return modernCanvas
       },
-      fallback: async () => {
-        fallbackCalls++
-        return fallbackCanvas
-      },
     })
     const clone = target.cloneNode(true)
     await modernOptions.onCloneNode(clone)
     assert.equal(clone.querySelector('[data-unplugin-pageflow-hotspot-layer]'), null)
+    assert.equal(clone.querySelector('[data-unplugin-pageflow-launcher]'), null)
     assert.equal(primary, modernCanvas)
-    assert.equal(fallbackCalls, 0)
     assert.deepEqual({ height: modernOptions.height, scale: modernOptions.scale, width: modernOptions.width }, { height: 852, scale: 2, width: 393 })
 
-    const fallback = await renderSnapshotCanvas(target, { backgroundColor: '#fff' }, {
-      primary: async () => { throw new Error('modern failed') },
-      fallback: async () => {
-        fallbackCalls++
-        return fallbackCanvas
+    target.append(window.document.createElement('canvas'))
+    let canvasPrimaryCalls = 0
+    const canvasSnapshot = await renderSnapshotCanvas(target, { backgroundColor: '#fff' }, {
+      primary: async () => {
+        canvasPrimaryCalls++
+        return modernCanvas
       },
     })
-    assert.equal(fallback, fallbackCanvas)
-    assert.equal(fallbackCalls, 1)
+    assert.equal(canvasSnapshot, modernCanvas)
+    assert.equal(canvasPrimaryCalls, 1)
   } finally {
     await server.close()
     await window.happyDOM.close()

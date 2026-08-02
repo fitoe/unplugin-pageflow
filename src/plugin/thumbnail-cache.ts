@@ -95,6 +95,13 @@ export function createThumbnailCache(cacheDirectory: string, maximumBytes = DEFA
             staleFiles.add(value.file)
           }
         }
+      } else if (metadata.tileIndex == null) {
+        const tilePattern = new RegExp(`^${slot.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}:tile:\\d+$`)
+        for (const [key, value] of Object.entries(manifest)) {
+          if (!tilePattern.test(key)) continue
+          delete manifest[key]
+          staleFiles.add(value.file)
+        }
       }
 
       let totalBytes = Object.values(manifest).reduce((total, item) => total + (item.bytes ?? 0), 0)

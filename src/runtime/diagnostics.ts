@@ -3,7 +3,8 @@ import type axeCore from 'axe-core'
 import { pageFlowInspectorRevision, runPageFlowInspectors } from './inspectors.ts'
 
 const INTERACTIVE_SELECTOR = 'a[href], button, input, select, textarea, [role="button"], [role="link"], [tabindex]:not([tabindex="-1"]), uni-button, uni-navigator'
-const IGNORED_SELECTOR = '[hidden], [aria-hidden="true"], [inert], [data-unplugin-pageflow-hotspot-layer], [data-unplugin-pageflow-diagnostic-highlight]'
+const INTERNAL_DIAGNOSTIC_IGNORE_SELECTORS = ['#__vue-devtools-container__', '[data-v-inspector-ignore="true"]']
+const IGNORED_SELECTOR = `[hidden], [aria-hidden="true"], [inert], [data-unplugin-pageflow-hotspot-layer], [data-unplugin-pageflow-diagnostic-highlight], [data-unplugin-pageflow-launcher], ${INTERNAL_DIAGNOSTIC_IGNORE_SELECTORS.join(', ')}`
 const TEXT_SELECTOR = 'p, span, label, li, td, th, small, code, [role="text"], h1, h2, h3, h4, h5, h6, a, button'
 
 interface RgbColor { red: number, green: number, blue: number, alpha: number }
@@ -212,7 +213,7 @@ function resolveDiagnosticOptions(options: PageFlowDiagnosticOptions = {}): Reso
   return {
     minimumFontSize: Number.isFinite(options.minimumFontSize) && options.minimumFontSize! > 0 ? options.minimumFontSize! : 12,
     minimumTapSize: Number.isFinite(options.minimumTapSize) && options.minimumTapSize! > 0 ? options.minimumTapSize! : 44,
-    ignoreSelectors: options.ignoreSelectors ?? [],
+    ignoreSelectors: [...INTERNAL_DIAGNOSTIC_IGNORE_SELECTORS, ...(options.ignoreSelectors ?? [])],
     rules: options.rules ?? {},
   }
 }

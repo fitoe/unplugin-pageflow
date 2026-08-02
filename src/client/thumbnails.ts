@@ -9,7 +9,8 @@ import type { CanvasTransform, ViewportSize } from './layout'
 export type PageFlowPreviewMode = 'mobile' | 'tablet' | 'pc'
 export type PageFlowThumbnailTier = 'compact' | 'full'
 export const PAGEFLOW_THUMBNAIL_TILE_HEIGHT = 512
-const PAGEFLOW_THUMBNAIL_CAPTURE_VERSION = 13
+export const PAGEFLOW_MAX_SINGLE_THUMBNAIL_HEIGHT = 4096
+const PAGEFLOW_THUMBNAIL_CAPTURE_VERSION = 17
 
 export function thumbnailTierForZoom(zoomPercent: number): PageFlowThumbnailTier {
   return zoomPercent < 50 ? 'compact' : 'full'
@@ -25,7 +26,7 @@ export function thumbnailSlot(
 }
 
 export function thumbnailRevision(page: PageFlowPage) {
-  return `${PAGEFLOW_THUMBNAIL_CAPTURE_VERSION}:${page.revision ?? page.path}`
+  return `${PAGEFLOW_THUMBNAIL_CAPTURE_VERSION}:${page.path}`
 }
 
 export async function fetchThumbnailManifest(config: ResolvedPageFlowOptions) {
@@ -109,14 +110,15 @@ export function fullThumbnailTiles(
   mode: PageFlowPreviewMode,
 ) {
   const root = manifest[thumbnailSlot(pageId, mode, 'full', 0)]
+  const single = manifest[thumbnailSlot(pageId, mode, 'full')]
+  if (single && (!root || single.updatedAt >= root.updatedAt)) return [single]
   if (root?.tileCount) {
     const records = Array.from({ length: root.tileCount }, (_, index) =>
       manifest[thumbnailSlot(pageId, mode, 'full', index)],
     )
     if (records.every(Boolean)) return records as PageFlowThumbnailRecord[]
   }
-  const legacy = manifest[thumbnailSlot(pageId, mode, 'full')]
-  return legacy ? [legacy] : []
+  return single ? [single] : []
 }
 
 export function visibleThumbnailTiles(

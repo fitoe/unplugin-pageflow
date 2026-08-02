@@ -88,7 +88,13 @@ pnpm dev
 http://localhost:5173/__unplugin-pageflow/
 ```
 
-端口跟随项目的 Vite 开发服务器。Vue Router 路由会自动发现；uni-app 还会读取 `pages.json` 中的页面标题、顺序和 Tab 配置。
+宿主页面右下角也会显示 PageFlow 浮动按钮，点击后在新窗口打开面板。若不需要，可关闭：
+
+```ts
+PageFlow.vite({ launcher: false })
+```
+
+浮动按钮只注入开发环境，不进入生产构建。端口跟随项目的 Vite 开发服务器。Vue Router 路由会自动发现；uni-app 还会读取 `pages.json` 中的页面标题、顺序和 Tab 配置。
 
 ## 框架支持
 

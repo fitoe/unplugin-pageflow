@@ -38,7 +38,7 @@ import { capturePageThumbnails } from './client/snapshot-capture'
 import { ThumbnailResourceCache } from './client/thumbnail-resources'
 import { FocusedPageStateCache } from './client/focus-cache'
 import { createFocusScene } from './client/focus-layout'
-import { createPageCardGroup, createPageDeckGroup } from './client/scene-cards'
+import { createPageCardGroup, createPageDeckGroup, setPageCardShadow } from './client/scene-cards'
 import { SceneNodeCache } from './client/scene-node-cache'
 import { FrameAnimation } from './client/frame-animation'
 import { PreviewFrameRegistry } from './client/preview-frame-registry'
@@ -52,7 +52,10 @@ import { cachedPreviewUsers, configuredUsers, loadUserSessions, saveUserSessions
 import LayoutWorker from './client/layout.worker?worker&inline'
 import ApiFieldTree from './components/ApiFieldTree.vue'
 import { focusTargetSetKey, planPageUpdate } from './client/page-update'
+import { pageUpdateEffectTarget } from './client/page-update-effect'
+import { isLocalBusinessApiResponse } from './runtime/api-filter'
 import { initialPreviewMode } from './client/preview-mode'
+import { detectScaledPreviewSize } from './client/preview-size'
 import {
   fetchThumbnailManifest,
   fullThumbnailTiles,
@@ -72,6 +75,7 @@ import {
   getRenderablePages,
   getVisiblePageIds,
   layoutPageGrid,
+  promotedRouteGroupPath,
   routeDeckPathForPage,
   PAGE_CARD_META_HEIGHT,
   PAGE_CARD_WIDTH,
@@ -85,12 +89,13 @@ const props = defineProps<{ config: ResolvedPageFlowOptions }>()
 const previewModes = {
   mobile: { label: '手机', width: 393, height: 852 },
   tablet: { label: '平板', width: 768, height: 1024 },
-  pc: { label: 'PC', width: 1440, height: 900 },
 } as const
+const pcPreviewSize = ref({ width: window.innerWidth, height: window.innerHeight })
+let pcDesignSizeDetected = false
 const viewportTabs = [
   { value: 'mobile', label: previewModes.mobile.label, icon: 'i-lucide-smartphone', ui: { label: 'sr-only' } },
   { value: 'tablet', label: previewModes.tablet.label, icon: 'i-lucide-tablet', ui: { label: 'sr-only' } },
-  { value: 'pc', label: previewModes.pc.label, icon: 'i-lucide-monitor', ui: { label: 'sr-only' } },
+  { value: 'pc', label: 'PC', icon: 'i-lucide-monitor', ui: { label: 'sr-only' } },
 ]
 const PREVIEW_MODE_STORAGE_KEY = 'unplugin-pageflow:preview-mode'
 const initialUserSessions = loadUserSessions()
@@ -140,7 +145,27 @@ const focusedLinks = ref<PageFlowLink[]>([])
 const apiResultsByPage = ref<Record<string, PageFlowApiResult[]>>({})
 const expandedApiResults = ref(new Set<string>())
 const openApiResultId = ref<string>()
-const panelTab = ref<'api' | 'tests' | 'diagnostics'>('api')
+const panelTab = ref<'api' | 'tests' | 'diagnostics' | 'todos'>('api')
+const panelCollapsed = ref(false)
+interface PageTodo { id: string; text: string; done: boolean }
+const PAGE_TODOS_STORAGE_KEY = 'unplugin-pageflow:page-todos'
+function loadPageTodos() {
+  try {
+    const value = JSON.parse(localStorage.getItem(PAGE_TODOS_STORAGE_KEY) ?? '{}') as Record<string, unknown>
+    return Object.fromEntries(Object.entries(value).map(([pageId, items]) => [
+      pageId,
+      Array.isArray(items) ? items.filter((item): item is PageTodo => Boolean(item)
+        && typeof item === 'object'
+        && typeof (item as PageTodo).id === 'string'
+        && typeof (item as PageTodo).text === 'string'
+        && typeof (item as PageTodo).done === 'boolean') : [],
+    ]))
+  } catch {
+    return {}
+  }
+}
+const pageTodos = ref<Record<string, PageTodo[]>>(loadPageTodos())
+const newTodoText = ref('')
 const focusedDiagnostics = ref<PageFlowDiagnostic[]>([])
 const diagnosticsLoading = ref(false)
 const diagnosticSeverity = ref<'all' | PageFlowDiagnosticSeverity>('all')
@@ -180,11 +205,14 @@ const focusedPageChecks = computed(() => {
 })
 const focusedTestIssueCount = computed(() => focusedPageChecks.value.filter(item => item.status !== 'passed').length
   + focusedPageTests.value.filter(test => test.status === 'failed').length)
+const focusedTodos = computed(() => focusedPageId.value ? pageTodos.value[focusedPageId.value] ?? [] : [])
+const focusedOpenTodoCount = computed(() => focusedTodos.value.filter(todo => !todo.done).length)
 
 const panelTabs = computed(() => [
-  { value: 'api', label: '接口', badge: focusedApiIssues.value.length, slot: 'api' },
+  { value: 'api', label: '接口', badge: focusedApiResults.value.length, slot: 'api' },
   { value: 'tests', label: '测试', badge: focusedTestIssueCount.value, slot: 'tests' },
   { value: 'diagnostics', label: '诊断', badge: focusedDiagnostics.value.filter(item => item.severity === 'error').length, slot: 'diagnostics' },
+  { value: 'todos', label: '待办', badge: focusedOpenTodoCount.value, slot: 'todos' },
 ])
 const headerUserMenuItems = computed(() => [
   [{ type: 'label' as const, label: '切换用户' }],
@@ -202,6 +230,44 @@ function pageUserMenuItems(pageId: string) {
     onSelect: () => selectPageUser(pageId, user),
   }))
 }
+
+function savePageTodos() {
+  try {
+    localStorage.setItem(PAGE_TODOS_STORAGE_KEY, JSON.stringify(pageTodos.value))
+  } catch {}
+}
+
+function addPageTodo() {
+  const pageId = focusedPageId.value
+  const text = newTodoText.value.trim()
+  if (!pageId || !text) return
+  pageTodos.value = {
+    ...pageTodos.value,
+    [pageId]: [...(pageTodos.value[pageId] ?? []), { id: crypto.randomUUID(), text, done: false }],
+  }
+  newTodoText.value = ''
+  savePageTodos()
+}
+
+function togglePageTodo(id: string) {
+  const pageId = focusedPageId.value
+  if (!pageId) return
+  pageTodos.value = {
+    ...pageTodos.value,
+    [pageId]: (pageTodos.value[pageId] ?? []).map(todo => todo.id === id ? { ...todo, done: !todo.done } : todo),
+  }
+  savePageTodos()
+}
+
+function removePageTodo(id: string) {
+  const pageId = focusedPageId.value
+  if (!pageId) return
+  pageTodos.value = {
+    ...pageTodos.value,
+    [pageId]: (pageTodos.value[pageId] ?? []).filter(todo => todo.id !== id),
+  }
+  savePageTodos()
+}
 let leafer: Leafer | undefined
 let userSessionRefreshTimer: number | undefined
 let connectionLeafer: Leafer | undefined
@@ -215,9 +281,10 @@ let focusLayoutProgress = 0
 let viewportIdleTimer: ReturnType<typeof setTimeout> | undefined
 let backgroundCaptureStarted = false
 let backgroundCaptureNotBefore = 0
-const BACKGROUND_CAPTURE_INITIAL_DELAY = 3000
-const BACKGROUND_CAPTURE_INTERVAL = 2500
+const BACKGROUND_CAPTURE_INITIAL_DELAY = 1000
+const BACKGROUND_CAPTURE_INTERVAL = 600
 const BACKGROUND_CAPTURE_INTERACTION_DELAY = 3000
+const PREVIEW_READY_QUIET_MS = 2500
 let copiedPathTimer: ReturnType<typeof setTimeout> | undefined
 let routeDiscoveryFrame: HTMLIFrameElement | undefined
 let layoutWorker: Worker | undefined
@@ -230,9 +297,10 @@ const failedPreviewIds = new Set<string>()
 const forcedThumbnailRefreshIds = new Set<string>()
 const manualCaptureIds = new Set<string>()
 const previewFrames = new PreviewFrameRegistry()
-const previewChangeVersions = new Map<string, number>()
-const pageUpdateRipples = new Map<string, { group: Group, animation: FrameAnimation }>()
+const pageUpdateEffects = new Map<string, { group: Group, animation: FrameAnimation }>()
 const capturesInProgress = new Set<string>()
+const captureRetryCounts = new Map<string, number>()
+const captureRetryTimers = new Map<string, number>()
 const focusedPageStateCache = new FocusedPageStateCache()
 let focusedLinksScannedPageId: string | undefined
 let diagnosticsTimer: number | undefined
@@ -279,8 +347,14 @@ const flightAnimation = new FrameAnimation(animationHost)
 let thumbnailResourceGeneration = 0
 let focusedTestsRequest = 0
 let sceneRenderFrame = 0
+let capturePulseFrame = 0
+let capturePulseGroup: Group | undefined
+let capturePulseHighlighted = false
 let hoverFadeProgress = 0
-const currentPreviewMode = computed(() => previewModes[previewMode.value])
+let pcViewportResizeTimer = 0
+const currentPreviewMode = computed(() => previewMode.value === 'pc'
+  ? { label: 'PC', ...pcPreviewSize.value }
+  : previewModes[previewMode.value])
 const maximumMountedPreviews = computed(() => {
   if (zoomPercent.value < 5) return 0
   if (thumbnailTier.value === 'compact') return pages.value.length
@@ -354,7 +428,9 @@ const focusScene = computed(() => createFocusScene({
   selectedPageScale: SELECTED_PAGE_SCALE,
 }))
 const connectionPaths = computed(() => focusScene.value?.connections ?? [])
-const focusedApiResults = computed(() => focusedPageId.value ? apiResultsByPage.value[focusedPageId.value] ?? [] : [])
+const focusedApiResults = computed(() => focusedPageId.value
+  ? (apiResultsByPage.value[focusedPageId.value] ?? []).filter(result => isLocalBusinessApiResponse(result.url, window.location.origin, result.contentType))
+  : [])
 const focusedApiIssues = computed(() => createApiIssues(focusedApiResults.value, props.config.apiDiagnostics))
 interface FocusedDiagnosticGroup {
   value: string
@@ -722,7 +798,11 @@ function pagePreviewHeight(pageId: string) {
     return Math.round(PAGE_CARD_WIDTH * currentPreviewMode.value.height / currentPreviewMode.value.width)
   const compact = compactThumbnailRecord(pageId)
   const fullRoot = fullThumbnailRecords(pageId)[0]
-  return compact?.pageHeight ?? compact?.height ?? fullRoot?.pageHeight ?? fullRoot?.height
+  const revision = pages.value.find(page => page.id === pageId)
+  const currentRevision = revision ? pageThumbnailRevision(revision) : undefined
+  const currentCompact = compact?.revision === currentRevision ? compact : undefined
+  const currentFullRoot = fullRoot?.revision === currentRevision ? fullRoot : undefined
+  return currentCompact?.pageHeight ?? currentCompact?.height ?? currentFullRoot?.pageHeight ?? currentFullRoot?.height
     ?? Math.round(PAGE_CARD_WIDTH * currentPreviewMode.value.height / currentPreviewMode.value.width)
 }
 
@@ -1075,7 +1155,10 @@ function editUserNote(user: string) {
 
 function pageThumbnailRevision(page: PageFlowPage) {
   const location = navigationLocations.value[page.path]
-  return location ? `${thumbnailRevision(page)}:${location}` : thumbnailRevision(page)
+  const revision = location ? `${thumbnailRevision(page)}:${location}` : thumbnailRevision(page)
+  return previewMode.value === 'pc'
+    ? `${revision}:${currentPreviewMode.value.width}x${currentPreviewMode.value.height}`
+    : revision
 }
 
 function syncOverlay(updateVisiblePages = true) {
@@ -1252,7 +1335,6 @@ function activatePreview(pageId: string, animate = true) {
     focusedTargetPositions.value = cached?.positions ?? {}
     livePreviewId.value = pageId
     livePreviewCacheIds.value = touchPreviewCache(livePreviewCacheIds.value, pageId)
-    forcedThumbnailRefreshIds.add(pageId)
     failedPreviewIds.delete(pageId)
     scheduleCanvasRender()
     if (!animate) centerFocusedPage(pageId)
@@ -1398,23 +1480,34 @@ function exitFocusAfterSnapshot() {
   const pageId = focusedPageId.value
   if (!pageId || focusExitPending) return
   focusExitPending = true
-  exitFocus(true, () => {
-    const queueCapture = () => {
-      cancelScheduledCapture()
-      forcedThumbnailRefreshIds.add(pageId)
-      failedPreviewIds.delete(pageId)
-      manualCaptureIds.add(pageId)
-      scheduleNextCapture()
+  const exitAfterCapture = async () => {
+    const activeCaptureId = capturePreviewId.value
+    if (activeCaptureId && capturesInProgress.has(activeCaptureId))
+      await waitForCapture(activeCaptureId)
+    if (focusedPageId.value !== pageId) {
       focusExitPending = false
+      return
     }
-    if (capturesInProgress.has(pageId)) void waitForCapture(pageId).then(queueCapture)
-    else queueCapture()
-  })
-  setTimeout(() => {
-    // Another navigation can supersede the exit animation. Never leave the
-    // interaction lock stuck while the background capture remains optional.
-    focusExitPending = false
-  }, 600)
+    cancelScheduledCapture()
+    if (capturePreviewId.value) captureBatchIds.delete(capturePreviewId.value)
+    capturePreviewId.value = pageId
+    forcedThumbnailRefreshIds.add(pageId)
+    failedPreviewIds.delete(pageId)
+    manualCaptureIds.add(pageId)
+    const frame = previewFrames.get(pageId)
+    if (frame) await capturePreview(pageId, frame, true)
+    else {
+      capturePreviewId.value = undefined
+      forcedThumbnailRefreshIds.delete(pageId)
+      manualCaptureIds.delete(pageId)
+    }
+    if (focusedPageId.value !== pageId) {
+      focusExitPending = false
+      return
+    }
+    exitFocus(true, () => { focusExitPending = false })
+  }
+  void exitAfterCapture()
 }
 
 async function copyPagePath(path: string) {
@@ -1494,7 +1587,8 @@ function handleCanvasClick(event: MouseEvent) {
     return insideCard
   })
   if (!page) {
-    if (routeGroupPath.value.length) enterRouteGroup(routeGroupPath.value.slice(0, -1))
+    const promotedPath = promotedRouteGroupPath(pages.value)
+    if (routeGroupPath.value.length > promotedPath.length) enterRouteGroup(routeGroupPath.value.slice(0, -1))
     return
   }
   const deck = routeDeckByPageId.value.get(page.id)
@@ -1668,58 +1762,34 @@ function syncPreviewHotspots(pageId: string) {
   if (layer) layer.style.display = focusedPageId.value === pageId ? 'block' : 'none'
 }
 
-function observePreviewImages(pageId: string, frame: HTMLIFrameElement) {
-  const document = frame.contentDocument
-  if (!document) return
-  const scheduleRefresh = (resourceChanged = false) => {
-    if (pageId !== livePreviewId.value && pageId !== capturePreviewId.value && !manualCaptureIds.has(pageId)) return
-    if (!resourceChanged && readyPreviewIds.value.has(pageId)) return
-    previewChangeVersions.set(pageId, (previewChangeVersions.get(pageId) ?? 0) + 1)
-    previewFrames.debounce(pageId, 750, () => {
-      if (previewFrames.get(pageId) !== frame || !frame.isConnected) return
-      forcedThumbnailRefreshIds.add(pageId)
-      failedPreviewIds.delete(pageId)
-      scheduleNextCapture()
-    })
-  }
-  const handleLoad = (event: Event) => {
-    if (event.target instanceof frame.contentWindow!.HTMLImageElement && event.target.complete && event.target.naturalWidth)
-      scheduleRefresh(true)
-  }
-  const observer = new MutationObserver(records => {
-    if (records.every(record => (record.target as Element).closest?.('[data-unplugin-pageflow-hotspot-layer]'))) return
-    scheduleRefresh()
-    records.forEach(record => {
-      if (record.type === 'attributes' && record.target instanceof frame.contentWindow!.HTMLImageElement)
-        void record.target.decode().then(() => scheduleRefresh(true), () => undefined)
-    })
+function applyDetectedPcPreviewSize(frame: HTMLIFrameElement) {
+  if (previewMode.value !== 'pc' || !frame.contentDocument || !frame.contentWindow) return false
+  const detectedSize = detectScaledPreviewSize(frame.contentDocument, {
+    width: frame.contentWindow.innerWidth,
+    height: frame.contentWindow.innerHeight,
   })
-  document.addEventListener('load', handleLoad, true)
-  observer.observe(document.documentElement, {
-    attributes: true,
-    attributeFilter: ['class', 'hidden', 'src', 'srcset', 'style', 'value'],
-    characterData: true,
-    childList: true,
-    subtree: true,
-  })
-  previewFrames.setCleanup(pageId, () => {
-    document.removeEventListener('load', handleLoad, true)
-    observer.disconnect()
-  })
+  if (detectedSize.width === pcPreviewSize.value.width && detectedSize.height === pcPreviewSize.value.height) return false
+  pcDesignSizeDetected = true
+  pcPreviewSize.value = detectedSize
+  resetPreviewRendering()
+  return true
+}
+
+function schedulePcPreviewSizeDetection(pageId: string, frame: HTMLIFrameElement, attempt = 0) {
+  window.setTimeout(() => {
+    if (previewFrames.get(pageId) !== frame || !frame.isConnected || applyDetectedPcPreviewSize(frame)) return
+    if (attempt < 19) schedulePcPreviewSizeDetection(pageId, frame, attempt + 1)
+  }, 250)
 }
 
 async function handlePreviewLoad(pageId: string, frame: HTMLIFrameElement) {
   try {
     loadedPreviewIds.value = new Set(loadedPreviewIds.value).add(pageId)
-    if (pageId === livePreviewId.value) {
-      forcedThumbnailRefreshIds.add(pageId)
-      failedPreviewIds.delete(pageId)
-      scheduleNextCapture()
-    }
-    observePreviewImages(pageId, frame)
     syncPreviewHotspots(pageId)
     requestFocusedPageScan(pageId)
-    await waitForPreviewReady(frame)
+    if (!applyDetectedPcPreviewSize(frame)) schedulePcPreviewSizeDetection(pageId, frame)
+    else return
+    await waitForPreviewReady(frame, PREVIEW_READY_QUIET_MS)
     syncPreviewHotspots(pageId)
     readyPreviewIds.value = new Set(readyPreviewIds.value).add(pageId)
     requestFocusedPageScan(pageId)
@@ -1742,9 +1812,8 @@ async function capturePreview(pageId: string, frame: HTMLIFrameElement, ready = 
   }
   capturesInProgress.add(pageId)
   const generation = previewGeneration
-  const changeVersion = previewChangeVersions.get(pageId) ?? 0
   try {
-    if (!ready) await waitForPreviewReady(frame)
+    if (!ready) await waitForPreviewReady(frame, PREVIEW_READY_QUIET_MS)
     if (generation !== previewGeneration) return
     const body = frame.contentDocument?.body
     if (!body || !frame.isConnected) return
@@ -1760,11 +1829,27 @@ async function capturePreview(pageId: string, frame: HTMLIFrameElement, ready = 
     })
     if (generation !== previewGeneration) return
     records.forEach(record => { pendingThumbnailRecords[record.slot] = record })
-    if ((previewChangeVersions.get(pageId) ?? 0) === changeVersion)
-      forcedThumbnailRefreshIds.delete(pageId)
+    captureRetryCounts.delete(pageId)
+    const retryTimer = captureRetryTimers.get(pageId)
+    if (retryTimer) window.clearTimeout(retryTimer)
+    captureRetryTimers.delete(pageId)
+    forcedThumbnailRefreshIds.delete(pageId)
   } catch (error) {
     forcedThumbnailRefreshIds.delete(pageId)
     failedPreviewIds.add(pageId)
+    if (!manualCaptureIds.has(pageId)) {
+      const retries = captureRetryCounts.get(pageId) ?? 0
+      if (retries < 2) {
+        captureRetryCounts.set(pageId, retries + 1)
+        const timer = window.setTimeout(() => {
+          captureRetryTimers.delete(pageId)
+          failedPreviewIds.delete(pageId)
+          captureBatchIds.delete(pageId)
+          scheduleNextCapture()
+        }, 5000)
+        captureRetryTimers.set(pageId, timer)
+      }
+    }
     console.warn(`unplugin-pageflow could not cache ${page.path}`, error)
   } finally {
     capturesInProgress.delete(pageId)
@@ -1772,23 +1857,41 @@ async function capturePreview(pageId: string, frame: HTMLIFrameElement, ready = 
   }
 }
 
-function setPreviewMode(mode: PageFlowPreviewMode) {
-  if (previewMode.value === mode) return
+function resetPreviewRendering() {
   cancelScheduledCapture()
   backgroundCaptureStarted = false
   previewGeneration++
-  previewMode.value = mode
-  try {
-    localStorage.setItem(PREVIEW_MODE_STORAGE_KEY, mode)
-  } catch {}
   livePreviewId.value = undefined
   livePreviewCacheIds.value = []
   capturePreviewId.value = undefined
   captureBatchIds.clear()
   manualCaptureIds.clear()
   failedPreviewIds.clear()
+  captureRetryTimers.forEach(timer => window.clearTimeout(timer))
+  captureRetryTimers.clear()
+  captureRetryCounts.clear()
   Object.keys(pendingThumbnailRecords).forEach(id => delete pendingThumbnailRecords[id])
   requestLayout(pages.value, true)
+}
+
+function setPreviewMode(mode: PageFlowPreviewMode) {
+  if (previewMode.value === mode) return
+  previewMode.value = mode
+  try {
+    localStorage.setItem(PREVIEW_MODE_STORAGE_KEY, mode)
+  } catch {}
+  resetPreviewRendering()
+}
+
+function handlePcViewportResize() {
+  window.clearTimeout(pcViewportResizeTimer)
+  pcViewportResizeTimer = window.setTimeout(() => {
+    if (pcDesignSizeDetected) return
+    const next = { width: window.innerWidth, height: window.innerHeight }
+    if (next.width === pcPreviewSize.value.width && next.height === pcPreviewSize.value.height) return
+    pcPreviewSize.value = next
+    if (previewMode.value === 'pc') resetPreviewRendering()
+  }, 200)
 }
 
 function zoomCanvas(direction: 'in' | 'out') {
@@ -1876,7 +1979,7 @@ function handlePreviewMessage(event: MessageEvent) {
   const message = decodePreviewMessage(event.data)
   if (!message) return
   if (message.type === 'api-result') {
-    if (!sourcePageId) return
+    if (!sourcePageId || !isLocalBusinessApiResponse(message.result.url, window.location.origin, message.result.contentType)) return
     const current = apiResultsByPage.value[sourcePageId] ?? []
     const previous = current.find(item => item.id === message.result.id)
     const result = previous ? {
@@ -2009,6 +2112,7 @@ function renderCanvasScene() {
     focus.targets.forEach(target => scenePagesById.set(target.page.id, target.page))
   }
   const scenePages = [...scenePagesById.values()]
+  capturePulseGroup = undefined
   const focusAvoidanceBounds = focus ? (() => {
     const bounds = [
       { x: focus.sourcePosition[0], y: focus.sourcePosition[1], width: PAGE_CARD_WIDTH, height: pageCardHeight(focus.source.id) },
@@ -2079,7 +2183,7 @@ function renderCanvasScene() {
       darkMode.value,
       ...tiles.map(record => `${record.slot}:${thumbnailSource(record) ?? ''}:${record.tileTop ?? 0}:${record.height}`),
     ].join('|')
-    cardNodes?.upsert(page.id, cardSignature, () => {
+    const group = cardNodes?.upsert(page.id, cardSignature, () => {
       const group = routeDeckByPageId.value.has(page.id) && !focusTargets.has(page.id)
         ? createDeckGroup(page, x, y)
         : createCardGroup(page, visualX, visualY, visualScale, page.id === active.value)
@@ -2087,6 +2191,10 @@ function renderCanvasScene() {
       group.opacity = opacity
       return group
     }, group => group.set({ x: visualX, y: visualY, scaleX: visualScale, scaleY: visualScale, opacity }))
+    if (group && page.id === capturePreviewId.value && setPageCardShadow(group, page.id === active.value, 0)) {
+      capturePulseGroup = group
+      capturePulseHighlighted = page.id === active.value
+    }
   })
   const visibleConnectionIds = new Set<string>()
   if (focus && focusLayoutProgress > 0.85) {
@@ -2154,6 +2262,10 @@ function draw() {
 }
 
 function applyGraph(nextPages: PageFlowPage[], nextRouteMode: PageFlowRouteMode) {
+  const previousPromotedPath = promotedRouteGroupPath(pages.value)
+  const followsPromotedRoot = routeGroupPath.value.length === previousPromotedPath.length
+    && routeGroupPath.value.every((segment, index) => segment === previousPromotedPath[index])
+  const nextPromotedPath = promotedRouteGroupPath(nextPages)
   const plan = planGraphUpdate({
     pages: pages.value,
     nextPages,
@@ -2175,6 +2287,7 @@ function applyGraph(nextPages: PageFlowPage[], nextRouteMode: PageFlowRouteMode)
   focusedPageStateCache.retain(plan.pageIds)
   if (plan.focusedPageRemoved) exitFocus()
   pages.value = nextPages
+  if (followsPromotedRoot) routeGroupPath.value = nextPromotedPath
   active.value = plan.activeId
   status.value = plan.status
   if (nextPages.length) {
@@ -2183,6 +2296,7 @@ function applyGraph(nextPages: PageFlowPage[], nextRouteMode: PageFlowRouteMode)
   }
   if (plan.layoutChanged) requestLayout(nextPages)
   else scheduleCanvasRender()
+  scheduleNextCapture()
 }
 
 function applyPageUpdate(nextPage: PageFlowPage) {
@@ -2200,52 +2314,77 @@ function applyPageUpdate(nextPage: PageFlowPage) {
     else if (plan.action === 'render') scheduleCanvasRender()
     return
   }
-  showPageUpdateRipple(nextPage)
   pages.value = plan.pages
+  if (plan.sourceChanged) showPageUpdateEffect(nextPage)
   status.value = 'Routes synced'
   if (plan.action === 'layout') void requestFocusedLayout()
   else if (plan.action === 'render') scheduleCanvasRender()
 }
 
-function showPageUpdateRipple(page: PageFlowPage) {
+function removePageUpdateEffects() {
+  pageUpdateEffects.forEach(({ group, animation }) => {
+    animation.dispose()
+    leafer?.remove(group, true)
+  })
+  pageUpdateEffects.clear()
+}
+
+function showPageUpdateRay(page: PageFlowPage) {
   const position = positions.value.get(page.id)
   if (!leafer || !position) return
-  const previous = pageUpdateRipples.get(page.id)
+  const previous = pageUpdateEffects.get(page.id)
   previous?.animation.cancel()
   if (previous) leafer.remove(previous.group, true)
 
   const group = new Group({ hittable: false })
-  const rings = [0, 1, 2].map(() => new Rect({
-    fill: undefined,
-    stroke: page.accent || '#3b82f6',
-    strokeWidth: 2,
+  const ray = new Path({
+    stroke: '#3b82f6',
+    strokeWidth: 3,
     strokeScaleFixed: true,
-    cornerRadius: 10,
+    strokeCap: 'round',
+    shadow: { x: 0, y: 0, blur: 12, color: '#3b82f6cc' },
     hittable: false,
-  }))
-  rings.forEach(ring => group.add(ring))
+  })
+  group.add(ray)
   leafer.add(group)
   const animation = new FrameAnimation(animationHost)
-  pageUpdateRipples.set(page.id, { group, animation })
-  animation.start(1_400, (progress) => {
+  pageUpdateEffects.set(page.id, { group, animation })
+  const duration = 10_000
+  animation.start(duration, (progress) => {
     const currentPosition = positions.value.get(page.id)
     if (!currentPosition) return
-    rings.forEach((ring, index) => {
-      const ringProgress = Math.max(0, Math.min(1, (progress - index * 0.12) / 0.76))
-      const inset = 8 + ringProgress * 22
-      ring.set({
-        x: currentPosition[0] - inset,
-        y: currentPosition[1] - inset,
-        width: PAGE_CARD_WIDTH + inset * 2,
-        height: pageCardHeight(page.id) + inset * 2,
-        opacity: ringProgress > 0 ? (1 - ringProgress) * 0.75 : 0,
-      })
+    const fadeEnvelope = (1 - progress) ** 1.35
+    const inset = 4
+    const width = PAGE_CARD_WIDTH + inset * 2
+    const height = pagePreviewHeight(page.id) + inset * 2
+    const perimeter = (width + height) * 2
+    const pointAt = (distance: number) => {
+      let offset = ((distance % perimeter) + perimeter) % perimeter
+      if (offset <= width) return [currentPosition[0] - inset + offset, currentPosition[1] - inset] as const
+      offset -= width
+      if (offset <= height) return [currentPosition[0] + PAGE_CARD_WIDTH + inset, currentPosition[1] - inset + offset] as const
+      offset -= height
+      if (offset <= width) return [currentPosition[0] + PAGE_CARD_WIDTH + inset - offset, currentPosition[1] + pagePreviewHeight(page.id) + inset] as const
+      offset -= width
+      return [currentPosition[0] - inset, currentPosition[1] + pagePreviewHeight(page.id) + inset - offset] as const
+    }
+    const head = progress * 5 * perimeter
+    const points = Array.from({ length: 15 }, (_, pointIndex) => pointAt(head - pointIndex * 5))
+    const path = points.map(([x, y], pointIndex) => `${pointIndex ? 'L' : 'M'}${x} ${y}`).join(' ')
+    ray.set({
+      path,
+      opacity: fadeEnvelope,
     })
   }, () => {
-    if (pageUpdateRipples.get(page.id)?.group !== group) return
+    if (pageUpdateEffects.get(page.id)?.group !== group) return
     leafer?.remove(group, true)
-    pageUpdateRipples.delete(page.id)
+    pageUpdateEffects.delete(page.id)
   })
+}
+
+function showPageUpdateEffect(page: PageFlowPage) {
+  const target = pageUpdateEffectTarget(pages.value, routeGroupPath.value, page.id)
+  if (target) showPageUpdateRay(target.page)
 }
 
 watch(requiredThumbnailRecords, records => {
@@ -2283,6 +2422,25 @@ watch(requiredThumbnailRecords, records => {
 }, { immediate: true })
 
 watch([active, copiedPath], scheduleCanvasRender)
+watch(capturePreviewId, (pageId) => {
+  cancelAnimationFrame(capturePulseFrame)
+  capturePulseFrame = 0
+  if (!pageId) {
+    if (capturePulseGroup) setPageCardShadow(capturePulseGroup, capturePulseHighlighted)
+    capturePulseGroup = undefined
+    scheduleCanvasRender()
+    return
+  }
+  const startedAt = performance.now()
+  const tick = (time: number) => {
+    if (!capturePreviewId.value) return
+    const pulse = (1 - Math.cos((time - startedAt) / 900 * Math.PI * 2)) / 2
+    if (capturePulseGroup) setPageCardShadow(capturePulseGroup, capturePulseHighlighted, pulse)
+    capturePulseFrame = requestAnimationFrame(tick)
+  }
+  capturePulseFrame = requestAnimationFrame(tick)
+  scheduleCanvasRender()
+})
 watch([focusedPageId, focusedDiagnostics, focusedApiResults, focusedPageTests, focusedLinks, lighthouseReport], scheduleAIContextSync, { deep: true })
 watch(focusedPageId, () => {
   window.clearTimeout(diagnosticsRequestTimer)
@@ -2302,6 +2460,7 @@ onMounted(async () => {
   userSessionRefreshTimer = window.setInterval(refreshSessionUsers, 1_000)
   window.addEventListener('message', handlePreviewMessage)
   window.addEventListener('keydown', handleSearchShortcut)
+  window.addEventListener('resize', handlePcViewportResize)
   layoutWorker = new LayoutWorker()
   layoutWorker.addEventListener('message', event => {
     if (event.data?.id !== layoutRequestId) return
@@ -2346,6 +2505,7 @@ onMounted(async () => {
   } finally {
     thumbnailManifestLoaded.value = true
     scheduleInitialSceneReveal()
+    scheduleNextCapture()
   }
 
   stopPageFlowUpdates = subscribeToPageFlowUpdates(props.config, {
@@ -2375,13 +2535,11 @@ onUnmounted(() => {
   window.clearInterval(userSessionRefreshTimer)
   window.clearTimeout(aiContextTimer)
   window.clearTimeout(diagnosticsRequestTimer)
-  pageUpdateRipples.forEach(({ group, animation }) => {
-    animation.cancel()
-    leafer?.remove(group, true)
-  })
-  pageUpdateRipples.clear()
+  removePageUpdateEffects()
   window.removeEventListener('message', handlePreviewMessage)
   window.removeEventListener('keydown', handleSearchShortcut)
+  window.removeEventListener('resize', handlePcViewportResize)
+  window.clearTimeout(pcViewportResizeTimer)
   canvas.value?.removeEventListener('click', handleCanvasClick)
   canvas.value?.removeEventListener('pointerdown', handleFocusTargetPointerDown, true)
   canvas.value?.removeEventListener('pointermove', handleCanvasCursor, true)
@@ -2392,6 +2550,7 @@ onUnmounted(() => {
   window.removeEventListener('pointercancel', handleFocusTargetPointerUp, true)
   cancelAnimationFrame(viewportFrame)
   cancelAnimationFrame(sceneRenderFrame)
+  cancelAnimationFrame(capturePulseFrame)
   hoverAnimation.dispose()
   flightAnimation.dispose()
   focusAnimation.dispose()
@@ -2400,6 +2559,7 @@ onUnmounted(() => {
   clearTimeout(copiedPathTimer)
   clearTimeout(layoutTimeout)
   clearTimeout(initialRevealTimer)
+  captureRetryTimers.forEach(timer => window.clearTimeout(timer))
   clearTimeout(diagnosticsTimer)
   thumbnailResourceGeneration++
   thumbnailResourceCache.dispose()
@@ -2520,7 +2680,7 @@ onUnmounted(() => {
             <span v-else-if="page.id === focusedPageId" class="page-user-label">{{ userNotes[users[0]] || users[0] }}</span>
             <iframe
               :ref="element => setPreviewFrame(page.id, element as Element | null)"
-              :key="`${previewMode}:${page.id}:${pageUsers[page.id] ?? activeUser}`"
+              :key="`${previewMode}:${currentPreviewMode.width}x${currentPreviewMode.height}:${page.id}:${pageUsers[page.id] ?? activeUser}`"
               :src="previewUrl(page.path)"
               :title="`${page.title} preview`"
               :style="{
@@ -2540,7 +2700,19 @@ onUnmounted(() => {
         </div>
       </div>
       <div ref="connectionCanvas" class="connection-canvas"></div>
-      <aside v-if="focusedPageId" class="api-panel">
+      <aside v-if="focusedPageId" class="api-panel" :class="{ 'is-collapsed': panelCollapsed }">
+      <button
+        type="button"
+        class="api-panel-toggle"
+        :aria-label="panelCollapsed ? '展开右侧面板' : '收起右侧面板'"
+        :title="panelCollapsed ? '展开右侧面板' : '收起右侧面板'"
+        @click="panelCollapsed = !panelCollapsed"
+      >
+        <svg viewBox="0 0 16 16" aria-hidden="true">
+          <path :d="panelCollapsed ? 'm6 3 5 5-5 5' : 'm10 3-5 5 5 5'" />
+        </svg>
+      </button>
+      <div v-show="!panelCollapsed" class="api-panel-content">
       <UTabs v-model="panelTab" class="api-panel-tabs" :items="panelTabs" variant="link" aria-label="页面详情">
         <template #api>
           <div v-if="focusedApiResults.length" class="api-panel-list">
@@ -2820,7 +2992,24 @@ onUnmounted(() => {
             <div v-else class="api-panel-waiting">未发现当前规则覆盖的问题</div>
           </div>
         </template>
+        <template #todos>
+          <div class="todo-panel">
+            <form class="todo-entry" @submit.prevent="addPageTodo">
+              <input v-model="newTodoText" type="text" maxlength="240" placeholder="添加当前页面待办…" aria-label="添加当前页面待办">
+              <UButton type="submit" size="sm" color="neutral" :disabled="!newTodoText.trim()">添加</UButton>
+            </form>
+            <div v-if="focusedTodos.length" class="todo-list">
+              <div v-for="todo in focusedTodos" :key="todo.id" class="todo-item">
+                <input :id="`todo-${todo.id}`" type="checkbox" :checked="todo.done" @change="togglePageTodo(todo.id)">
+                <label :for="`todo-${todo.id}`" :class="{ done: todo.done }">{{ todo.text }}</label>
+                <button type="button" aria-label="删除待办" title="删除待办" @click="removePageTodo(todo.id)">×</button>
+              </div>
+            </div>
+            <div v-else class="api-panel-waiting">当前页面暂无待办</div>
+          </div>
+        </template>
       </UTabs>
+      </div>
       </aside>
     </section>
     <div class="zoom"><button type="button" @click="zoomCanvas('in')">+</button><span>{{ zoomPercent }}%</span><button type="button" @click="zoomCanvas('out')">−</button></div>

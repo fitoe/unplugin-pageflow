@@ -13,6 +13,7 @@ export interface PageUpdatePlan {
   pages: PageFlowPage[]
   focusedLinks: PageFlowLink[]
   pageChanged: boolean
+  sourceChanged: boolean
   action?: 'layout' | 'render'
 }
 
@@ -38,6 +39,7 @@ export function planPageUpdate(options: PageUpdateOptions): PageUpdatePlan | und
     pages,
     focusedLinks: nextFocusedLinks,
     pageChanged,
+    sourceChanged: currentPage.revision !== options.nextPage.revision,
     action: focusTargetsChanged ? 'layout' : (!pageChanged ? focusedGeometryChanged : linksChanged) ? 'render' : undefined,
   }
 }

@@ -35,6 +35,7 @@ test('serves the unplugin-pageflow client from the configured development route'
     const runtimeClient = await fetch(`${origin}/src/runtime/client.ts`)
     const runtimeClientCode = await runtimeClient.text()
     const componentFile = resolve('tests/fixtures/Programmatic.vue').replaceAll('\\', '/')
+    const redirectComponentFile = resolve('tests/fixtures/RedirectPage.vue').replaceAll('\\', '/')
     const routes = [
       { id: 'home', name: 'home', path: '/', title: 'Home', componentFile },
       { id: 'about', name: 'about', path: '/about', title: 'About' },
@@ -43,6 +44,9 @@ test('serves the unplugin-pageflow client from the configured development route'
       { id: 'user', name: 'user', path: '/users/:id', title: 'User' },
       { id: 'inferred', name: 'inferred', path: '/inferred', title: 'Inferred' },
       { id: 'source-check', name: 'source-check', path: '/source-check', title: 'Source check', componentFile: 'C:/project/src/source-check.vue' },
+      { id: 'redirect-home', path: '/redirect-home', title: 'Redirect home', componentFile: redirectComponentFile },
+      { id: 'standard-redirect', path: '/start', title: 'Start', redirect: '/about' },
+      { id: '/[...all]', path: '/:all(.*)', title: 'Not found' },
     ]
 
     const routeUpdate = await fetch(`${origin}/__unplugin-pageflow/api/routes`, {
@@ -52,12 +56,15 @@ test('serves the unplugin-pageflow client from the configured development route'
     })
     const pageflowPlugin = server.config.plugins.find(plugin => plugin.name === 'unplugin-pageflow')
     assert.equal(typeof pageflowPlugin?.transform, 'function')
+    const configCode = await pageflowPlugin.load('\0virtual:unplugin-pageflow/config')
+    assert.match(configCode, /"launcher":true/)
     const distPattern = `${resolve('dist').replaceAll('\\', '/')}/**`
     assert(server.config.server.watch.ignored.includes(distPattern))
     assert(server.config.server.watch.ignored.includes('**/.unplugin-pageflow/cache/**'))
     assert.deepEqual(await pageflowPlugin.handleHotUpdate?.({ file: resolve('dist/client/mount.js') }), [])
     assert.deepEqual(await pageflowPlugin.handleHotUpdate?.({ file: resolve('.unplugin-pageflow/cache/thumbnail.webp') }), [])
     await pageflowPlugin.transform(await readFile(componentFile, 'utf8'), componentFile)
+    await pageflowPlugin.transform(await readFile(redirectComponentFile, 'utf8'), redirectComponentFile)
     await pageflowPlugin.transform('export default {}', `${componentFile}?vue&type=template`)
     await pageflowPlugin.transform("uni.navigateTo({ url: '/contact' })", 'C:/project/src/inferred.vue')
     await pageflowPlugin.transform('export default {}', 'C:/project/src/inferred.vue?vue&type=script')

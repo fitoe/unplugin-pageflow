@@ -291,13 +291,23 @@ export function createRouteDeckView(items: PageFlowPage[], groupPath: string[] =
     else grouped.set(remaining[0], [...(grouped.get(remaining[0]) ?? []), page])
   })
   const decks = [...grouped.entries()].flatMap(([label, unsortedDeckPages]) => {
-    const deckPages = [...unsortedDeckPages].sort(compareDeckPages)
+    const deckPath = [...groupPath, label]
+    const indexPageIndex = directPages.findIndex((page) => {
+      const segments = pageRouteParts(page)
+      return segments.length === deckPath.length
+        && deckPath.every((segment, index) => segments[index] === segment)
+    })
+    const indexPage = indexPageIndex < 0 ? undefined : directPages.splice(indexPageIndex, 1)[0]
+    const deckPages = [
+      ...(indexPage ? [indexPage] : []),
+      ...[...unsortedDeckPages].sort(compareDeckPages),
+    ]
     if (deckPages.length === 1) {
       directPages.push(deckPages[0])
       return []
     }
     return [{
-    key: [...groupPath, label].join('/'),
+    key: deckPath.join('/'),
     label,
     pages: deckPages,
     representative: deckPages[0],
@@ -305,6 +315,13 @@ export function createRouteDeckView(items: PageFlowPage[], groupPath: string[] =
   }).sort((left, right) => compareDeckPages(left.representative, right.representative))
   directPages.sort(compareDeckPages)
   return { directPages, decks }
+}
+
+export function promotedRouteGroupPath(items: PageFlowPage[]) {
+  const root = createRouteDeckView(items)
+  return root.directPages.length === 0 && root.decks.length === 1
+    ? root.decks[0].key.split('/').filter(Boolean)
+    : []
 }
 
 export function routeDeckPathForPage(items: PageFlowPage[], pageId: string) {

@@ -1,4 +1,3 @@
-import html2canvas from 'html2canvas-pro'
 import { domToCanvas, type Options as ModernScreenshotOptions } from 'modern-screenshot'
 import type { PageFlowThumbnailRecord, ResolvedPageFlowOptions } from '../shared/types'
 import { PAGE_CARD_WIDTH } from './layout'
@@ -11,12 +10,46 @@ import {
   thumbnailSlot,
   thumbnailTileCount,
   type PageFlowPreviewMode,
+  PAGEFLOW_MAX_SINGLE_THUMBNAIL_HEIGHT,
   PAGEFLOW_THUMBNAIL_TILE_HEIGHT,
 } from './thumbnails'
 
 interface SnapshotCanvas {
   width: number
   height: number
+}
+
+export function hasMeaningfulSnapshotPixels(pixels: Uint8ClampedArray) {
+  if (!pixels.length) return false
+  const buckets = new Map<number, number>()
+  let visible = 0
+  for (let index = 0; index < pixels.length; index += 4) {
+    const alpha = pixels[index + 3]
+    if (alpha <= 16) continue
+    visible++
+    const bucket = (pixels[index] >> 4) << 12
+      | (pixels[index + 1] >> 4) << 8
+      | (pixels[index + 2] >> 4) << 4
+      | (alpha >> 6)
+    buckets.set(bucket, (buckets.get(bucket) ?? 0) + 1)
+  }
+  if (visible < pixels.length / 4 * 0.02) return false
+  const dominant = Math.max(0, ...buckets.values())
+  return visible - dominant >= Math.max(2, Math.floor(visible * 0.01))
+}
+
+export function snapshotHasVisualContent(source: HTMLCanvasElement) {
+  try {
+    const sample = source.ownerDocument.createElement('canvas')
+    sample.width = 32
+    sample.height = 18
+    const context = sample.getContext('2d', { willReadFrequently: true })
+    if (!context) return true
+    context.drawImage(source, 0, 0, sample.width, sample.height)
+    return hasMeaningfulSnapshotPixels(context.getImageData(0, 0, sample.width, sample.height).data)
+  } catch {
+    return true
+  }
 }
 
 interface SnapshotCaptureDependencies {
@@ -30,14 +63,38 @@ interface SnapshotCaptureDependencies {
 
 interface SnapshotRenderers {
   primary(target: HTMLElement, options: ModernScreenshotOptions): Promise<HTMLCanvasElement>
-  fallback(target: HTMLElement, options: Record<string, unknown>): Promise<HTMLCanvasElement>
+}
+
+export function preserveCanvasFrames(target: HTMLElement) {
+  const restores: Array<() => void> = []
+  target.querySelectorAll('canvas').forEach((source) => {
+    const frame = source.ownerDocument.createElement('canvas')
+    frame.width = source.width
+    frame.height = source.height
+    const context = frame.getContext('2d')
+    if (!context) return
+    try {
+      context.drawImage(source, 0, 0)
+      const dataUrl = frame.toDataURL()
+      const image = source.ownerDocument.createElement('img')
+      image.src = dataUrl
+      image.width = source.width
+      image.height = source.height
+      image.className = source.className
+      image.style.cssText = source.style.cssText
+      source.replaceWith(image)
+      restores.push(() => image.replaceWith(source))
+    } catch {}
+  })
+  return () => restores.forEach(restore => restore())
 }
 
 export async function renderSnapshotCanvas(
   target: HTMLElement,
   options: Record<string, unknown>,
-  renderers: SnapshotRenderers = { primary: domToCanvas, fallback: html2canvas },
+  renderers: SnapshotRenderers = { primary: domToCanvas },
 ) {
+  const restoreCanvasFrames = preserveCanvasFrames(target)
   try {
     return await renderers.primary(target, {
       backgroundColor: options.backgroundColor as string,
@@ -48,8 +105,8 @@ export async function renderSnapshotCanvas(
       scale: options.scale as number,
       width: options.width as number,
     })
-  } catch {
-    return renderers.fallback(target, options)
+  } finally {
+    restoreCanvasFrames()
   }
 }
 
@@ -73,9 +130,7 @@ export function hideSnapshotScrollbars(document: Document) {
 }
 
 export function snapshotCaptureTarget(body: HTMLElement) {
-  return body.querySelector<HTMLElement>('.home-page.pageflow-preview')
-    ?? body.querySelector<HTMLElement>('uni-page-body > *')
-    ?? (body.firstElementChild instanceof HTMLElement ? body.firstElementChild : body)
+  return body
 }
 
 export interface CapturePageThumbnailsOptions {
@@ -115,6 +170,11 @@ export async function capturePageThumbnails(
   } finally {
     restoreScrollbars()
   }
+  if ('ownerDocument' in snapshot && !snapshotHasVisualContent(snapshot as HTMLCanvasElement)) {
+    snapshot.width = 0
+    snapshot.height = 0
+    throw new Error('Snapshot is visually blank')
+  }
   const records: PageFlowThumbnailRecord[] = []
   const displayScale = PAGE_CARD_WIDTH / snapshot.width
   const displayHeight = Math.round(snapshot.height * displayScale)
@@ -132,23 +192,33 @@ export async function capturePageThumbnails(
     compact.height = 0
   }
   try {
-    const tileCount = dependencies.tileCount(snapshot)
-    for (let tileIndex = tileCount - 1; tileIndex >= 0; tileIndex--) {
-      const tile = dependencies.extractTile(snapshot, tileIndex)
-      try {
-        records.push(await dependencies.save(options.config, {
-          slot: thumbnailSlot(options.pageId, options.previewMode, 'full', tileIndex),
-          revision: options.revision,
-          width: tile.width,
-          height: Math.round(tile.height * displayScale),
-          pageHeight: displayHeight,
-          tileCount,
-          tileIndex,
-          tileTop: Math.round(tileIndex * PAGEFLOW_THUMBNAIL_TILE_HEIGHT * displayScale),
-        }, await dependencies.encode(tile, 0.9)))
-      } finally {
-        tile.width = 0
-        tile.height = 0
+    if (snapshot.height <= PAGEFLOW_MAX_SINGLE_THUMBNAIL_HEIGHT) {
+      records.push(await dependencies.save(options.config, {
+        slot: thumbnailSlot(options.pageId, options.previewMode, 'full'),
+        revision: options.revision,
+        width: snapshot.width,
+        height: displayHeight,
+        pageHeight: displayHeight,
+      }, await dependencies.encode(snapshot, 0.9)))
+    } else {
+      const tileCount = dependencies.tileCount(snapshot)
+      for (let tileIndex = tileCount - 1; tileIndex >= 0; tileIndex--) {
+        const tile = dependencies.extractTile(snapshot, tileIndex)
+        try {
+          records.push(await dependencies.save(options.config, {
+            slot: thumbnailSlot(options.pageId, options.previewMode, 'full', tileIndex),
+            revision: options.revision,
+            width: tile.width,
+            height: Math.round(tile.height * displayScale),
+            pageHeight: displayHeight,
+            tileCount,
+            tileIndex,
+            tileTop: Math.round(tileIndex * PAGEFLOW_THUMBNAIL_TILE_HEIGHT * displayScale),
+          }, await dependencies.encode(tile, 0.9)))
+        } finally {
+          tile.width = 0
+          tile.height = 0
+        }
       }
     }
   } finally {

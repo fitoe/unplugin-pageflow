@@ -1,5 +1,7 @@
 export interface PageFlowOptions {
   enabled?: boolean
+  /** Show the development launcher on host pages. */
+  launcher?: boolean
   framework?: PageFlowFramework
   /** Framework integrations use this when their Vite root differs from the project root. */
   projectRoot?: string
@@ -48,6 +50,7 @@ export type PageFlowFramework = 'auto' | 'uni-app' | 'vue' | 'nuxt' | 'astro' | 
 
 export interface ResolvedPageFlowOptions {
   enabled: boolean
+  launcher: boolean
   framework: PageFlowFramework
   routes: PageFlowRuntimeRoute[]
   previewPath: string
@@ -67,6 +70,12 @@ export interface PageFlowRuntimeRoute {
   path: string
   title: string
   componentFile?: string
+  /** Static redirect target reported by the router. Redirect-only routes are not canvas pages. */
+  redirect?: string
+  /** Original path for a router alias. Aliases are not separate canvas pages. */
+  aliasOf?: string
+  /** Framework-reported fallback route. */
+  catchAll?: boolean
 }
 
 export type PageFlowRouteMode = 'history' | 'hash'
@@ -140,6 +149,7 @@ export interface PageFlowApiResult {
   duration: number
   occurredAt?: number
   responseSize?: number
+  contentType?: string
   occurrences?: number
   lastIntervalMs?: number
   fields: PageFlowApiField[]

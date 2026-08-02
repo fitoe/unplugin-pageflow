@@ -1,0 +1,41 @@
+import assert from 'node:assert/strict'
+import { resolve } from 'node:path'
+import test from 'node:test'
+import { createServer } from 'vite'
+
+test('Vue 热更新直接推送对应页面', async () => {
+  const server = await createServer({
+    root: process.cwd(),
+    logLevel: 'silent',
+    server: { host: '127.0.0.1', port: 0 },
+  })
+  const controller = new AbortController()
+  try {
+    await server.listen()
+    const address = server.httpServer?.address()
+    assert.ok(address && typeof address === 'object')
+    const origin = `http://127.0.0.1:${address.port}`
+    const componentFile = '/tests/fixtures/Programmatic.vue'
+    await fetch(`${origin}/__unplugin-pageflow/api/routes`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        routeMode: 'history',
+        routes: [{ id: 'hot', path: '/hot', title: 'Hot', componentFile }],
+      }),
+    })
+    const events = await fetch(`${origin}/__unplugin-pageflow/api/events`, { signal: controller.signal })
+    const reader = events.body.getReader()
+    const decoder = new TextDecoder()
+    assert.match(decoder.decode((await reader.read()).value), /connected/)
+
+    const plugin = server.config.plugins.find(item => item.name === 'unplugin-pageflow')
+    await plugin.handleHotUpdate({ file: resolve('tests/fixtures/Programmatic.vue') })
+    const update = decoder.decode((await reader.read()).value)
+    assert.match(update, /event: unplugin-pageflow:page-update/)
+    assert.match(update, /"path":"\/hot"/)
+  } finally {
+    controller.abort()
+    await server.close()
+  }
+})

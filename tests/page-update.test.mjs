@@ -20,6 +20,7 @@ test('plans page updates without losing scanned focus links', async () => {
     })
     assert.equal(preserved.focusedLinks, scannedLinks)
     assert.equal(preserved.pageChanged, true)
+    assert.equal(preserved.sourceChanged, false)
     assert.equal(preserved.action, undefined)
     assert.equal(preserved.pages[0].title, 'Home')
 
@@ -40,6 +41,14 @@ test('plans page updates without losing scanned focus links', async () => {
     })
     assert.equal(nonFocused.focusedLinks, scannedLinks)
     assert.equal(nonFocused.action, 'render')
+
+    const sourceChanged = planPageUpdate({
+      pages: [{ ...current, revision: 'before' }],
+      nextPage: { ...current, revision: 'after' },
+      focusedLinks: [],
+    })
+    assert.equal(sourceChanged.pageChanged, true)
+    assert.equal(sourceChanged.sourceChanged, true)
 
     assert.equal(planPageUpdate({
       pages: [current],

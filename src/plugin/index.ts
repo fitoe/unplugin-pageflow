@@ -85,6 +85,7 @@ function resolveApiDiagnosticOptions(options: PageFlowOptions['apiDiagnostics'] 
 function resolveOptions(options: PageFlowOptions = {}): ResolvedPageFlowOptions {
   return {
     enabled: options.enabled ?? true,
+    launcher: options.launcher ?? true,
     framework: options.framework ?? 'auto',
     routes: options.routes ?? [],
     previewPath: normalizePreviewPath(options.previewPath ?? '/__unplugin-pageflow/'),
@@ -204,6 +205,7 @@ function createGraph(
   configuredTitlesByPath: Map<string, string>,
   routeOrderByPath: Map<string, number>,
   sourceRevisionsByFile: Map<string, string>,
+  sourceRedirectsByFile: Map<string, string>,
   tabPaths: Set<string>,
   diagnosticRules: Record<string, boolean>,
   version: number,
@@ -223,8 +225,22 @@ function createGraph(
   const hasRootRoute = routes.some(route => route.path === '/')
   const hiddenHomePath = hasRootRoute ? uniAppHomePath : undefined
   const seenPaths = new Set<string>()
+  const sourceRedirectForRoute = (route: PageFlowRuntimeRoute) => {
+    if (!route.componentFile) return sourceEntryForPath(sourceRedirectsByFile, route.path)
+    const componentFile = normalizeFile(route.componentFile)
+    return [...sourceRedirectsByFile.entries()]
+      .find(([file]) => file === componentFile || file.endsWith(componentFile.startsWith('/') ? componentFile : `/${componentFile}`))?.[1]
+      ?? sourceEntryForPath(sourceRedirectsByFile, route.path)
+  }
+  const redirectByPath = new Map(routes.flatMap((route) => {
+    const target = route.redirect ?? route.aliasOf ?? sourceRedirectForRoute(route)
+    return target && target !== route.path ? [[route.path, target] as const] : []
+  }))
+  const isCatchAll = (route: PageFlowRuntimeRoute) => route.catchAll === true
+    || /:[^/]+(?:\(\.\*\)|\*)/.test(route.path)
+    || /\[\.\.\.[^\]]+\]/.test(route.id)
   const pages: PageFlowPage[] = routes
-    .filter(route => route.path && route.path !== hiddenHomePath && !seenPaths.has(route.path) && seenPaths.add(route.path))
+    .filter(route => route.path && route.path !== hiddenHomePath && !isCatchAll(route) && !redirectByPath.has(route.path) && !seenPaths.has(route.path) && seenPaths.add(route.path))
     .map((route, index) => {
       const configuredPath = route.path === '/' && hiddenHomePath ? hiddenHomePath : route.path
       const configuredTitle = configuredTitlesByPath.get(configuredPath)
@@ -254,7 +270,12 @@ function createGraph(
   const routesById = new Map(routes.map(route => [route.id, route]))
 
   const resolveTarget = (path: string) => {
-    const normalizedPath = path.split(/[?#]/, 1)[0]
+    let normalizedPath = path.split(/[?#]/, 1)[0]
+    const visited = new Set<string>()
+    while (redirectByPath.has(normalizedPath) && !visited.has(normalizedPath)) {
+      visited.add(normalizedPath)
+      normalizedPath = redirectByPath.get(normalizedPath)!.split(/[?#]/, 1)[0]
+    }
     if (normalizedPath === hiddenHomePath) return idsByPath.get('/')
     const exact = idsByPath.get(normalizedPath)
     if (exact) return exact
@@ -351,6 +372,17 @@ function extractStaticLinks(code: string) {
     }
   }
   return links
+}
+
+function extractTopLevelRedirect(code: string) {
+  const scriptSetup = code.match(/<script\b[^>]*\bsetup\b[^>]*>([\s\S]*?)<\/script>/i)?.[1]
+  if (!scriptSetup) return undefined
+  const routerNames = new Set(['router', '$router'])
+  for (const match of scriptSetup.matchAll(/^const\s+([A-Za-z_$][\w$]*)\s*=\s*useRouter\s*\(\s*\)\s*;?\s*$/gm))
+    routerNames.add(match[1])
+  const callers = [...routerNames].map(name => name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|')
+  const call = new RegExp(`^(?:await\\s+)?(?:(?:${callers})|useRouter\\(\\s*\\))\\s*\\.\\s*replace\\(\\s*(["'])([^"'$]+)\\1\\s*\\)\\s*;?\\s*$`, 'm')
+  return scriptSetup.match(call)?.[2]
 }
 
 async function readJson(request: AsyncIterable<Uint8Array | string>) {
@@ -478,6 +510,7 @@ const factory: UnpluginFactory<PageFlowOptions | undefined> = (options) => {
   const staticLinksByFile = new Map<string, PageFlowRuntimeLink[]>()
   const staticDiagnosticsByFile = new Map<string, import('../shared/types.ts').PageFlowDiagnostic[]>()
   const sourceRevisionsByFile = new Map<string, string>()
+  const sourceRedirectsByFile = new Map<string, string>()
   const eventResponses = new Set<ServerResponse>()
   let cachedClientStyle: Buffer | undefined
   let sendGraphUpdate: ((graph: PageFlowGraph) => void) | undefined
@@ -500,11 +533,14 @@ const factory: UnpluginFactory<PageFlowOptions | undefined> = (options) => {
     return pageTestIndexReady
   }
 
-  const rebuildGraph = (updatedPath?: string) => {
-    graph = createGraph(routes, reportedPages, staticLinksByFile, staticDiagnosticsByFile, configuredTitlesByPath, routeOrderByPath, sourceRevisionsByFile, tabPaths, resolved.diagnostics.rules, graph.version + 1, routeMode, projectRoot, uniAppHomePath)
-    if (updatedPath) {
-      const page = graph.pages.find(item => item.path === updatedPath)
-      if (page) sendPageUpdate?.(page)
+  const rebuildGraph = (updatedPaths?: string | string[]) => {
+    graph = createGraph(routes, reportedPages, staticLinksByFile, staticDiagnosticsByFile, configuredTitlesByPath, routeOrderByPath, sourceRevisionsByFile, sourceRedirectsByFile, tabPaths, resolved.diagnostics.rules, graph.version + 1, routeMode, projectRoot, uniAppHomePath)
+    if (updatedPaths) {
+      const paths = Array.isArray(updatedPaths) ? updatedPaths : [updatedPaths]
+      paths.forEach((path) => {
+        const page = graph.pages.find(item => item.path === path)
+        if (page) sendPageUpdate?.(page)
+      })
     } else sendGraphUpdate?.(graph)
   }
 
@@ -516,16 +552,35 @@ const factory: UnpluginFactory<PageFlowOptions | undefined> = (options) => {
     const currentLinks = staticLinksByFile.get(file) ?? []
     const currentDiagnostics = staticDiagnosticsByFile.get(file) ?? []
     const nextRevision = createHash('sha256').update(code).digest('hex').slice(0, 16)
+    const nextRedirect = extractTopLevelRedirect(code)
     const linksChanged = JSON.stringify(currentLinks) !== JSON.stringify(nextLinks)
     const diagnosticsChanged = JSON.stringify(currentDiagnostics) !== JSON.stringify(nextDiagnostics)
     const revisionChanged = sourceRevisionsByFile.get(file) !== nextRevision
-    if (!linksChanged && !diagnosticsChanged && !revisionChanged) return false
+    const redirectChanged = sourceRedirectsByFile.get(file) !== nextRedirect
+    if (!linksChanged && !diagnosticsChanged && !revisionChanged && !redirectChanged) return false
     if (nextLinks.length) staticLinksByFile.set(file, nextLinks)
     else staticLinksByFile.delete(file)
     if (nextDiagnostics.length) staticDiagnosticsByFile.set(file, nextDiagnostics)
     else staticDiagnosticsByFile.delete(file)
     sourceRevisionsByFile.set(file, nextRevision)
+    if (nextRedirect) sourceRedirectsByFile.set(file, nextRedirect)
+    else sourceRedirectsByFile.delete(file)
     return true
+  }
+
+  const updateSource = (code: string, id: string) => {
+    if (!recordSource(code, id) || !routes.length) return
+    const sourceFile = normalizeFile(id)
+    const updatedPaths = routes
+      .filter((route) => {
+        if (route.componentFile) {
+          const componentFile = normalizeFile(route.componentFile)
+          if (sourceFile === componentFile || sourceFile.endsWith(componentFile.startsWith('/') ? componentFile : `/${componentFile}`)) return true
+        }
+        return sourceFile.endsWith(`/src${route.path}.vue`)
+      })
+      .map(route => route.path)
+    rebuildGraph(updatedPaths.length ? updatedPaths : undefined)
   }
 
   const scanVueSources = async (directory: string) => {
@@ -575,7 +630,7 @@ const factory: UnpluginFactory<PageFlowOptions | undefined> = (options) => {
     },
     transform(code, id) {
       if (!id.endsWith('.vue')) return
-      if (recordSource(code, id) && routes.length) rebuildGraph()
+      updateSource(code, id)
     },
     vite: {
       apply: 'serve',
@@ -603,13 +658,14 @@ const factory: UnpluginFactory<PageFlowOptions | undefined> = (options) => {
           },
         }
       },
-      handleHotUpdate(context) {
+      async handleHotUpdate(context) {
         const file = normalizeFile(context.file)
         if (`${file}/`.startsWith(pluginDist) || file.includes('/.unplugin-pageflow/cache/')) return []
         if (isPageFlowTestFile(file) && pageTestIndex && pageTestIndexScanned) {
           pageTestIndexReady = pageTestIndex.update(file).then(() => sendEvent(PAGEFLOW_TEST_EVENT, { file }))
           return []
         }
+        if (file.endsWith('.vue')) updateSource(await readFile(file, 'utf8'), file)
       },
       transformIndexHtml: {
         order: 'pre',
@@ -1044,7 +1100,9 @@ const factory: UnpluginFactory<PageFlowOptions | undefined> = (options) => {
           response.end(pageflowHtml(server.config.base, clientStyleFile ? stylePath : undefined, clientVersionPath, await getClientVersion()))
         })
 
-        server.httpServer?.once('listening', () => {
+        const printUrls = server.printUrls.bind(server)
+        server.printUrls = () => {
+          printUrls()
           const address = server.httpServer?.address()
           const port = typeof address === 'object' && address ? address.port : server.config.server.port
           const configuredHost = server.config.server.host
@@ -1052,8 +1110,12 @@ const factory: UnpluginFactory<PageFlowOptions | undefined> = (options) => {
             ? configuredHost
             : 'localhost'
           const protocol = server.config.server.https ? 'https' : 'http'
-          server.config.logger.info(`  unplugin-pageflow  ${protocol}://${host}:${port}${resolved.previewPath}`)
-        })
+          const localUrl = server.resolvedUrls?.local[0]
+          const pageflowUrl = localUrl
+            ? new URL(resolved.previewPath, localUrl).href
+            : `${protocol}://${host}:${port}${resolved.previewPath}`
+          server.config.logger.info(`  ➜  PageFlow: ${pageflowUrl}`)
+        }
         server.httpServer?.once('close', () => {
           eventResponses.forEach(response => response.end())
           eventResponses.clear()

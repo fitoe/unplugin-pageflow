@@ -28,6 +28,8 @@ test('scans visible page accessibility, interaction, and visual issues', async (
       <uni-button id="mobile-control"></uni-button>
       <div aria-hidden="true"><img id="hidden-image" src="hidden.png"><button id="hidden-button"></button></div>
       <div data-unplugin-pageflow-hotspot-layer><button id="pageflow-control"></button></div>
+      <div data-unplugin-pageflow-launcher><button id="pageflow-launcher-control"></button></div>
+      <div id="__vue-devtools-container__" data-v-inspector-ignore="true"><button id="vue-devtools-button"></button></div>
       <h1>页面标题</h1><h3 id="skipped-heading">跳级标题</h3>
       <a id="empty-link" href="#">占位链接</a>
       <div id="duplicate">一</div><div id="duplicate">二</div>
@@ -68,8 +70,10 @@ test('scans visible page accessibility, interaction, and visual issues', async (
     assert.equal(diagnostics.some(item => item.ruleId === 'missing-accessible-name' && item.selector === '#search'), false)
     assert.equal(diagnostics.some(item => item.selector === '#disabled'), false)
     assert.equal(diagnostics.some(item => item.selector === '#hidden-image'), false)
+    assert.equal(diagnostics.some(item => item.selector === '#pageflow-launcher-control'), false)
     assert.equal(diagnostics.some(item => item.selector === '#hidden-button'), false)
     assert.equal(diagnostics.some(item => item.selector === '#pageflow-control'), false)
+    assert.equal(diagnostics.some(item => item.selector === '#vue-devtools-button'), false)
     assert.ok(diagnostics.some(item => item.ruleId === 'missing-accessible-name' && item.selector === '#mobile-control'))
     assert.equal(diagnostics.some(item => item.ruleId === 'missing-image-dimensions' && item.selector === '#sized'), false)
     assert.equal(diagnostics.find(item => item.ruleId === 'missing-alt').severity, 'suggestion')

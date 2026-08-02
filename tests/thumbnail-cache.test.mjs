@@ -22,11 +22,22 @@ test('persists thumbnails and bounds memory to manifest metadata', async () => {
     assert.equal(record.height, 360)
     assert.equal(record.tileCount, 2)
     assert.equal((await cache.manifest())['pc:full:home:tile:0'].revision, 'revision-1')
+    await cache.write('pc:full:home:tile:1', 'revision-1', 240, 360, 'image/webp', image, {
+      pageHeight: 720,
+      tileCount: 2,
+      tileIndex: 1,
+      tileTop: 360,
+    })
+    const singleRecord = await cache.write('pc:full:home', 'revision-2', 240, 720, 'image/webp', image, { pageHeight: 720 })
+    const singleImageManifest = await cache.manifest()
+    assert.equal(singleImageManifest['pc:full:home'].revision, 'revision-2')
+    assert.equal(singleImageManifest['pc:full:home:tile:0'], undefined)
+    assert.equal(singleImageManifest['pc:full:home:tile:1'], undefined)
 
     const reopened = createThumbnailCache(directory)
-    const persisted = await reopened.read('pc:full:home:tile:0')
+    const persisted = await reopened.read('pc:full:home')
     assert.deepEqual([...persisted.data], [...image])
-    assert.equal(persisted.record.file, record.file)
+    assert.equal(persisted.record.file, singleRecord.file)
 
     const bounded = createThumbnailCache(join(directory, 'bounded'), 6)
     await bounded.write('pc:compact:first', 'one', 1, 1, 'image/webp', new Uint8Array([1, 2, 3, 4]))

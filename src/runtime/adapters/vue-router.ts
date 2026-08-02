@@ -6,6 +6,8 @@ interface RouterRecordLike {
   path: string
   meta?: Record<string, unknown>
   components?: Record<string, unknown>
+  redirect?: unknown
+  aliasOf?: RouterRecordLike
 }
 
 interface RouterLike {
@@ -52,6 +54,13 @@ export class VueRouterAdapter implements PageFlowRouterAdapter {
         path: route.path,
         title: typeof metaTitle === 'string' ? metaTitle : name ?? route.path,
         componentFile,
+        redirect: typeof route.redirect === 'string'
+          ? route.redirect
+          : route.redirect && typeof route.redirect === 'object' && typeof (route.redirect as { path?: unknown }).path === 'string'
+            ? (route.redirect as { path: string }).path
+            : undefined,
+        aliasOf: route.aliasOf?.path,
+        catchAll: /:[^/]+\(\.\*\)/.test(route.path),
       }
     })
   }

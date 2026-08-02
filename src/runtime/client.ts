@@ -9,6 +9,8 @@ import { highlightDiagnosticElement, scanPageDiagnostics } from './diagnostics'
 import type { PageFlowRouterAdapter } from './adapters/types'
 import { findVueRouterAdapter } from './adapters/vue-router'
 import { findBrowserHistoryAdapter } from './adapters/browser-history'
+import { mountPageFlowLauncher } from './launcher'
+import { isLocalBusinessApiResponse } from './api-filter'
 
 const apiInspectionEnabled = new URLSearchParams(window.location.search).has('__unplugin_pageflow_inspect')
 const MAXIMUM_API_FIELDS = 2_000
@@ -36,8 +38,8 @@ function apiFields(value: unknown, path = '', fields: Array<{ path: string, valu
   return fields
 }
 
-function reportApiResult(method: string, url: string, status: number, duration: number, value: unknown, responseSize = 0) {
-  if (!apiInspectionEnabled || window.parent === window || url.includes('/__unplugin-pageflow/')) return
+function reportApiResult(method: string, url: string, status: number, duration: number, value: unknown, responseSize = 0, contentType = '') {
+  if (!apiInspectionEnabled || window.parent === window || url.includes('/__unplugin-pageflow/') || !isLocalBusinessApiResponse(url, window.location.origin, contentType)) return
   window.parent.postMessage({
     type: PAGEFLOW_API_RESULT_MESSAGE,
     result: {
@@ -48,6 +50,7 @@ function reportApiResult(method: string, url: string, status: number, duration: 
       duration: Math.round(duration),
       occurredAt: Date.now(),
       responseSize,
+      contentType,
       fields: apiFields(value),
     },
   }, window.location.origin)
@@ -80,7 +83,7 @@ function trackPreviewRequests() {
     update(1)
     return originalFetch(...args).then(response => {
       const contentType = response.headers?.get?.('content-type') ?? ''
-      if (apiInspectionEnabled && typeof response.clone === 'function') {
+      if (apiInspectionEnabled && isLocalBusinessApiResponse(url, window.location.origin, contentType) && typeof response.clone === 'function') {
         const clone = response.clone()
         const text = typeof clone.text === 'function' ? clone.text() : undefined
         if (text) void text.then((text) => {
@@ -89,10 +92,10 @@ function trackPreviewRequests() {
             try { value = JSON.parse(text) } catch {}
           }
           const size = new TextEncoder().encode(text).byteLength
-          requestAnimationFrame(() => reportApiResult(method, url, response.status, performance.now() - startedAt, value, size))
-        }).catch(() => requestAnimationFrame(() => reportApiResult(method, url, response.status, performance.now() - startedAt, undefined)))
+            requestAnimationFrame(() => reportApiResult(method, url, response.status, performance.now() - startedAt, value, size, contentType))
+        }).catch(() => requestAnimationFrame(() => reportApiResult(method, url, response.status, performance.now() - startedAt, undefined, 0, contentType)))
         else if (typeof clone.json === 'function')
-          void clone.json().then(value => requestAnimationFrame(() => reportApiResult(method, url, response.status, performance.now() - startedAt, value)))
+          void clone.json().then(value => requestAnimationFrame(() => reportApiResult(method, url, response.status, performance.now() - startedAt, value, 0, contentType)))
             .catch(() => undefined)
       }
       return response
@@ -118,7 +121,7 @@ function trackPreviewRequests() {
       update(-1)
       const current = requests.get(this)
       const contentType = this.getResponseHeader('content-type') ?? ''
-      if (!apiInspectionEnabled || !current) return
+      if (!apiInspectionEnabled || !current || !isLocalBusinessApiResponse(this.responseURL || current.url, window.location.origin, contentType)) return
       try {
         const text = this.responseType === '' || this.responseType === 'text' ? this.responseText : ''
         let value: unknown = this.responseType === 'json' && this.response != null ? this.response : text
@@ -128,7 +131,7 @@ function trackPreviewRequests() {
         const size = text ? new TextEncoder().encode(text).byteLength
           : this.response instanceof Blob ? this.response.size
             : this.response instanceof ArrayBuffer ? this.response.byteLength : 0
-        requestAnimationFrame(() => reportApiResult(current.method, this.responseURL || current.url, this.status, performance.now() - current.startedAt, value, size))
+        requestAnimationFrame(() => reportApiResult(current.method, this.responseURL || current.url, this.status, performance.now() - current.startedAt, value, size, contentType))
       } catch {}
     }, { once: true })
     return originalSend.apply(this, args)
@@ -372,6 +375,7 @@ function collectLinks(router: PageFlowRouterAdapter) {
 
   const links: PageFlowRuntimeLink[] = [...programmaticLinks.values()]
   document.querySelectorAll<HTMLAnchorElement>('a[href]').forEach(anchor => {
+    if (anchor.closest('[data-unplugin-pageflow-launcher]')) return
     const target = new URL(anchor.href, window.location.href)
     if (target.origin !== window.location.origin) return
     const label = anchor.getAttribute('aria-label')?.trim()
@@ -382,13 +386,14 @@ function collectLinks(router: PageFlowRouterAdapter) {
     links.push({ label, to: navigation.path, location: navigation.location, hotspot: hotspotCenter(anchor) })
   })
   document.querySelectorAll<HTMLElement>('[data-pageflow-to]').forEach(element => {
+    if (element.closest('[data-unplugin-pageflow-launcher]')) return
     const declaredTarget = element.dataset.pageflowTo
     const to = declaredTarget && router.resolve(declaredTarget)?.path
     if (!to || !addHotspot(layer!, element, 'link', [to], [declaredTarget!])) return
     links.push({ label: element.getAttribute('aria-label')?.trim() || element.textContent?.trim() || to, to, location: declaredTarget, hotspot: hotspotCenter(element) })
   })
   document.body.querySelectorAll('*').forEach(element => {
-    if (element.closest('[data-unplugin-pageflow-hotspot-layer]') || !hasClickHandler(element)) return
+    if (element.closest('[data-unplugin-pageflow-hotspot-layer], [data-unplugin-pageflow-launcher]') || !hasClickHandler(element)) return
     if (element.closest('a[href]')) return
     if (element.querySelector('a[href]')) return
     if (element.hasAttribute('data-pageflow-to')) return
@@ -506,7 +511,7 @@ function observePage(router: PageFlowRouterAdapter, config: ResolvedPageFlowOpti
     timer = setTimeout(() => void publishPage(router, config), 100)
   }
   const observer = new MutationObserver(records => {
-    if (records.every(record => (record.target as Element).closest?.('[data-unplugin-pageflow-hotspot-layer]'))) return
+    if (records.every(record => (record.target as Element).closest?.('[data-unplugin-pageflow-hotspot-layer], [data-unplugin-pageflow-launcher]'))) return
     update()
   })
   observer.observe(document.body, { childList: true, subtree: true, attributes: true, attributeFilter: ['href'] })
@@ -517,6 +522,8 @@ function observePage(router: PageFlowRouterAdapter, config: ResolvedPageFlowOpti
 
 export async function startPageFlowRuntime(config: ResolvedPageFlowOptions) {
   if (!config.enabled) return
+
+  mountPageFlowLauncher(config)
 
   if (config.routes?.length) window.__UNPLUGIN_PAGEFLOW_ROUTES__ = config.routes
 

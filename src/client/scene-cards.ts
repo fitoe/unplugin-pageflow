@@ -16,6 +16,19 @@ export interface PageCardOptions {
   dark?: boolean
 }
 
+export function setPageCardShadow(group: Group, highlighted: boolean, capturePulse?: number) {
+  const background = group.children[0]
+  if (!(background instanceof Rect)) return false
+  background.set({
+    shadow: capturePulse == null
+      ? highlighted
+        ? { x: 0, y: 16, blur: 42, color: '#090a0b78' }
+        : { x: 0, y: 8, blur: 20, color: '#090a0b40' }
+      : { x: 0, y: 12, blur: 24 + capturePulse * 22, color: `rgba(59, 130, 246, ${0.28 + capturePulse * 0.3})` },
+  })
+  return true
+}
+
 export function createPageCardGroup(options: PageCardOptions) {
   const { page, x, y, previewHeight, tiles, thumbnailSource } = options
   const primary = options.dark ? '#f5f5f5' : '#262626'

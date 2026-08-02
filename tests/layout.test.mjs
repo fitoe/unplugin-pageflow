@@ -5,7 +5,7 @@ import { createServer } from 'vite'
 test('lays out linked pages in layers and limits previews to the viewport', async () => {
   const server = await createServer({ configFile: false, server: { middlewareMode: true }, appType: 'custom', logLevel: 'silent' })
   try {
-    const { assignOrderedFocusSides, centerPageTransform, collapseRepeatedListLinks, createPageSpatialIndex, createRouteDeckView, fitFocusedPreviewTransform, getRenderablePages, getVisiblePageIds, layoutPageGrid, layoutPagesByRoute, queryPageSpatialIndex, routeDeckPathForPage } = await server.ssrLoadModule('/src/client/layout.ts')
+    const { assignOrderedFocusSides, centerPageTransform, collapseRepeatedListLinks, createPageSpatialIndex, createRouteDeckView, fitFocusedPreviewTransform, getRenderablePages, getVisiblePageIds, layoutPageGrid, layoutPagesByRoute, promotedRouteGroupPath, queryPageSpatialIndex, routeDeckPathForPage } = await server.ssrLoadModule('/src/client/layout.ts')
     const { forwardWheelToCanvas, PAGEFLOW_CANVAS_CONFIG } = await server.ssrLoadModule('/src/client/canvas.ts')
     const { resolvePreviewUrl, touchPreviewCache } = await server.ssrLoadModule('/src/client/preview.ts')
     const { fullThumbnailTiles, thumbnailRevision, thumbnailSlot, thumbnailTierForZoom, thumbnailUrl, visibleThumbnailTiles } = await server.ssrLoadModule('/src/client/thumbnails.ts')
@@ -88,7 +88,8 @@ test('lays out linked pages in layers and limits previews to the viewport', asyn
     )
     assert.match(iconBackground, /data:image\/svg\+xml/)
     assert.match(decodeURIComponent(iconBackground), /fill='rgb\(79, 167, 87\)'/)
-    assert.match(thumbnailRevision(pages[0]), /^13:/)
+    assert.match(thumbnailRevision(pages[0]), /^17:/)
+    assert.equal(thumbnailRevision({ ...pages[0], revision: 'source-changed' }), thumbnailRevision(pages[0]))
     const hotspotLayer = { removed: false, remove() { this.removed = true } }
     const singleLineText = {
       textContent: '热门服务',
@@ -186,6 +187,33 @@ test('lays out linked pages in layers and limits previews to the viewport', asyn
     const serviceDeck = createRouteDeckView(rootDecks.decks[0].pages, ['agri-service'])
     assert.deepEqual(serviceDeck.directPages.map(page => page.id), ['case', 'advice'])
     assert.equal(serviceDeck.decks.length, 0)
+    const routeFamilyPages = [
+      { id: 'screen-root', path: '/screen', links: [] },
+      { id: 'screen-clouds', path: '/screen/clouds', links: [] },
+      { id: 'screen-admin', path: '/screen/admin', links: [] },
+      { id: 'screen-admin-detail', path: '/screen/admin/detail', links: [] },
+      { id: 'screening', path: '/screening', links: [] },
+    ]
+    const routeFamilyView = createRouteDeckView(routeFamilyPages)
+    assert.deepEqual(routeFamilyView.directPages.map(page => page.id), ['screening'])
+    assert.deepEqual(routeFamilyView.decks.map(deck => [deck.label, deck.pages.map(page => page.id)]), [[
+      'screen', ['screen-root', 'screen-admin-detail', 'screen-admin', 'screen-clouds'],
+    ]])
+    assert.deepEqual(routeDeckPathForPage(routeFamilyPages, 'screen-root'), ['screen'])
+    assert.deepEqual(routeDeckPathForPage(routeFamilyPages, 'screen-admin-detail'), ['screen', 'admin'])
+    assert.deepEqual(promotedRouteGroupPath(routeFamilyPages.filter(page => page.id !== 'screening')), ['screen'])
+    assert.deepEqual(promotedRouteGroupPath(routeFamilyPages), [])
+    const singleChildFamily = createRouteDeckView([
+      { id: 'account-root', path: '/account', links: [] },
+      { id: 'account-profile', path: '/account/profile', links: [] },
+    ])
+    assert.deepEqual(singleChildFamily.directPages, [])
+    assert.deepEqual(singleChildFamily.decks.map(deck => [deck.label, deck.pages.map(page => page.id)]), [[
+      'account', ['account-root', 'account-profile'],
+    ]])
+    const standaloneParent = createRouteDeckView([{ id: 'standalone', path: '/standalone', links: [] }])
+    assert.deepEqual(standaloneParent.directPages.map(page => page.id), ['standalone'])
+    assert.equal(standaloneParent.decks.length, 0)
     const singletonDeck = createRouteDeckView([
       { id: 'only-child', path: '/pages/single/group/detail', links: [] },
     ])
@@ -282,6 +310,9 @@ test('lays out linked pages in layers and limits previews to the viewport', asyn
     }))
     const tiles = fullThumbnailTiles(tileManifest, 'home', 'pc')
     assert.equal(tiles.length, 3)
+    const newestSingleSlot = thumbnailSlot('home', 'pc', 'full')
+    const newestSingle = { ...tiles[0], slot: newestSingleSlot, updatedAt: 2 }
+    assert.deepEqual(fullThumbnailTiles({ ...tileManifest, [newestSingleSlot]: newestSingle }, 'home', 'pc'), [newestSingle])
     assert.deepEqual(
       visibleThumbnailTiles(tiles, 64, { width: 1000, height: 700 }, { x: 0, y: 0, scaleX: 1, scaleY: 1 }, 0).map(tile => tile.tileIndex),
       [0, 1],
