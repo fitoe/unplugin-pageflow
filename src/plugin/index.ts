@@ -6,7 +6,7 @@ import { createRequire } from 'node:module'
 import { readFile, readdir, stat, writeFile } from 'node:fs/promises'
 import { existsSync, readFileSync } from 'node:fs'
 import type { ServerResponse } from 'node:http'
-import { dirname, resolve } from 'node:path'
+import { dirname, isAbsolute, relative, resolve } from 'node:path'
 import { StringDecoder } from 'node:string_decoder'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { stripVTControlCharacters } from 'node:util'
@@ -208,8 +208,14 @@ function createGraph(
   diagnosticRules: Record<string, boolean>,
   version: number,
   routeMode: PageFlowRouteMode,
+  projectRoot: string,
   uniAppHomePath?: string,
 ): PageFlowGraph {
+  const projectSourceFile = (file: string | undefined) => {
+    if (!file) return undefined
+    const relativeFile = normalizeFile(relative(projectRoot, resolve(projectRoot, file)))
+    return relativeFile === '..' || relativeFile.startsWith('../') || isAbsolute(relativeFile) ? undefined : relativeFile
+  }
   const sourceEntryForPath = <T>(entries: Map<string, T>, path: string) => {
     const suffix = `/src${path}.vue`
     return [...entries.entries()].find(([file]) => file.endsWith(suffix))?.[1]
@@ -227,6 +233,7 @@ function createGraph(
         id: route.id,
         title: configuredTitle ?? (configuredPage ? '' : reportedPages.get(route.path)?.title || route.title),
         path: route.path,
+        sourceFile: projectSourceFile(route.componentFile),
         routeOrder: routeOrderByPath.get(route.path)
           ?? (route.path === '/' && hiddenHomePath ? routeOrderByPath.get(hiddenHomePath) : undefined),
         revision: sourceEntryForPath(sourceRevisionsByFile, configuredPath)
@@ -460,6 +467,7 @@ const factory: UnpluginFactory<PageFlowOptions | undefined> = (options) => {
     return String(Math.max(...versions))
   }
   let graph: PageFlowGraph = { pages: [], routeMode: 'history', version: 0 }
+  let projectRoot = pluginRoot
   let routes: PageFlowRuntimeRoute[] = []
   let routeMode: PageFlowRouteMode = 'history'
   let uniAppHomePath: string | undefined
@@ -480,6 +488,7 @@ const factory: UnpluginFactory<PageFlowOptions | undefined> = (options) => {
   let pageTestResultCache: ReturnType<typeof createPageTestResultCache> | undefined
   const runningPageTests = new Map<string, ChildProcess>()
   const cancelledPageTests = new Set<string>()
+  const aiContexts = new Map<string, unknown>()
 
   const ensurePageTestIndex = () => {
     if (!pageTestIndex || pageTestIndexScanned) return pageTestIndexReady
@@ -492,7 +501,7 @@ const factory: UnpluginFactory<PageFlowOptions | undefined> = (options) => {
   }
 
   const rebuildGraph = (updatedPath?: string) => {
-    graph = createGraph(routes, reportedPages, staticLinksByFile, staticDiagnosticsByFile, configuredTitlesByPath, routeOrderByPath, sourceRevisionsByFile, tabPaths, resolved.diagnostics.rules, graph.version + 1, routeMode, uniAppHomePath)
+    graph = createGraph(routes, reportedPages, staticLinksByFile, staticDiagnosticsByFile, configuredTitlesByPath, routeOrderByPath, sourceRevisionsByFile, tabPaths, resolved.diagnostics.rules, graph.version + 1, routeMode, projectRoot, uniAppHomePath)
     if (updatedPath) {
       const page = graph.pages.find(item => item.path === updatedPath)
       if (page) sendPageUpdate?.(page)
@@ -615,7 +624,7 @@ const factory: UnpluginFactory<PageFlowOptions | undefined> = (options) => {
         },
       },
       async configureServer(server) {
-        const projectRoot = resolve(options?.projectRoot ?? server.config.root)
+        projectRoot = resolve(options?.projectRoot ?? server.config.root)
         if (projectRoot !== pluginRoot || packaged) {
           try {
             Object.assign(resolved, await loadProjectOptions(projectRoot, options))
@@ -668,6 +677,37 @@ const factory: UnpluginFactory<PageFlowOptions | undefined> = (options) => {
           const groupNamePath = `${resolved.previewPath}api/group-name`
           const testsPath = `${resolved.previewPath}api/tests`
           const lighthousePath = `${resolved.previewPath}api/lighthouse`
+          const aiContextPath = `${resolved.previewPath}api/ai-context`
+
+          if (pathname === aiContextPath && request.method === 'GET') {
+            const pagePath = requestUrl.searchParams.get('path') ?? ''
+            const context = aiContexts.get(pagePath)
+            if (!context) {
+              response.statusCode = 404
+              response.end('No AI context is available for this page')
+              return
+            }
+            response.setHeader('Content-Type', 'application/json; charset=utf-8')
+            response.setHeader('Cache-Control', 'no-store')
+            response.end(JSON.stringify(context))
+            return
+          }
+
+          if (pathname === aiContextPath && request.method === 'POST') {
+            try {
+              const context = await readJson(request)
+              const page = context.page && typeof context.page === 'object' ? context.page as Record<string, unknown> : undefined
+              const pagePath = typeof page?.path === 'string' ? page.path : ''
+              if (!pagePath.startsWith('/') || pagePath.startsWith('//')) throw new Error('A local page path is required')
+              aiContexts.set(pagePath, context)
+              response.statusCode = 204
+              response.end()
+            } catch (error) {
+              response.statusCode = 400
+              response.end(error instanceof Error ? error.message : 'Invalid AI context')
+            }
+            return
+          }
 
           if (pathname === lighthousePath && request.method === 'POST') {
             if (lighthouseRunning) {

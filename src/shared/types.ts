@@ -95,6 +95,7 @@ export interface PageFlowPage {
   id: string
   title: string
   path: string
+  sourceFile?: string
   routeOrder?: number
   revision?: string
   accent: string

@@ -48,6 +48,7 @@ PageFlow 是一个开发环境页面流程可视化插件。它自动读取项�
 | 接口检查 | 查看当前页面的请求方法、路由、耗时、状态和返回字段 |
 | 页面测试 | 自动关联单元、组件和 E2E 测试，并按配置触发执行 |
 | 轻量诊断 | 检查可访问性、布局、交互和导航问题，并定位对应元素 |
+| AI 协作 | 复制当前页面的结构化上下文和修复提示词，交给任意编码助手分析 |
 
 PageFlow 只分析当前需要的页面，不会预先启动整个应用的所有 iframe。
 
@@ -137,6 +138,20 @@ PageFlow 可以检查：
 诊断只报告问题，不自动修改项目源码。Lighthouse 审计按需运行，不会因为打开 PageFlow 自动启动。
 
 规则阈值、忽略区域和开关见[配置参考](https://pageflowjs.github.io/reference/configuration)。
+
+### 与 AI 协作
+
+聚焦页面后，可在“诊断”面板复制 AI 修复提示词。提示词包含当前路由、诊断、接口请求、相关测试、页面链接和 Lighthouse 结果，可直接交给 Codex、Claude Code、Cursor 或其他编码助手。
+
+PageFlow 不内置模型、不上传项目数据，也不自动修改源码。编码助手完成修改后，Vite 热更新会让 PageFlow 自动重新检查当前页面。
+
+PageFlow 还会把当前焦点页上下文同步到仅存在于本地开发服务器内存的 JSON 接口：
+
+```text
+http://localhost:5173/__unplugin-pageflow/api/ai-context?path=/pages/mine
+```
+
+端口和路由参数按实际项目调整。页面尚未在画布中聚焦时，接口返回 `404`。
 
 ## 按需扩展
 

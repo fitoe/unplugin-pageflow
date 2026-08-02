@@ -26,7 +26,7 @@ import type {
   PageFlowThumbnailRecord,
   ResolvedPageFlowOptions,
 } from './shared/types'
-import { cancelPageFlowTest, fetchPageFlowGraph, fetchPageFlowTests, reportPageTitle, runPageFlowLighthouse, runPageFlowTest, startRouteDiscovery, subscribeToPageFlowUpdates } from './client/graph'
+import { cancelPageFlowTest, fetchPageFlowGraph, fetchPageFlowTests, publishPageFlowAIContext, reportPageTitle, runPageFlowLighthouse, runPageFlowTest, startRouteDiscovery, subscribeToPageFlowUpdates } from './client/graph'
 import { planGraphUpdate } from './client/graph-update'
 import { resolvePreviewUrl, touchPreviewCache } from './client/preview'
 import { PAGEFLOW_DIAGNOSTIC_HIGHLIGHT_MESSAGE, PAGEFLOW_DIAGNOSTICS_SCAN_MESSAGE, PAGEFLOW_SCAN_MESSAGE } from './shared/protocol'
@@ -44,6 +44,7 @@ import { FrameAnimation } from './client/frame-animation'
 import { PreviewFrameRegistry } from './client/preview-frame-registry'
 import { decodePreviewMessage } from './client/preview-message'
 import { createDiagnosticReport, diagnosticReportFilename } from './client/diagnostic-report'
+import { createPageFlowAIContext, createPageFlowAIPrompt } from './client/ai-context'
 import { createPageChecks, type PageFlowPageCheckStatus } from './client/page-checks'
 import { buildApiFieldTree } from './client/api-field-tree'
 import { createApiIssues, type PageFlowApiIssue } from './client/api-diagnostics'
@@ -236,6 +237,7 @@ const focusedPageStateCache = new FocusedPageStateCache()
 let focusedLinksScannedPageId: string | undefined
 let diagnosticsTimer: number | undefined
 let diagnosticsRequestTimer: number | undefined
+let aiContextTimer: number | undefined
 let diagnosticsInFlightPageId: string | undefined
 let diagnosticsRefreshQueued = false
 const pendingThumbnailRecords: PageFlowThumbnailManifest = {}
@@ -459,6 +461,33 @@ function exportFocusedDiagnostics() {
   link.download = diagnosticReportFilename(page.path)
   link.click()
   URL.revokeObjectURL(url)
+}
+
+function focusedAIContext() {
+  const page = pages.value.find(item => item.id === focusedPageId.value)
+  if (!page) return
+  return createPageFlowAIContext(page, {
+    diagnostics: focusedDiagnostics.value,
+    requests: focusedApiResults.value,
+    tests: focusedPageTests.value,
+    links: focusedLinks.value,
+    lighthouse: lighthouseReport.value,
+  })
+}
+
+async function copyFocusedAIRepairPrompt() {
+  const context = focusedAIContext()
+  if (!context) return
+  await navigator.clipboard.writeText(createPageFlowAIPrompt(context))
+  status.value = '已复制 AI 修复提示词'
+}
+
+function scheduleAIContextSync() {
+  window.clearTimeout(aiContextTimer)
+  aiContextTimer = window.setTimeout(() => {
+    const context = focusedAIContext()
+    if (context) void publishPageFlowAIContext(props.config, context).catch(() => undefined)
+  }, 250)
 }
 
 const testKindLabels: Record<PageFlowPageTest['kind'], string> = { e2e: 'E2E', component: '组件', unit: '单元' }
@@ -2254,6 +2283,7 @@ watch(requiredThumbnailRecords, records => {
 }, { immediate: true })
 
 watch([active, copiedPath], scheduleCanvasRender)
+watch([focusedPageId, focusedDiagnostics, focusedApiResults, focusedPageTests, focusedLinks, lighthouseReport], scheduleAIContextSync, { deep: true })
 watch(focusedPageId, () => {
   window.clearTimeout(diagnosticsRequestTimer)
   window.clearTimeout(diagnosticsTimer)
@@ -2343,6 +2373,7 @@ onMounted(async () => {
 
 onUnmounted(() => {
   window.clearInterval(userSessionRefreshTimer)
+  window.clearTimeout(aiContextTimer)
   window.clearTimeout(diagnosticsRequestTimer)
   pageUpdateRipples.forEach(({ group, animation }) => {
     animation.cancel()
@@ -2668,6 +2699,15 @@ onUnmounted(() => {
                     {{ diagnosticSummary.error }} 错误 · {{ diagnosticSummary.warning }} 警告 · {{ diagnosticSummary.suggestion }} 建议
                   </div>
                 </div>
+                <UButton
+                  color="neutral"
+                  variant="ghost"
+                  size="sm"
+                  icon="i-lucide-sparkles"
+                  aria-label="复制 AI 修复提示词"
+                  title="复制页面上下文和 AI 修复提示词"
+                  @click="copyFocusedAIRepairPrompt"
+                />
                 <UButton
                   color="neutral"
                   variant="ghost"

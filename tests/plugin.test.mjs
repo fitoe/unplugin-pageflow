@@ -67,6 +67,14 @@ test('serves the unplugin-pageflow client from the configured development route'
       <button @click="uni.switchTab({ url: '/contact' })">Wrong method</button>
     </template>`, 'C:/project/src/source-check.vue')
     const staticGraph = await (await fetch(`${origin}/__unplugin-pageflow/api/graph`)).json()
+    const missingAIContext = await fetch(`${origin}/__unplugin-pageflow/api/ai-context?path=${encodeURIComponent('/')}`)
+    const publishAIContext = await fetch(`${origin}/__unplugin-pageflow/api/ai-context`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ schemaVersion: 1, page: { title: 'Home', path: '/' }, diagnostics: [] }),
+    })
+    const aiContextResponse = await fetch(`${origin}/__unplugin-pageflow/api/ai-context?path=${encodeURIComponent('/')}`)
+    const aiContext = await aiContextResponse.json()
     const eventResponse = await fetch(`${origin}/__unplugin-pageflow/api/events`, { signal: eventController.signal })
     const eventReader = eventResponse.body.getReader()
     const eventDecoder = new TextDecoder()
@@ -115,6 +123,10 @@ test('serves the unplugin-pageflow client from the configured development route'
     assert.equal(runtimeClient.status, 200)
     assert.match(runtimeClientCode, /collectLinks/)
     assert.equal(routeUpdate.status, 204)
+    assert.equal(missingAIContext.status, 404)
+    assert.equal(publishAIContext.status, 204)
+    assert.equal(aiContextResponse.headers.get('cache-control'), 'no-store')
+    assert.equal(aiContext.page.path, '/')
     assert.equal(pageUpdate.status, 204)
     assert.match(pageEvent, /event: unplugin-pageflow:page-update/)
     assert.match(pageEvent, /About us/)
@@ -122,6 +134,8 @@ test('serves the unplugin-pageflow client from the configured development route'
     assert.equal(graph.routeMode, 'hash')
     assert.equal(graph.pages.filter(page => page.path === '/about').length, 1)
     assert.equal(graph.pages[0].title, 'Rendered home later')
+    assert.equal(graph.pages[0].sourceFile, 'tests/fixtures/Programmatic.vue')
+    assert.equal(staticGraph.pages.find(page => page.id === 'source-check').sourceFile, undefined)
     assert(graph.pages[0].links.some(link => link.label === 'About us'))
     assert.deepEqual(staticGraph.pages[0].links, [
       { label: 'navigateTo /about', to: 'about' },

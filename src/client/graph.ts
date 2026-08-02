@@ -1,4 +1,5 @@
 import type { PageFlowGraph, PageFlowLighthouseReport, PageFlowLighthouseSession, PageFlowPage, PageFlowPageTest, ResolvedPageFlowOptions } from '../shared/types'
+import type { PageFlowAIContext } from './ai-context'
 import { PAGEFLOW_GRAPH_EVENT, PAGEFLOW_PAGE_EVENT, PAGEFLOW_TEST_EVENT } from '../shared/protocol'
 
 export async function fetchPageFlowGraph(config: ResolvedPageFlowOptions) {
@@ -14,6 +15,15 @@ export async function reportPageTitle(config: ResolvedPageFlowOptions, path: str
     body: JSON.stringify({ path, title }),
   })
   if (!response.ok) throw new Error(`Failed to report page title: ${response.status}`)
+}
+
+export async function publishPageFlowAIContext(config: ResolvedPageFlowOptions, context: PageFlowAIContext) {
+  const response = await fetch(`${config.previewPath}api/ai-context`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(context),
+  })
+  if (!response.ok) throw new Error(`Could not publish PageFlow AI context (${response.status})`)
 }
 
 export async function fetchPageFlowTests(config: ResolvedPageFlowOptions, path: string) {
