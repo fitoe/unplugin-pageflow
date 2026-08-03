@@ -35,6 +35,7 @@ import { isPageFlowTestFile, PageTestIndex } from './page-tests.ts'
 import { createPageTestResultCache } from './page-test-results.ts'
 import { runPageFlowLighthouse } from './lighthouse.ts'
 import { windowsEditorLaunchCommand } from './editor.ts'
+import { inferTestCommands } from './test-command.ts'
 import { extractEventNavigationDiagnostics } from './source-diagnostics.ts'
 import { PAGEFLOW_TEST_EVENT } from '../shared/protocol.ts'
 
@@ -731,6 +732,7 @@ const factory: UnpluginFactory<PageFlowOptions | undefined> = (options) => {
             server.config.logger.warn(`unplugin-pageflow could not read .pageflow: ${error instanceof Error ? error.message : error}`)
           }
         }
+        resolved.testCommands = inferTestCommands(projectRoot, resolved.testCommands)
         if (!resolved.enabled) return
         try {
           const uniAppConfig = await readUniAppConfig(projectRoot)

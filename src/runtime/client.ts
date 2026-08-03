@@ -67,6 +67,22 @@ interface PageFlowWindow extends Window {
   __UNPLUGIN_PAGEFLOW_PENDING_REQUESTS__?: () => number
   __UNPLUGIN_PAGEFLOW_SCAN_BOUND__?: boolean
   __UNPLUGIN_PAGEFLOW_SCROLL_SCAN_BOUND__?: boolean
+  __UNPLUGIN_PAGEFLOW_WEBGL_CAPTURE_BOUND__?: boolean
+}
+
+function preservePreviewWebGLFrames() {
+  if (!new URLSearchParams(window.location.search).has(PAGEFLOW_PREVIEW_PARAM)) return
+  const trackedWindow = window as PageFlowWindow
+  if (trackedWindow.__UNPLUGIN_PAGEFLOW_WEBGL_CAPTURE_BOUND__) return
+  trackedWindow.__UNPLUGIN_PAGEFLOW_WEBGL_CAPTURE_BOUND__ = true
+  const prototype = window.HTMLCanvasElement.prototype
+  const originalGetContext = prototype.getContext
+  prototype.getContext = function (this: HTMLCanvasElement, contextId: string, options?: Record<string, unknown>) {
+    const captureWebGL = contextId === 'webgl' || contextId === 'webgl2' || contextId === 'experimental-webgl'
+    return originalGetContext.call(this, contextId, captureWebGL
+      ? { ...options, preserveDrawingBuffer: true }
+      : options)
+  } as typeof prototype.getContext
 }
 
 function trackPreviewRequests() {
@@ -530,6 +546,7 @@ function observePage(router: PageFlowRouterAdapter, config: ResolvedPageFlowOpti
 export async function startPageFlowRuntime(config: ResolvedPageFlowOptions) {
   if (!config.enabled) return
 
+  preservePreviewWebGLFrames()
   mountPageFlowLauncher(config)
 
   if (config.routes?.length) window.__UNPLUGIN_PAGEFLOW_ROUTES__ = config.routes

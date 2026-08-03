@@ -131,6 +131,15 @@ test('discovers Vue Router routes and reports rendered navigation hotspots', asy
 
   const server = await createServer({ configFile: false, server: { middlewareMode: true }, appType: 'custom', logLevel: 'silent' })
   try {
+    let webglContextOptions
+    const originalGetContext = window.HTMLCanvasElement.prototype.getContext
+    window.HTMLCanvasElement.prototype.getContext = function (contextId, options) {
+      if (contextId === 'webgl') {
+        webglContextOptions = options
+        return {}
+      }
+      return originalGetContext.call(this, contextId, options)
+    }
     const runtime = await server.ssrLoadModule('/src/runtime/client.ts')
     const snapshotClient = await server.ssrLoadModule('/src/client/snapshot.ts')
     await runtime.startPageFlowRuntime({
@@ -142,6 +151,8 @@ test('discovers Vue Router routes and reports rendered navigation hotspots', asy
 
     assert.equal(typeof window.__UNPLUGIN_PAGEFLOW_READY__, 'function')
     assert.equal(typeof window.__UNPLUGIN_PAGEFLOW_PENDING_REQUESTS__, 'function')
+    window.document.createElement('canvas').getContext('webgl', { alpha: false })
+    assert.deepEqual(webglContextOptions, { alpha: false, preserveDrawingBuffer: true })
     assert.equal(image.src, 'http://localhost/static/example.png')
 
     const pageReportsBeforeScan = requests.filter(request => request.url.endsWith('/api/page')).length

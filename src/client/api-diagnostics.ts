@@ -7,6 +7,28 @@ export interface PageFlowApiIssue {
   descriptions: string[]
 }
 
+export function apiRequestKey(result: Pick<PageFlowApiResult, 'method' | 'url'>) {
+  let path = result.url.split(/[?#]/, 1)[0]
+  try {
+    path = new URL(result.url, 'http://pageflow.local').pathname
+  } catch {}
+  return `${result.method.toUpperCase()}:${path}`
+}
+
+export function mergeApiResult(results: PageFlowApiResult[], incoming: PageFlowApiResult) {
+  const key = apiRequestKey(incoming)
+  const previous = results.find(result => apiRequestKey(result) === key)
+  const merged: PageFlowApiResult = previous ? {
+    ...incoming,
+    id: key,
+    occurrences: (previous.occurrences ?? 1) + 1,
+    lastIntervalMs: previous.occurredAt != null && incoming.occurredAt != null
+      ? Math.max(0, incoming.occurredAt - previous.occurredAt)
+      : undefined,
+  } : { ...incoming, id: key, occurrences: 1 }
+  return [...results.filter(result => apiRequestKey(result) !== key), merged].slice(-30)
+}
+
 export function createApiIssues(results: PageFlowApiResult[], options: ResolvedPageFlowApiDiagnosticOptions): PageFlowApiIssue[] {
   return results.flatMap((result) => {
     const descriptions: string[] = []

@@ -5,7 +5,7 @@ import { createServer } from 'vite'
 test('classifies failed, slow, large, and duplicate API requests', async () => {
   const server = await createServer({ configFile: false, server: { middlewareMode: true }, appType: 'custom', logLevel: 'silent' })
   try {
-    const { createApiIssues } = await server.ssrLoadModule('/src/client/api-diagnostics.ts')
+    const { createApiIssues, mergeApiResult } = await server.ssrLoadModule('/src/client/api-diagnostics.ts')
     const options = { slowRequestMs: 1_000, largeResponseBytes: 500_000, duplicateWindowMs: 1_000 }
     const issues = createApiIssues([
       { id: 'ok', method: 'GET', url: '/api/ok', status: 200, duration: 30, responseSize: 10, fields: [] },
@@ -23,6 +23,19 @@ test('classifies failed, slow, large, and duplicate API requests', async () => {
       ['duplicate', 'warning'],
     ])
     assert.match(issues.find(issue => issue.resultId === 'duplicate').descriptions[0], /累计 3 次/)
+
+    const merged = [
+      { id: 'first', method: 'GET', url: '/api/orders?page=1', status: 200, duration: 30, occurredAt: 100, fields: [] },
+      { id: 'second', method: 'POST', url: '/api/orders', status: 200, duration: 40, occurredAt: 120, fields: [] },
+    ].reduce(mergeApiResult, [])
+    const repeated = mergeApiResult(merged, {
+      id: 'third', method: 'GET', url: 'http://localhost/api/orders?page=2&_t=123', status: 200, duration: 35, occurredAt: 180, fields: [],
+    })
+    assert.equal(repeated.length, 2)
+    assert.deepEqual(repeated.find(result => result.method === 'GET'), {
+      id: 'GET:/api/orders', method: 'GET', url: 'http://localhost/api/orders?page=2&_t=123', status: 200,
+      duration: 35, occurredAt: 180, fields: [], occurrences: 2, lastIntervalMs: 80,
+    })
   } finally {
     await server.close()
   }

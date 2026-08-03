@@ -47,13 +47,14 @@ import { createDiagnosticReport, diagnosticReportFilename } from './client/diagn
 import { createPageFlowAIContext, createPageFlowAIPrompt } from './client/ai-context'
 import { createPageChecks, type PageFlowPageCheckStatus } from './client/page-checks'
 import { buildApiFieldTree } from './client/api-field-tree'
-import { createApiIssues, type PageFlowApiIssue } from './client/api-diagnostics'
+import { createApiIssues, mergeApiResult, type PageFlowApiIssue } from './client/api-diagnostics'
 import { cachedPreviewUsers, configuredUsers, loadUserSessions, saveUserSessions, visibleSessionUsers } from './client/user-sessions'
 import LayoutWorker from './client/layout.worker?worker&inline'
 import ApiFieldTree from './components/ApiFieldTree.vue'
 import { focusTargetSetKey, planPageUpdate } from './client/page-update'
 import { pageUpdateEffectTarget } from './client/page-update-effect'
 import { centerDiagnosticTransform, navigationDiagnosticBounds, planDiagnosticEvidence } from './client/diagnostic-evidence'
+import { runWithConcurrency } from './client/test-concurrency'
 import { isLocalBusinessApiResponse } from './runtime/api-filter'
 import { initialPreviewMode } from './client/preview-mode'
 import { detectScaledPreviewSize, parsePreviewSize } from './client/preview-size'
@@ -713,10 +714,8 @@ async function runAllFocusedPageTests() {
   runningAllPageTests.value = true
   stopAllPageTestsRequested.value = false
   try {
-    for (const test of [...runnableFocusedTests.value]) {
-      if (focusedPageId.value !== pageId || stopAllPageTestsRequested.value) break
-      await runFocusedPageTest(test)
-    }
+    await runWithConcurrency([...runnableFocusedTests.value], 3, runFocusedPageTest,
+      () => focusedPageId.value !== pageId || stopAllPageTestsRequested.value)
   } finally {
     runningAllPageTests.value = false
     stopAllPageTestsRequested.value = false
@@ -2087,17 +2086,9 @@ function handlePreviewMessage(event: MessageEvent) {
   if (message.type === 'api-result') {
     if (!sourcePageId || !isLocalBusinessApiResponse(message.result.url, window.location.origin, message.result.contentType)) return
     const current = apiResultsByPage.value[sourcePageId] ?? []
-    const previous = current.find(item => item.id === message.result.id)
-    const result = previous ? {
-      ...message.result,
-      occurrences: (previous.occurrences ?? 1) + 1,
-      lastIntervalMs: previous.occurredAt != null && message.result.occurredAt != null
-        ? Math.max(0, message.result.occurredAt - previous.occurredAt)
-        : undefined,
-    } : { ...message.result, occurrences: 1 }
     apiResultsByPage.value = {
       ...apiResultsByPage.value,
-      [sourcePageId]: [...current.filter(item => item.id !== result.id), result].slice(-30),
+      [sourcePageId]: mergeApiResult(current, message.result),
     }
     return
   }
