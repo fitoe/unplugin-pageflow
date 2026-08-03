@@ -2,6 +2,11 @@ import type { PageFlowGraph, PageFlowLighthouseReport, PageFlowLighthouseSession
 import type { PageFlowAIContext } from './ai-context'
 import { PAGEFLOW_GRAPH_EVENT, PAGEFLOW_PAGE_EVENT, PAGEFLOW_TEST_EVENT } from '../shared/protocol'
 
+export interface PageFlowEditorInfo {
+  id: 'cursor' | 'jetbrains' | 'sublime' | 'system' | 'vscode' | 'zed'
+  name: string
+}
+
 export async function fetchPageFlowGraph(config: ResolvedPageFlowOptions) {
   const response = await fetch(`${config.previewPath}api/graph`)
   if (!response.ok) throw new Error(`Failed to load unplugin-pageflow graph: ${response.status}`)
@@ -15,6 +20,21 @@ export async function reportPageTitle(config: ResolvedPageFlowOptions, path: str
     body: JSON.stringify({ path, title }),
   })
   if (!response.ok) throw new Error(`Failed to report page title: ${response.status}`)
+}
+
+export async function fetchPageFlowEditor(config: ResolvedPageFlowOptions) {
+  const response = await fetch(`${config.previewPath}api/editor`)
+  if (!response.ok) throw new Error(`Failed to detect the default editor: ${response.status}`)
+  return response.json() as Promise<PageFlowEditorInfo>
+}
+
+export async function openPageFlowEditor(config: ResolvedPageFlowOptions, path: string) {
+  const response = await fetch(`${config.previewPath}api/editor`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ path }),
+  })
+  if (!response.ok) throw new Error(await response.text() || `Could not open the page source (${response.status})`)
 }
 
 export async function publishPageFlowAIContext(config: ResolvedPageFlowOptions, context: PageFlowAIContext) {

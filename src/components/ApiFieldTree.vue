@@ -1,40 +1,26 @@
 <script setup lang="ts">
 import { computed } from 'vue'
-import UTree from '@nuxt/ui/components/Tree.vue'
+import VueJsonPretty from 'vue-json-pretty'
+import 'vue-json-pretty/lib/styles.css'
 import type { ApiFieldTreeNode } from '../client/api-field-tree'
+import { apiFieldTreeData } from '../client/api-field-tree'
 
 const props = defineProps<{ nodes: ApiFieldTreeNode[] }>()
-
-const defaultExpanded = computed(() => props.nodes.flatMap(node => [
-  node.key,
-  ...node.children.filter(child => child.children.length).map(child => child.key),
-]))
-
-function branchSummary(node: ApiFieldTreeNode) {
-  const array = node.children.every(child => /^\[\d+\]$/.test(child.label))
-  return `${array ? 'Array' : 'Object'}(${node.children.length})`
-}
-
-function displayValue(value: string | undefined) {
-  return JSON.stringify(value ?? null)
-}
+const data = computed(() => apiFieldTreeData(props.nodes))
 </script>
 
 <template>
-  <UTree
+  <VueJsonPretty
     class="api-field-tree"
-    :items="nodes"
-    :default-expanded="defaultExpanded"
-    :get-key="node => node.key"
-    :on-select="event => event.preventDefault()"
-  >
-    <template #item="{ item, expanded, handleToggle }">
-      <span v-if="item.children.length" class="api-tree-toggle" aria-hidden="true" @click.stop="handleToggle">{{ expanded ? '▾' : '▸' }}</span>
-      <span class="api-tree-key">{{ item.label }}</span>
-      <span class="api-tree-colon">:</span>
-      <span class="api-tree-value" :class="{ branch: item.children.length }">
-        {{ item.children.length ? branchSummary(item) : displayValue(item.value) }}
-      </span>
-    </template>
-  </UTree>
+    :data="data"
+    :deep="2"
+    :indent="3"
+    :show-length="true"
+    :show-line="true"
+    :show-double-quotes="false"
+    :show-icon="true"
+    :show-select-controller="false"
+    :select-on-click-node="false"
+    :render-node-actions="true"
+  />
 </template>

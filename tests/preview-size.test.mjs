@@ -6,7 +6,7 @@ import { createServer } from 'vite'
 test('detects a fixed design canvas scaled into the PC viewport', async () => {
   const server = await createServer({ configFile: false, server: { middlewareMode: true }, appType: 'custom', logLevel: 'silent' })
   try {
-    const { detectScaledPreviewSize } = await server.ssrLoadModule('/src/client/preview-size.ts')
+    const { detectScaledPreviewSize, parsePreviewSize } = await server.ssrLoadModule('/src/client/preview-size.ts')
     const window = new Window()
     const canvas = window.document.createElement('main')
     canvas.style.cssText = 'width: 3840px; height: 1080px; transform: scale(0.5)'
@@ -18,6 +18,9 @@ test('detects a fixed design canvas scaled into the PC viewport', async () => {
     })
 
     assert.deepEqual(detectScaledPreviewSize(window.document, { width: 1920, height: 985 }), { width: 3840, height: 1080 })
+    assert.deepEqual(parsePreviewSize('{"width":3840,"height":1080}'), { width: 3840, height: 1080 })
+    assert.equal(parsePreviewSize('{"width":0,"height":1080}'), undefined)
+    assert.equal(parsePreviewSize('invalid'), undefined)
   } finally {
     await server.close()
   }

@@ -65,8 +65,9 @@ interface SnapshotRenderers {
   primary(target: HTMLElement, options: ModernScreenshotOptions): Promise<HTMLCanvasElement>
 }
 
-export function preserveCanvasFrames(target: HTMLElement) {
+export async function preserveCanvasFrames(target: HTMLElement) {
   const restores: Array<() => void> = []
+  const decodes: Promise<unknown>[] = []
   target.querySelectorAll('canvas').forEach((source) => {
     const frame = source.ownerDocument.createElement('canvas')
     frame.width = source.width
@@ -82,10 +83,29 @@ export function preserveCanvasFrames(target: HTMLElement) {
       image.height = source.height
       image.className = source.className
       image.style.cssText = source.style.cssText
+      const style = source.ownerDocument.defaultView?.getComputedStyle(source)
+      if (style) Object.assign(image.style, {
+        boxSizing: style.boxSizing,
+        display: style.display,
+        height: style.height,
+        left: style.left,
+        maxHeight: style.maxHeight,
+        maxWidth: style.maxWidth,
+        minHeight: style.minHeight,
+        minWidth: style.minWidth,
+        position: style.position,
+        right: style.right,
+        top: style.top,
+        transform: style.transform,
+        transformOrigin: style.transformOrigin,
+        width: style.width,
+      })
       source.replaceWith(image)
       restores.push(() => image.replaceWith(source))
+      decodes.push(image.decode().catch(() => undefined))
     } catch {}
   })
+  await Promise.all(decodes)
   return () => restores.forEach(restore => restore())
 }
 
@@ -94,7 +114,7 @@ export async function renderSnapshotCanvas(
   options: Record<string, unknown>,
   renderers: SnapshotRenderers = { primary: domToCanvas },
 ) {
-  const restoreCanvasFrames = preserveCanvasFrames(target)
+  const restoreCanvasFrames = await preserveCanvasFrames(target)
   try {
     return await renderers.primary(target, {
       backgroundColor: options.backgroundColor as string,

@@ -25,7 +25,7 @@ function renderedPageValues() {
   return values.join('\n')
 }
 
-function apiFields(value: unknown, path = '', fields: Array<{ path: string, value: string, used: boolean }> = [], pageValues = renderedPageValues()) {
+function apiFields(value: unknown, path = '', fields: Array<{ path: string, value: string | number | boolean | null, used: boolean }> = [], pageValues = renderedPageValues()) {
   if (fields.length >= MAXIMUM_API_FIELDS) return fields
   if (Array.isArray(value)) {
     value.slice(0, MAXIMUM_API_ARRAY_ITEMS).forEach((item, index) => apiFields(item, `${path}[${index}]`, fields, pageValues))
@@ -33,7 +33,14 @@ function apiFields(value: unknown, path = '', fields: Array<{ path: string, valu
     Object.entries(value).forEach(([key, item]) => apiFields(item, path ? `${path}.${key}` : key, fields, pageValues))
   } else if (path) {
     const rendered = value == null ? String(value) : String(value)
-    fields.push({ path, value: rendered.length > 160 ? `${rendered.slice(0, 157)}…` : rendered, used: rendered !== '' && pageValues.includes(rendered) })
+    const fieldValue = typeof value === 'string' && value.length > 160
+      ? `${value.slice(0, 157)}…`
+      : typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean'
+        ? value
+        : value == null
+          ? null
+        : rendered
+    fields.push({ path, value: fieldValue, used: rendered !== '' && pageValues.includes(rendered) })
   }
   return fields
 }

@@ -137,7 +137,7 @@ export interface PageFlowGraph {
 
 export interface PageFlowApiField {
   path: string
-  value: string
+  value: string | number | boolean | null
   used: boolean
 }
 
@@ -190,6 +190,7 @@ export interface PageFlowDiagnostic {
   description: string
   selector?: string
   targetLabel?: string
+  bounds?: { x: number, y: number, width: number, height: number }
   measured?: Record<string, string | number>
   source?: string
   navigation?: { method: string, target: string }

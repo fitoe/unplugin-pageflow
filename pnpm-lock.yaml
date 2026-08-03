@@ -32,6 +32,9 @@ importers:
       unplugin:
         specifier: ^2.3.5
         version: 2.3.11
+      vue-json-pretty:
+        specifier: ^2.6.0
+        version: 2.6.0(vue@3.5.40(typescript@5.8.3))
     devDependencies:
       '@builder.io/qwik':
         specifier: 1.20.0
@@ -7117,6 +7120,12 @@ packages:
 
   vue-devtools-stub@0.1.0:
     resolution: {integrity: sha512-RutnB7X8c5hjq39NceArgXg28WZtZpGc3+J16ljMiYnFhKvd8hITxSWQSQ5bvldxMDU6gG5mkxl1MTQLXckVSQ==}
+
+  vue-json-pretty@2.6.0:
+    resolution: {integrity: sha512-glz1aBVS35EO8+S9agIl3WOQaW2cJZW192UVKTuGmryx01ZvOVWc4pR3t+5UcyY4jdOfBUgVHjcpRpcnjRhCAg==}
+    engines: {node: '>= 10.0.0', npm: '>= 5.0.0'}
+    peerDependencies:
+      vue: '>=3.0.0'
 
   vue-router@4.6.4:
     resolution: {integrity: sha512-Hz9q5sa33Yhduglwz6g9skT8OBPii+4bFn88w6J+J4MfEo4KRRpmiNG/hHHkdbRFlLBOqxN8y8gf2Fb0MTUgVg==}
@@ -15666,6 +15675,10 @@ snapshots:
       vue: 3.5.40(typescript@5.8.3)
 
   vue-devtools-stub@0.1.0: {}
+
+  vue-json-pretty@2.6.0(vue@3.5.40(typescript@5.8.3)):
+    dependencies:
+      vue: 3.5.40(typescript@5.8.3)
 
   vue-router@4.6.4(vue@3.5.40(typescript@5.8.3)):
     dependencies:

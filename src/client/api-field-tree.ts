@@ -4,7 +4,7 @@ export interface ApiFieldTreeNode {
   key: string
   label: string
   path: string
-  value?: string
+  value?: string | number | boolean | null
   used: boolean
   children: ApiFieldTreeNode[]
 }
@@ -36,4 +36,20 @@ export function buildApiFieldTree(fields: PageFlowApiField[]) {
   }
 
   return roots
+}
+
+export function apiFieldTreeData(nodes: ApiFieldTreeNode[]): unknown {
+  const array = nodes.length > 0 && nodes.every(node => /^\[\d+\]$/.test(node.label))
+  if (array) {
+    const result: unknown[] = []
+    nodes.forEach((node) => {
+      const index = Number(node.label.slice(1, -1))
+      result[index] = node.children.length ? apiFieldTreeData(node.children) : node.value
+    })
+    return result
+  }
+  return Object.fromEntries(nodes.map(node => [
+    node.label,
+    node.children.length ? apiFieldTreeData(node.children) : node.value,
+  ]))
 }

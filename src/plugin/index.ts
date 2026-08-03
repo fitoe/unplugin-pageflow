@@ -34,10 +34,53 @@ import { createThumbnailCache } from './thumbnail-cache.ts'
 import { isPageFlowTestFile, PageTestIndex } from './page-tests.ts'
 import { createPageTestResultCache } from './page-test-results.ts'
 import { runPageFlowLighthouse } from './lighthouse.ts'
+import { windowsEditorLaunchCommand } from './editor.ts'
 import { extractEventNavigationDiagnostics } from './source-diagnostics.ts'
 import { PAGEFLOW_TEST_EVENT } from '../shared/protocol.ts'
 
 const ACCENTS = ['#ff795d', '#7c6cff', '#26b99a', '#e7ad43', '#dd648e']
+
+function configuredEditor() {
+  const command = process.env.LAUNCH_EDITOR || process.env.VISUAL || process.env.EDITOR || ''
+  const normalized = command.toLowerCase()
+  if (normalized.includes('cursor')) return { id: 'cursor', name: 'Cursor', command }
+  if (/(?:^|[\\/])code(?:\.cmd|\.exe)?(?:\s|$)/.test(normalized)) return { id: 'vscode', name: 'VS Code', command }
+  if (/webstorm|idea|phpstorm|pycharm|rider|goland|clion/.test(normalized)) return { id: 'jetbrains', name: 'JetBrains', command }
+  if (normalized.includes('zed')) return { id: 'zed', name: 'Zed', command }
+  if (/subl(?:ime)?/.test(normalized)) return { id: 'sublime', name: 'Sublime Text', command }
+  return { id: 'system', name: '默认编辑器', command: '' }
+}
+
+function waitForEditorLaunch(child: ChildProcess, timeoutMs = 1500) {
+  return new Promise<void>((resolveLaunch, rejectLaunch) => {
+    let settled = false
+    const finish = (error?: Error) => {
+      if (settled) return
+      settled = true
+      clearTimeout(timer)
+      error ? rejectLaunch(error) : resolveLaunch()
+    }
+    const timer = setTimeout(() => finish(), timeoutMs)
+    child.once('error', error => finish(error))
+    child.once('exit', code => code ? finish(new Error(`Editor exited with code ${code}`)) : finish())
+  })
+}
+
+async function openInEditor(file: string) {
+  const editor = configuredEditor()
+  const configuredCommand = editor.command.match(/(?:[^\s"']+|"[^"]*"|'[^']*')+/g)?.map(part => part.replace(/^(?:"([\s\S]*)"|'([\s\S]*)')$/, '$1$2')) ?? []
+  const child = configuredCommand.length
+    ? process.platform === 'win32'
+      ? spawn(windowsEditorLaunchCommand(configuredCommand, file), { detached: true, shell: true, stdio: 'ignore', windowsHide: true })
+      : spawn(configuredCommand[0]!, [...configuredCommand.slice(1), file], { detached: true, stdio: 'ignore' })
+    : process.platform === 'win32'
+      ? spawn('explorer.exe', [file], { detached: true, stdio: 'ignore', windowsHide: true })
+      : process.platform === 'darwin'
+        ? spawn('open', [file], { detached: true, stdio: 'ignore' })
+        : spawn('xdg-open', [file], { detached: true, stdio: 'ignore' })
+  await waitForEditorLaunch(child)
+  child.unref()
+}
 
 async function terminateProcessTree(child: ChildProcess) {
   if (!child.pid || child.exitCode != null) return
@@ -734,6 +777,34 @@ const factory: UnpluginFactory<PageFlowOptions | undefined> = (options) => {
           const testsPath = `${resolved.previewPath}api/tests`
           const lighthousePath = `${resolved.previewPath}api/lighthouse`
           const aiContextPath = `${resolved.previewPath}api/ai-context`
+          const editorPath = `${resolved.previewPath}api/editor`
+
+          if (pathname === editorPath && request.method === 'GET') {
+            const { id, name } = configuredEditor()
+            response.setHeader('Content-Type', 'application/json; charset=utf-8')
+            response.setHeader('Cache-Control', 'no-store')
+            response.end(JSON.stringify({ id, name }))
+            return
+          }
+
+          if (pathname === editorPath && request.method === 'POST') {
+            try {
+              const body = await readJson(request)
+              const pagePath = typeof body.path === 'string' ? body.path : ''
+              const sourceFile = routes.find(route => route.path === pagePath)?.componentFile
+              if (!sourceFile) throw new Error('No source file is registered for this page')
+              const file = resolve(projectRoot, sourceFile)
+              const relativeFile = relative(projectRoot, file)
+              if (relativeFile.startsWith('..') || isAbsolute(relativeFile) || !existsSync(file)) throw new Error('Page source file is unavailable')
+              await openInEditor(file)
+              response.statusCode = 204
+              response.end()
+            } catch (error) {
+              response.statusCode = 400
+              response.end(error instanceof Error ? error.message : 'Could not open the page source')
+            }
+            return
+          }
 
           if (pathname === aiContextPath && request.method === 'GET') {
             const pagePath = requestUrl.searchParams.get('path') ?? ''

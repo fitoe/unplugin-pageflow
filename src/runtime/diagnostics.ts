@@ -74,6 +74,28 @@ function disabled(element: Element) {
     || ('disabled' in element && Boolean((element as HTMLButtonElement).disabled))
 }
 
+function tapTargetSize(element: Element) {
+  const rect = element.getBoundingClientRect()
+  const viewport = document.documentElement
+  let current = element.parentElement
+  while (current) {
+    if (current instanceof HTMLElement) {
+      const layoutWidth = current.offsetWidth
+      const layoutHeight = current.offsetHeight
+      const visualRect = current.getBoundingClientRect()
+      const scaleX = layoutWidth > 0 ? visualRect.width / layoutWidth : 1
+      const scaleY = layoutHeight > 0 ? visualRect.height / layoutHeight : 1
+      const exceedsViewport = layoutWidth > viewport.clientWidth + 2 || layoutHeight > viewport.clientHeight + 2
+      const fitsViewport = visualRect.width <= viewport.clientWidth + 2 && visualRect.height <= viewport.clientHeight + 2
+      if (exceedsViewport && fitsViewport && scaleX > 0 && scaleX < 1 && scaleY > 0 && scaleY < 1) {
+        return { width: rect.width / scaleX, height: rect.height / scaleY }
+      }
+    }
+    current = current.parentElement
+  }
+  return { width: rect.width, height: rect.height }
+}
+
 function incompleteLinkArea(element: Element) {
   if (!element.matches('a[href], [role="link"], uni-navigator')) return
   const parent = element.parentElement
@@ -136,6 +158,10 @@ function diagnosticTargetLabel(element: Element | undefined) {
 
 function diagnostic(ruleId: string, severity: PageFlowDiagnostic['severity'], category: PageFlowDiagnostic['category'], title: string, description: string, element?: Element, measured?: PageFlowDiagnostic['measured']): PageFlowDiagnostic {
   const selector = element ? elementSelector(element) : undefined
+  const rect = element?.getBoundingClientRect()
+  const bounds = rect && rect.width > 0 && rect.height > 0
+    ? { x: rect.left + window.scrollX, y: rect.top + window.scrollY, width: rect.width, height: rect.height }
+    : undefined
   return {
     id: `${ruleId}:${selector ?? 'page'}`,
     ruleId,
@@ -145,6 +171,7 @@ function diagnostic(ruleId: string, severity: PageFlowDiagnostic['severity'], ca
     description,
     selector,
     targetLabel: diagnosticTargetLabel(element),
+    bounds,
     measured,
     source: 'pageflow',
   }
@@ -274,11 +301,11 @@ export function scanCustomPageDiagnostics(input: PageFlowDiagnosticOptions = {})
     }
 
     if (ruleEnabled(options, 'tap-target-too-small') && interactiveEnabled) {
-      const rect = element.getBoundingClientRect()
-      if (rect.width < options.minimumTapSize || rect.height < options.minimumTapSize) {
+      const size = tapTargetSize(element)
+      if (size.width < options.minimumTapSize || size.height < options.minimumTapSize) {
         results.push(diagnostic('tap-target-too-small', 'warning', 'interaction', '点击区域太小', `点击区域建议至少为 ${options.minimumTapSize}×${options.minimumTapSize}px。`, element, {
-          width: Math.round(rect.width),
-          height: Math.round(rect.height),
+          width: Math.round(size.width),
+          height: Math.round(size.height),
         }))
       }
     }

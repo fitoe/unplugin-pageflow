@@ -1,10 +1,19 @@
 const ASSET_EXTENSION = /\.(?:avif|bmp|css|eot|gif|ico|jpe?g|js|mjs|map|mvt|otf|pbf|png|svg|tiff?|ttf|wasm|webm|webp|woff2?)$/i
 const TILE_PATH = /(?:^|\/)(?:appmaptile|maptile|sateTiles|tile|tiles|wmts)(?:\/|$)/i
 const TILE_COORDINATE_PATH = /(?:^|\/)\d{1,2}\/-?\d+\/-?\d+$/
+const THREE_DIMENSIONAL_TILE_PATH = /(?:^|\/)(?:3dtiles|tileset)(?:\/|$)|\/(?:tileset\.json|[^/]+\.(?:b3dm|i3dm|pnts|cmpt|subtree))$/i
+
+export function is3dTilesRequest(url: string) {
+  try {
+    return THREE_DIMENSIONAL_TILE_PATH.test(new URL(url, 'http://unplugin-pageflow.local').pathname)
+  } catch {
+    return THREE_DIMENSIONAL_TILE_PATH.test(url.split(/[?#]/, 1)[0])
+  }
+}
 
 export function isBusinessApiResponse(url: string, contentType = '') {
   const path = url.split(/[?#]/, 1)[0]
-  if (ASSET_EXTENSION.test(path) || TILE_PATH.test(path) || TILE_COORDINATE_PATH.test(path)) return false
+  if (ASSET_EXTENSION.test(path) || TILE_PATH.test(path) || TILE_COORDINATE_PATH.test(path) || is3dTilesRequest(url)) return false
   try {
     const parsed = new URL(url, 'http://unplugin-pageflow.local')
     const parameters = new Map([...parsed.searchParams].map(([key, value]) => [key.toLowerCase(), value.toLowerCase()]))

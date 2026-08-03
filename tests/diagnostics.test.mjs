@@ -5,11 +5,12 @@ import { createServer } from 'vite'
 
 test('scans visible page accessibility, interaction, and visual issues', async () => {
   const browser = new Window({ url: 'http://localhost/' })
-  const previous = Object.fromEntries(['window', 'document', 'Element', 'HTMLImageElement', 'HTMLInputElement', 'MutationObserver', 'CSS'].map(key => [key, globalThis[key]]))
+  const previous = Object.fromEntries(['window', 'document', 'Element', 'HTMLElement', 'HTMLImageElement', 'HTMLInputElement', 'MutationObserver', 'CSS'].map(key => [key, globalThis[key]]))
   Object.assign(globalThis, {
     window: browser,
     document: browser.document,
     Element: browser.Element,
+    HTMLElement: browser.HTMLElement,
     HTMLImageElement: browser.HTMLImageElement,
     HTMLInputElement: browser.HTMLInputElement,
     MutationObserver: browser.MutationObserver,
@@ -46,6 +47,7 @@ test('scans visible page accessibility, interaction, and visual issues', async (
     browser.document.querySelector('#service-card').getBoundingClientRect = () => ({ x: 0, y: 0, top: 0, left: 0, right: 300, bottom: 100, width: 300, height: 100, toJSON() {} })
     Object.defineProperties(browser.document.documentElement, {
       clientWidth: { configurable: true, value: 375 },
+      clientHeight: { configurable: true, value: 844 },
       scrollWidth: { configurable: true, value: 420 },
     })
 
@@ -106,6 +108,18 @@ test('scans visible page accessibility, interaction, and visual issues', async (
     browser.document.body.append(browser.document.createElement('p'))
     await Promise.resolve()
     assert.notStrictEqual(await scanPageDiagnostics(), cached)
+
+    browser.document.body.innerHTML = '<main id="screen"><button id="screen-action">查看详情</button></main>'
+    const screen = browser.document.querySelector('#screen')
+    const screenAction = browser.document.querySelector('#screen-action')
+    Object.defineProperties(screen, {
+      offsetWidth: { configurable: true, value: 1920 },
+      offsetHeight: { configurable: true, value: 1080 },
+    })
+    screen.getBoundingClientRect = () => ({ x: 0, y: 0, top: 0, left: 0, right: 375, bottom: 211, width: 375, height: 211, toJSON() {} })
+    screenAction.getBoundingClientRect = () => ({ x: 10, y: 10, top: 10, left: 10, right: 25.625, bottom: 19.375, width: 15.625, height: 9.375, toJSON() {} })
+    const scaledDiagnostics = scanCustomPageDiagnostics()
+    assert.equal(scaledDiagnostics.some(item => item.ruleId === 'tap-target-too-small' && item.selector === '#screen-action'), false)
   } finally {
     await server.close()
     browser.close()

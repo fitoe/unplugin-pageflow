@@ -105,7 +105,13 @@ test('uses modern-screenshot and preserves canvas pages', async () => {
   Object.assign(globalThis, { Element: window.Element, HTMLElement: window.HTMLElement })
   const target = window.document.createElement('main')
   target.innerHTML = '<div data-unplugin-pageflow-hotspot-layer></div><div data-unplugin-pageflow-launcher></div><span>Page</span>'
+  window.document.head.innerHTML = '<style>canvas { display: block; width: 120px; height: 60px; }</style>'
+  window.document.body.append(target)
   const modernCanvas = { width: 200, height: 300 }
+  const nativeGetContext = window.HTMLCanvasElement.prototype.getContext
+  const nativeToDataURL = window.HTMLCanvasElement.prototype.toDataURL
+  window.HTMLCanvasElement.prototype.getContext = () => ({ drawImage() {} })
+  window.HTMLCanvasElement.prototype.toDataURL = () => 'data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22/%3E'
   const server = await createServer({ configFile: false, server: { middlewareMode: true }, appType: 'custom', logLevel: 'silent' })
   try {
     const { hasMeaningfulSnapshotPixels, renderSnapshotCanvas } = await server.ssrLoadModule('/src/client/snapshot-capture.ts')
@@ -133,14 +139,22 @@ test('uses modern-screenshot and preserves canvas pages', async () => {
     target.append(window.document.createElement('canvas'))
     let canvasPrimaryCalls = 0
     const canvasSnapshot = await renderSnapshotCanvas(target, { backgroundColor: '#fff' }, {
-      primary: async () => {
+      primary: async (captureTarget) => {
         canvasPrimaryCalls++
+        assert.equal(captureTarget.querySelectorAll('canvas').length, 0)
+        assert.equal(captureTarget.querySelectorAll('img').length, 1)
+        assert.equal(captureTarget.querySelector('img')?.style.width, '120px')
+        assert.equal(captureTarget.querySelector('img')?.style.height, '60px')
         return modernCanvas
       },
     })
     assert.equal(canvasSnapshot, modernCanvas)
     assert.equal(canvasPrimaryCalls, 1)
+    assert.equal(target.querySelectorAll('canvas').length, 1)
+    target.remove()
   } finally {
+    window.HTMLCanvasElement.prototype.getContext = nativeGetContext
+    window.HTMLCanvasElement.prototype.toDataURL = nativeToDataURL
     await server.close()
     await window.happyDOM.close()
   }

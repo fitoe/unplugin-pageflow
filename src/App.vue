@@ -26,7 +26,7 @@ import type {
   PageFlowThumbnailRecord,
   ResolvedPageFlowOptions,
 } from './shared/types'
-import { cancelPageFlowTest, fetchPageFlowGraph, fetchPageFlowTests, publishPageFlowAIContext, reportPageTitle, runPageFlowLighthouse, runPageFlowTest, startRouteDiscovery, subscribeToPageFlowUpdates } from './client/graph'
+import { cancelPageFlowTest, fetchPageFlowEditor, fetchPageFlowGraph, fetchPageFlowTests, openPageFlowEditor, publishPageFlowAIContext, reportPageTitle, runPageFlowLighthouse, runPageFlowTest, startRouteDiscovery, subscribeToPageFlowUpdates, type PageFlowEditorInfo } from './client/graph'
 import { planGraphUpdate } from './client/graph-update'
 import { resolvePreviewUrl, touchPreviewCache } from './client/preview'
 import { PAGEFLOW_DIAGNOSTIC_HIGHLIGHT_MESSAGE, PAGEFLOW_DIAGNOSTICS_SCAN_MESSAGE, PAGEFLOW_SCAN_MESSAGE } from './shared/protocol'
@@ -53,9 +53,10 @@ import LayoutWorker from './client/layout.worker?worker&inline'
 import ApiFieldTree from './components/ApiFieldTree.vue'
 import { focusTargetSetKey, planPageUpdate } from './client/page-update'
 import { pageUpdateEffectTarget } from './client/page-update-effect'
+import { centerDiagnosticTransform, navigationDiagnosticBounds, planDiagnosticEvidence } from './client/diagnostic-evidence'
 import { isLocalBusinessApiResponse } from './runtime/api-filter'
 import { initialPreviewMode } from './client/preview-mode'
-import { detectScaledPreviewSize } from './client/preview-size'
+import { detectScaledPreviewSize, parsePreviewSize } from './client/preview-size'
 import {
   fetchThumbnailManifest,
   fullThumbnailTiles,
@@ -90,8 +91,17 @@ const previewModes = {
   mobile: { label: '手机', width: 393, height: 852 },
   tablet: { label: '平板', width: 768, height: 1024 },
 } as const
-const pcPreviewSize = ref({ width: window.innerWidth, height: window.innerHeight })
-let pcDesignSizeDetected = false
+const PC_PREVIEW_SIZE_STORAGE_KEY = 'unplugin-pageflow:pc-preview-size'
+function storedPcPreviewSize() {
+  try {
+    return parsePreviewSize(localStorage.getItem(PC_PREVIEW_SIZE_STORAGE_KEY))
+  } catch {
+    return
+  }
+}
+const initialPcPreviewSize = storedPcPreviewSize()
+const pcPreviewSize = ref(initialPcPreviewSize ?? { width: window.innerWidth, height: window.innerHeight })
+let pcDesignSizeDetected = Boolean(initialPcPreviewSize)
 const viewportTabs = [
   { value: 'mobile', label: previewModes.mobile.label, icon: 'i-lucide-smartphone', ui: { label: 'sr-only' } },
   { value: 'tablet', label: previewModes.tablet.label, icon: 'i-lucide-tablet', ui: { label: 'sr-only' } },
@@ -145,8 +155,12 @@ const focusedLinks = ref<PageFlowLink[]>([])
 const apiResultsByPage = ref<Record<string, PageFlowApiResult[]>>({})
 const expandedApiResults = ref(new Set<string>())
 const openApiResultId = ref<string>()
+const openApiIssueResultId = ref<string>()
 const panelTab = ref<'api' | 'tests' | 'diagnostics' | 'todos'>('api')
 const panelCollapsed = ref(false)
+const editorInfo = ref<PageFlowEditorInfo>({ id: 'system', name: '默认编辑器' })
+const editorOpening = ref(false)
+const editorOpenError = ref('')
 interface PageTodo { id: string; text: string; done: boolean }
 const PAGE_TODOS_STORAGE_KEY = 'unplugin-pageflow:page-todos'
 function loadPageTodos() {
@@ -214,6 +228,36 @@ const panelTabs = computed(() => [
   { value: 'diagnostics', label: '诊断', badge: focusedDiagnostics.value.filter(item => item.severity === 'error').length, slot: 'diagnostics' },
   { value: 'todos', label: '待办', badge: focusedOpenTodoCount.value, slot: 'todos' },
 ])
+const editorIcon = computed(() => ({
+  cursor: 'i-lucide-square-mouse-pointer',
+  jetbrains: 'i-lucide-box',
+  sublime: 'i-lucide-file-code-2',
+  system: 'i-lucide-file-code-2',
+  vscode: 'i-lucide-code-2',
+  zed: 'i-lucide-zap',
+}[editorInfo.value.id]))
+const focusedEditorPage = computed(() => pages.value.find(item => item.id === focusedPageId.value))
+const editorButtonHint = computed(() => editorOpenError.value
+  || (focusedEditorPage.value?.sourceFile
+    ? `在${editorInfo.value.name}中打开\n${focusedEditorPage.value.sourceFile}`
+  : `无法在${editorInfo.value.name}中打开：未解析到当前页面的源文件`)
+)
+
+async function openFocusedPageInEditor() {
+  const page = focusedEditorPage.value
+  if (!page?.sourceFile || editorOpening.value) return
+  editorOpening.value = true
+  editorOpenError.value = ''
+  try {
+    await openPageFlowEditor(props.config, page.path)
+    status.value = `已在${editorInfo.value.name}中打开`
+  } catch (error) {
+    editorOpenError.value = error instanceof Error ? error.message : '无法打开页面源文件'
+    status.value = editorOpenError.value
+  } finally {
+    editorOpening.value = false
+  }
+}
 const headerUserMenuItems = computed(() => [
   [{ type: 'label' as const, label: '切换用户' }],
   users.value.map(user => ({
@@ -302,6 +346,7 @@ const capturesInProgress = new Set<string>()
 const captureRetryCounts = new Map<string, number>()
 const captureRetryTimers = new Map<string, number>()
 const focusedPageStateCache = new FocusedPageStateCache()
+const diagnosticsByPage = new Map<string, { revision: string, diagnostics: PageFlowDiagnostic[] }>()
 let focusedLinksScannedPageId: string | undefined
 let diagnosticsTimer: number | undefined
 let diagnosticsRequestTimer: number | undefined
@@ -415,6 +460,8 @@ const requiredThumbnailRecords = computed(() => {
       records.push(...pageRecords)
     }
   })
+  if (focusedPageId.value && focusedDiagnostics.value.some(item => item.bounds))
+    records.push(...fullThumbnailRecords(focusedPageId.value))
   return [...new Map(records.map(record => [record.slot, record])).values()]
 })
 const focusScene = computed(() => createFocusScene({
@@ -477,6 +524,21 @@ const diagnosticSeverityLabels: Record<PageFlowDiagnosticSeverity, string> = {
   warning: '警告',
   suggestion: '建议',
 }
+
+const focusedDiagnosticEvidence = computed(() => {
+  const pageId = focusedPageId.value
+  if (!pageId) return new Map()
+  const records = fullThumbnailRecords(pageId).flatMap((record) => {
+    const source = thumbnailSource(record)
+    return source ? [{ source, sourceWidth: record.width, height: record.height, tileTop: record.tileTop }] : []
+  })
+  return new Map(focusedDiagnostics.value.flatMap((item) => {
+    const bounds = item.bounds ?? navigationDiagnosticBounds(item, focusedLinks.value, currentPreviewMode.value)
+    if (!bounds) return []
+    const evidence = planDiagnosticEvidence(bounds, records, currentPreviewMode.value.width)
+    return evidence ? [[item.id, evidence] as const] : []
+  }))
+})
 
 function diagnosticColor(severity: PageFlowDiagnosticSeverity) {
   return severity === 'error' ? 'error' : severity === 'warning' ? 'warning' : 'info'
@@ -680,6 +742,23 @@ function toggleApiResult(id: string) {
 
 function visibleApiFields(result: PageFlowApiResult) {
   return expandedApiResults.value.has(result.id) ? result.fields : result.fields.filter(field => field.used)
+}
+
+function apiResultById(id: string) {
+  return focusedApiResults.value.find(result => result.id === id)
+}
+
+function apiFieldTreeByResultId(id: string) {
+  const result = apiResultById(id)
+  return result ? visibleApiFieldTree(result) : []
+}
+
+function unusedApiFieldCount(id: string) {
+  return apiResultById(id)?.fields.filter(field => !field.used).length ?? 0
+}
+
+function toggleApiIssueResult(id: string) {
+  openApiIssueResultId.value = openApiIssueResultId.value === id ? undefined : id
 }
 
 function apiRoute(url: string) {
@@ -1354,6 +1433,11 @@ function selectSearchPage(pageId: string) {
 }
 
 function handleSearchShortcut(event: KeyboardEvent) {
+  if (event.key === 'Escape' && focusedPageId.value) {
+    event.preventDefault()
+    exitFocusAfterSnapshot(() => zoomCanvas('out'))
+    return
+  }
   if (event.key.toLowerCase() !== 'k' || (!event.metaKey && !event.ctrlKey)) return
   event.preventDefault()
   searchOpen.value = true
@@ -1382,6 +1466,12 @@ function requestFocusedPageScan(pageId: string) {
 function requestFocusedDiagnostics() {
   window.clearTimeout(diagnosticsRequestTimer)
   diagnosticsRequestTimer = window.setTimeout(runFocusedDiagnostics, 300)
+}
+
+function cachedPageDiagnostics(page: PageFlowPage | undefined) {
+  if (!page) return
+  const cached = diagnosticsByPage.get(page.id)
+  return cached?.revision === (page.revision ?? '') ? cached.diagnostics : undefined
 }
 
 function runFocusedDiagnostics() {
@@ -1417,12 +1507,21 @@ function highlightDiagnostic(item: PageFlowDiagnostic) {
     highlight()
     return
   }
-  const transform = fitFocusedPreviewTransform(
+  const pageTransform = fitFocusedPreviewTransform(
     position,
     pagePreviewHeight(pageId),
     { width: canvas.value.clientWidth, height: canvas.value.clientHeight },
     SELECTED_PAGE_SCALE,
   )
+  const transform = item.bounds
+    ? centerDiagnosticTransform(
+        item.bounds,
+        position,
+        currentPreviewMode.value.width,
+        { width: canvas.value.clientWidth, height: canvas.value.clientHeight },
+        pageTransform.scaleX,
+      )
+    : pageTransform
   flyToPage(pageId, position, highlight, undefined, transform)
 }
 
@@ -1476,7 +1575,7 @@ function waitForCapture(pageId: string, timeoutMs = 35000) {
   return captureQueue.waitFor(pageId, timeoutMs)
 }
 
-function exitFocusAfterSnapshot() {
+function exitFocusAfterSnapshot(done?: () => void) {
   const pageId = focusedPageId.value
   if (!pageId || focusExitPending) return
   focusExitPending = true
@@ -1505,7 +1604,10 @@ function exitFocusAfterSnapshot() {
       focusExitPending = false
       return
     }
-    exitFocus(true, () => { focusExitPending = false })
+    exitFocus(true, () => {
+      focusExitPending = false
+      done?.()
+    })
   }
   void exitAfterCapture()
 }
@@ -1763,7 +1865,7 @@ function syncPreviewHotspots(pageId: string) {
 }
 
 function applyDetectedPcPreviewSize(frame: HTMLIFrameElement) {
-  if (previewMode.value !== 'pc' || !frame.contentDocument || !frame.contentWindow) return false
+  if (pcDesignSizeDetected || previewMode.value !== 'pc' || !frame.contentDocument || !frame.contentWindow) return false
   const detectedSize = detectScaledPreviewSize(frame.contentDocument, {
     width: frame.contentWindow.innerWidth,
     height: frame.contentWindow.innerHeight,
@@ -1771,11 +1873,15 @@ function applyDetectedPcPreviewSize(frame: HTMLIFrameElement) {
   if (detectedSize.width === pcPreviewSize.value.width && detectedSize.height === pcPreviewSize.value.height) return false
   pcDesignSizeDetected = true
   pcPreviewSize.value = detectedSize
+  try {
+    localStorage.setItem(PC_PREVIEW_SIZE_STORAGE_KEY, JSON.stringify(detectedSize))
+  } catch {}
   resetPreviewRendering()
   return true
 }
 
 function schedulePcPreviewSizeDetection(pageId: string, frame: HTMLIFrameElement, attempt = 0) {
+  if (pcDesignSizeDetected) return
   window.setTimeout(() => {
     if (previewFrames.get(pageId) !== frame || !frame.isConnected || applyDetectedPcPreviewSize(frame)) return
     if (attempt < 19) schedulePcPreviewSizeDetection(pageId, frame, attempt + 1)
@@ -1793,8 +1899,8 @@ async function handlePreviewLoad(pageId: string, frame: HTMLIFrameElement) {
     syncPreviewHotspots(pageId)
     readyPreviewIds.value = new Set(readyPreviewIds.value).add(pageId)
     requestFocusedPageScan(pageId)
-    if (pageId === focusedPageId.value) requestFocusedDiagnostics()
     const page = pages.value.find(item => item.id === pageId)
+    if (pageId === focusedPageId.value && !cachedPageDiagnostics(page)) requestFocusedDiagnostics()
     const title = frame.contentDocument?.title.trim()
     if (page && title && title !== page.title) await reportPageTitle(props.config, page.path, title)
     await capturePreview(pageId, frame, true)
@@ -1968,7 +2074,7 @@ function flyToPage(
   }, () => {
     clearTimeout(viewportIdleTimer)
     viewportInteracting.value = false
-    if (focusedPageId.value === pageId) centerFocusedPage(pageId)
+    if (focusedPageId.value === pageId && !finalTransform) centerFocusedPage(pageId)
     syncOverlay(true)
   })
 }
@@ -1998,7 +2104,8 @@ function handlePreviewMessage(event: MessageEvent) {
   if (message.type === 'page-reported') {
     if (sourcePageId === focusedPageId.value) {
       requestAnimationFrame(() => requestFocusedPageScan(sourcePageId))
-      requestAnimationFrame(requestFocusedDiagnostics)
+      const page = pages.value.find(item => item.id === sourcePageId)
+      if (!cachedPageDiagnostics(page)) requestAnimationFrame(requestFocusedDiagnostics)
     }
     return
   }
@@ -2027,6 +2134,8 @@ function handlePreviewMessage(event: MessageEvent) {
     diagnosticsLoading.value = false
     const sourceDiagnostics = pages.value.find(page => page.id === sourcePageId)?.diagnostics ?? []
     focusedDiagnostics.value = [...sourceDiagnostics, ...message.diagnostics]
+    const page = pages.value.find(item => item.id === sourcePageId)
+    if (page) diagnosticsByPage.set(page.id, { revision: page.revision ?? '', diagnostics: focusedDiagnostics.value })
     if (diagnosticsRefreshQueued) requestFocusedDiagnostics()
     return
   }
@@ -2315,7 +2424,14 @@ function applyPageUpdate(nextPage: PageFlowPage) {
     return
   }
   pages.value = plan.pages
-  if (plan.sourceChanged) showPageUpdateEffect(nextPage)
+  if (plan.sourceChanged) {
+    diagnosticsByPage.delete(nextPage.id)
+    if (nextPage.id === focusedPageId.value) {
+      focusedDiagnostics.value = nextPage.diagnostics ?? []
+      requestFocusedDiagnostics()
+    }
+    showPageUpdateEffect(nextPage)
+  }
   status.value = 'Routes synced'
   if (plan.action === 'layout') void requestFocusedLayout()
   else if (plan.action === 'render') scheduleCanvasRender()
@@ -2443,19 +2559,23 @@ watch(capturePreviewId, (pageId) => {
 })
 watch([focusedPageId, focusedDiagnostics, focusedApiResults, focusedPageTests, focusedLinks, lighthouseReport], scheduleAIContextSync, { deep: true })
 watch(focusedPageId, () => {
+  editorOpenError.value = ''
   window.clearTimeout(diagnosticsRequestTimer)
   window.clearTimeout(diagnosticsTimer)
   diagnosticsInFlightPageId = undefined
   diagnosticsRefreshQueued = false
-  focusedDiagnostics.value = []
+  const page = pages.value.find(item => item.id === focusedPageId.value)
+  const cachedDiagnostics = cachedPageDiagnostics(page)
+  focusedDiagnostics.value = cachedDiagnostics ?? []
   lighthouseReport.value = undefined
   lighthouseError.value = ''
   previewFrames.forEach((_frame, pageId) => syncPreviewHotspots(pageId))
   void refreshFocusedTests()
-  requestAnimationFrame(requestFocusedDiagnostics)
+  if (!cachedDiagnostics) requestAnimationFrame(requestFocusedDiagnostics)
 })
 
 onMounted(async () => {
+  void fetchPageFlowEditor(props.config).then(value => { editorInfo.value = value }).catch(() => undefined)
   refreshSessionUsers()
   userSessionRefreshTimer = window.setInterval(refreshSessionUsers, 1_000)
   window.addEventListener('message', handlePreviewMessage)
@@ -2709,7 +2829,7 @@ onUnmounted(() => {
         @click="panelCollapsed = !panelCollapsed"
       >
         <svg viewBox="0 0 16 16" aria-hidden="true">
-          <path :d="panelCollapsed ? 'm6 3 5 5-5 5' : 'm10 3-5 5 5 5'" />
+          <path :d="panelCollapsed ? 'm10 3-5 5 5 5' : 'm6 3 5 5-5 5'" />
         </svg>
       </button>
       <div v-show="!panelCollapsed" class="api-panel-content">
@@ -2725,15 +2845,29 @@ onUnmounted(() => {
                   class="cursor-pointer py-2"
                   role="button"
                   tabindex="0"
-                  @click="openApiResultId = issue.resultId"
-                  @keydown.enter="openApiResultId = issue.resultId"
-                  @keydown.space.prevent="openApiResultId = issue.resultId"
+                  @click="toggleApiIssueResult(issue.resultId)"
+                  @keydown.enter="toggleApiIssueResult(issue.resultId)"
+                  @keydown.space.prevent="toggleApiIssueResult(issue.resultId)"
                 >
                   <div class="flex items-center gap-2">
                     <div class="min-w-0 flex-1 truncate text-sm text-highlighted">{{ apiIssueLabel(issue) }}</div>
                     <UBadge :label="issue.status === 'failed' ? '失败' : '警告'" :color="apiIssueColor(issue.status)" variant="soft" size="sm" />
                   </div>
                   <div class="mt-1 text-xs leading-5 text-muted">{{ issue.descriptions.join(' · ') }}</div>
+                  <div v-if="openApiIssueResultId === issue.resultId" class="mt-2 border-t border-default pt-2" @click.stop>
+                    <ApiFieldTree v-if="apiFieldTreeByResultId(issue.resultId).length" :nodes="apiFieldTreeByResultId(issue.resultId)" />
+                    <div v-else class="api-empty">页面暂未展示返回字段</div>
+                    <UButton
+                      v-if="unusedApiFieldCount(issue.resultId)"
+                      color="neutral"
+                      variant="link"
+                      size="xs"
+                      :trailing-icon="expandedApiResults.has(issue.resultId) ? 'i-lucide-chevron-up' : 'i-lucide-chevron-down'"
+                      @click="toggleApiResult(issue.resultId)"
+                    >
+                      {{ expandedApiResults.has(issue.resultId) ? '隐藏未使用字段' : `显示未使用字段（${unusedApiFieldCount(issue.resultId)}）` }}
+                    </UButton>
+                  </div>
                 </div>
               </div>
             </div>
@@ -2743,8 +2877,13 @@ onUnmounted(() => {
               </template>
               <template #default="{ item: result }">
                 <span class="min-w-0">
-                  <span class="block truncate">{{ result.label }}</span>
-                  <span class="block text-xs text-muted">{{ result.status }} · {{ result.duration }}ms</span>
+                  <span class="flex min-w-0 items-center gap-1.5">
+                    <span class="min-w-0 flex-1 truncate">{{ result.label }}</span>
+                    <UBadge v-if="(result.occurrences ?? 1) > 1" :label="`×${result.occurrences}`" color="warning" variant="soft" size="sm" />
+                  </span>
+                  <span class="block text-xs text-muted">
+                    {{ result.status }} · {{ result.duration }}ms<span v-if="result.lastIntervalMs != null"> · 最近间隔 {{ result.lastIntervalMs }}ms</span>
+                  </span>
                 </span>
               </template>
               <template #body="{ item: result }">
@@ -2980,6 +3119,32 @@ onUnmounted(() => {
                       @keydown.enter="item.selector && highlightDiagnostic(item)"
                       @keydown.space.prevent="item.selector && highlightDiagnostic(item)"
                     >
+                      <div
+                        v-if="focusedDiagnosticEvidence.get(item.id)"
+                        class="relative mb-2 overflow-hidden rounded-lg border border-default bg-muted"
+                        :style="{
+                          width: `${focusedDiagnosticEvidence.get(item.id)!.width}px`,
+                          height: `${focusedDiagnosticEvidence.get(item.id)!.height}px`,
+                        }"
+                        aria-hidden="true"
+                      >
+                        <img
+                          v-for="layer in focusedDiagnosticEvidence.get(item.id)!.layers"
+                          :key="`${layer.source}:${layer.top}`"
+                          :src="layer.source"
+                          class="pointer-events-none absolute max-w-none"
+                          :style="{ left: `${layer.left}px`, top: `${layer.top}px`, width: `${layer.width}px`, height: `${layer.height}px` }"
+                        />
+                        <span
+                          class="pointer-events-none absolute rounded-sm border-2 border-error bg-error/10 shadow-[0_0_0_1px_rgba(255,255,255,0.8)]"
+                          :style="{
+                            left: `${focusedDiagnosticEvidence.get(item.id)!.marker.left}px`,
+                            top: `${focusedDiagnosticEvidence.get(item.id)!.marker.top}px`,
+                            width: `${focusedDiagnosticEvidence.get(item.id)!.marker.width}px`,
+                            height: `${focusedDiagnosticEvidence.get(item.id)!.marker.height}px`,
+                          }"
+                        />
+                      </div>
                       <div class="min-w-0">
                         <div class="text-xs text-muted">{{ item.targetLabel || `问题 ${index + 1}` }}</div>
                         <div v-if="diagnosticMeasurement(item)" class="mt-0.5 text-xs text-dimmed">{{ diagnosticMeasurement(item) }}</div>
@@ -3009,6 +3174,20 @@ onUnmounted(() => {
           </div>
         </template>
       </UTabs>
+      <footer class="api-panel-statusbar">
+        <span class="inline-flex" :title="editorButtonHint">
+          <UButton
+            :icon="editorIcon"
+            :color="editorOpenError ? 'error' : 'neutral'"
+            variant="ghost"
+            size="xs"
+            :loading="editorOpening"
+            :disabled="!focusedEditorPage?.sourceFile"
+            :aria-label="editorButtonHint"
+            @click="openFocusedPageInEditor"
+          />
+        </span>
+      </footer>
       </div>
       </aside>
     </section>

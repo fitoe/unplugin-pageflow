@@ -117,7 +117,8 @@
     "lighthouse": "^13.4.1",
     "puppeteer-core": "^25.4.0",
     "tailwindcss": "^4.3.3",
-    "unplugin": "^2.3.5"
+    "unplugin": "^2.3.5",
+    "vue-json-pretty": "^2.6.0"
   },
   "peerDependencies": {
     "@builder.io/qwik": ">=1.10.0",
