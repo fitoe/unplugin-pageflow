@@ -1,0 +1,24 @@
+{
+  "name": "pageflow-chrome-extension",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "wxt",
+    "build": "wxt build",
+    "zip": "wxt zip",
+    "typecheck": "vue-tsc --noEmit"
+  },
+  "dependencies": {
+    "@pageflow/core": "workspace:*",
+    "@pageflow/runtime": "workspace:*",
+    "@pageflow/ui": "workspace:*",
+    "vue": "^3.5.17"
+  },
+  "devDependencies": {
+    "@wxt-dev/module-vue": "^1.0.3",
+    "typescript": "~5.8.3",
+    "vue-tsc": "^3.0.5",
+    "wxt": "^0.21.3"
+  }
+}

@@ -1,5 +1,6 @@
 import type { PageFlowRuntimeRoute } from '../../shared/types'
 import type { PageFlowResolvedNavigation, PageFlowRouterAdapter } from './types'
+import { instrumentPageFlowHistory } from '../../../packages/pageflow-runtime/src'
 
 declare global {
   interface Window {
@@ -35,15 +36,9 @@ export class BrowserHistoryAdapter implements PageFlowRouterAdapter {
   }
 
   interceptNavigation(callback: (navigation: PageFlowResolvedNavigation, method: string) => void) {
-    ;(['pushState', 'replaceState'] as const).forEach(method => {
-      const original = window.history[method].bind(window.history)
-      window.history[method] = ((data: unknown, unused: string, url?: string | URL | null) => {
-        if (url != null) {
-          const navigation = this.resolve(url)
-          if (navigation) callback(navigation, method)
-        }
-        return original(data, unused, url)
-      }) as History[typeof method]
+    instrumentPageFlowHistory(window, (url, method) => {
+      const navigation = this.resolve(url)
+      if (navigation) callback(navigation, method)
     })
   }
 

@@ -281,8 +281,6 @@ function createGraph(
     return target && target !== route.path ? [[route.path, target] as const] : []
   }))
   const isCatchAll = (route: PageFlowRuntimeRoute) => route.catchAll === true
-    || /:[^/]+(?:\(\.\*\)|\*)/.test(route.path)
-    || /\[\.\.\.[^\]]+\]/.test(route.id)
   const pages: PageFlowPage[] = routes
     .filter(route => route.path && route.path !== hiddenHomePath && !isCatchAll(route) && !redirectByPath.has(route.path) && !seenPaths.has(route.path) && seenPaths.add(route.path))
     .map((route, index) => {

@@ -21,10 +21,12 @@ test('plans stale, priority, route-order, and manual capture work', async () => 
     assert.deepEqual([...background.batchIds], ['visible', 'first', 'later'])
     assert.equal(background.pageId, 'visible')
     assert.equal(background.manual, false)
+    assert.equal(background.priority, true)
 
     const retained = planNextCapture({ ...options, batchIds: ['later', 'removed'] })
     assert.deepEqual([...retained.batchIds], ['later'])
     assert.equal(retained.pageId, 'later')
+    assert.equal(retained.priority, false)
 
     const manual = planNextCapture({ ...options, batchIds: ['later'], manualIds: ['first'] })
     assert.deepEqual([...manual.batchIds], ['later', 'first'])

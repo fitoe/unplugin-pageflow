@@ -13,6 +13,7 @@ export interface CapturePlan {
   batchIds: Set<string>
   pageId?: string
   manual: boolean
+  priority: boolean
 }
 
 export function planNextCapture(options: CapturePlanOptions): CapturePlan {
@@ -27,6 +28,13 @@ export function planNextCapture(options: CapturePlanOptions): CapturePlan {
   }
   const manualIds = [...options.manualIds]
   manualIds.forEach(id => batchIds.add(id))
+  const orderedIds = [...batchIds].sort((left, right) => Number(options.priorityIds.has(right)) - Number(options.priorityIds.has(left)))
+  batchIds = new Set(orderedIds)
   const pageId = manualIds.find(id => batchIds.has(id)) ?? batchIds.values().next().value
-  return { batchIds, pageId, manual: pageId ? manualIds.includes(pageId) : false }
+  return {
+    batchIds,
+    pageId,
+    manual: pageId ? manualIds.includes(pageId) : false,
+    priority: pageId ? options.priorityIds.has(pageId) : false,
+  }
 }

@@ -1,0 +1,48 @@
+:root { color: #d8dde7; background: #111318; font: 13px/1.5 Inter, ui-sans-serif, system-ui, sans-serif; color-scheme: dark; }
+* { box-sizing: border-box; }
+body { margin: 0; }
+button, input { font: inherit; }
+button { color: inherit; background: transparent; border: 1px solid #303640; border-radius: 7px; padding: 6px 10px; cursor: pointer; }
+button:hover { background: #242933; }
+button.primary { border-color: #7167f9; background: #645af0; color: white; }
+header { position: sticky; top: 0; z-index: 2; height: 54px; display: grid; grid-template-columns: 180px 1fr auto; align-items: center; gap: 16px; padding: 0 16px; border-bottom: 1px solid #292e37; background: #171a20; }
+header > div:first-child { display: flex; gap: 8px; align-items: baseline; font-size: 15px; }
+header span { color: #7e8798; font-size: 11px; }
+nav { display: flex; align-self: stretch; }
+nav button { border: 0; border-radius: 0; padding: 0 13px; color: #8e97a7; border-bottom: 2px solid transparent; }
+nav button.active { color: white; border-bottom-color: #7b70ff; }
+nav small { margin-left: 3px; padding: 1px 5px; border-radius: 8px; background: #2a303a; }
+.actions { display: flex; gap: 7px; }
+section { padding: 16px; }
+.source-error { max-width: 620px; margin: 64px auto; padding: 18px; color: #f1c16f; border: 1px solid #735c31; border-radius: 10px; background: #2a2217; text-align: center; }
+.canvas-shell { position: relative; height: calc(100vh - 54px); padding: 0; overflow: hidden; cursor: grab; touch-action: none; background-color: #111318; background-image: radial-gradient(#2b3039 1px, transparent 1px); background-size: 22px 22px; }
+.canvas-shell:active { cursor: grabbing; }
+.canvas-toolbar { position: sticky; z-index: 4; top: 12px; left: 12px; width: max-content; display: flex; align-items: center; gap: 6px; padding: 6px; border: 1px solid #303640; border-radius: 9px; background: #171a20ef; box-shadow: 0 8px 24px #0005; cursor: default; }
+.canvas-toolbar form { display: flex; gap: 5px; }
+.canvas-toolbar input { width: 180px; padding: 5px 8px; color: inherit; border: 1px solid #343a45; border-radius: 6px; background: #111318; outline: none; }
+.canvas-toolbar span { min-width: 39px; color: #8e97a7; text-align: center; font-size: 11px; }
+.canvas-toolbar button { padding: 4px 8px; }
+.route-canvas { position: absolute; left: 0; top: 0; transform-origin: 0 0; transition: transform 120ms ease-out; }
+.route-canvas svg { position: absolute; inset: 0; overflow: visible; }
+.route-canvas svg path { fill: none; stroke: #555d6d; stroke-width: 1.5; }
+.route-canvas svg marker path { fill: #697386; stroke: none; }
+.route-canvas svg text { fill: #f0b45b; font-size: 11px; text-anchor: middle; }
+.page-node { position: absolute; left: 0; top: 0; width: 250px; height: 110px; display: flex; flex-direction: column; align-items: flex-start; justify-content: space-between; padding: 13px; overflow: hidden; color: inherit; text-align: left; border: 1px solid #343a45; border-radius: 11px; background: linear-gradient(145deg, #1d2129, #181b21); box-shadow: 0 8px 24px #0004; }
+.page-node:hover { border-color: #6259d9; background: #20242d; }
+.page-node.snapshot { background-position: center; background-size: cover; }
+.page-node.focused { border-color: #8278ff; box-shadow: 0 0 0 2px #7268f033, 0 10px 30px #0005; }
+.page-node b { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 14px; }
+.page-node code { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.node-kind { color: #8980ff; font: 9px/1 ui-monospace, monospace; letter-spacing: .12em; }
+.grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(250px, 1fr)); gap: 10px; }
+.grid article, .list article { border: 1px solid #2b3039; background: #191c22; border-radius: 9px; }
+.grid article { min-height: 90px; padding: 13px; display: flex; flex-direction: column; justify-content: space-between; }
+code { color: #929baa; font: 11px/1.4 ui-monospace, SFMono-Regular, Consolas, monospace; overflow-wrap: anywhere; }
+.list { display: grid; gap: 7px; }
+.list article { min-height: 42px; padding: 9px 12px; }
+em { color: #f0b45b; font-style: normal; font-weight: 700; }
+.todos { max-width: 720px; }
+.empty { grid-column: 1 / -1; color: #747d8c; text-align: center; padding: 48px; }
+aside { position: fixed; inset: 70px 20px 20px; z-index: 5; padding: 14px; overflow: auto; background: #101217; border: 1px solid #343a45; border-radius: 12px; box-shadow: 0 20px 60px #000b; }
+aside button { position: sticky; top: 0; float: right; background: #20242c; }
+aside img { display: block; max-width: 100%; margin: 38px auto 0; }

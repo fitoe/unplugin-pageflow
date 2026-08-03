@@ -1,0 +1,20 @@
+{
+  "name": "@pageflow/ui",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "exports": {
+    "./json-tree": "./src/PageFlowJsonTree.vue",
+    "./workbench": "./src/PageFlowWorkbench.vue",
+    "./workbench.css": "./src/workbench.css",
+    "./todo-list": "./src/PageFlowTodoList.vue",
+    "./request-list": "./src/PageFlowRequestList.vue",
+    "./diagnostic-list": "./src/PageFlowDiagnosticList.vue",
+    "./tabs": "./src/PageFlowTabs.vue"
+  },
+  "dependencies": {
+    "@pageflow/core": "workspace:*",
+    "vue": "^3.5.17",
+    "vue-json-pretty": "^2.6.0"
+  }
+}

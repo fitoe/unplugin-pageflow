@@ -1,6 +1,7 @@
 import type { PageFlowDiagnostic, PageFlowDiagnosticOptions, ResolvedPageFlowDiagnosticOptions } from '../shared/types'
 import type axeCore from 'axe-core'
 import { pageFlowInspectorRevision, runPageFlowInspectors } from './inspectors.ts'
+import { highlightPageFlowElement, pageFlowAccessibleName, pageFlowElementSelector } from '../../packages/pageflow-runtime/src'
 
 const INTERACTIVE_SELECTOR = 'a[href], button, input, select, textarea, [role="button"], [role="link"], [tabindex]:not([tabindex="-1"]), uni-button, uni-navigator'
 const INTERNAL_DIAGNOSTIC_IGNORE_SELECTORS = ['#__vue-devtools-container__', '[data-v-inspector-ignore="true"]']
@@ -118,26 +119,6 @@ function incompleteLinkArea(element: Element) {
   return percentage < 60 ? percentage : undefined
 }
 
-function elementSelector(element: Element) {
-  const escape = (value: string) => globalThis.CSS?.escape?.(value) ?? value.replace(/[^a-zA-Z0-9_-]/g, character => `\\${character}`)
-  if (element.id) return `#${escape(element.id)}`
-  const testId = element.getAttribute('data-testid')
-  if (testId) return `[data-testid="${escape(testId)}"]`
-  const parts: string[] = []
-  let current: Element | null = element
-  while (current && current !== document.documentElement && parts.length < 5) {
-    let part = current.tagName.toLowerCase()
-    const parent: Element | null = current.parentElement
-    if (parent) {
-      const siblings = [...parent.children].filter(child => child.tagName === current!.tagName)
-      if (siblings.length > 1) part += `:nth-of-type(${siblings.indexOf(current) + 1})`
-    }
-    parts.unshift(part)
-    current = parent
-  }
-  return parts.join(' > ')
-}
-
 function shortText(value: string | null | undefined) {
   const normalized = value?.replace(/\s+/g, ' ').trim()
   if (!normalized) return
@@ -146,7 +127,7 @@ function shortText(value: string | null | undefined) {
 
 function diagnosticTargetLabel(element: Element | undefined) {
   if (!element) return
-  const name = shortText(accessibleName(element)
+  const name = shortText(pageFlowAccessibleName(element)
     || element.getAttribute('alt')
     || element.getAttribute('placeholder'))
   if (element instanceof HTMLImageElement) return name ? `图片“${name}”` : '未命名图片'
@@ -157,7 +138,7 @@ function diagnosticTargetLabel(element: Element | undefined) {
 }
 
 function diagnostic(ruleId: string, severity: PageFlowDiagnostic['severity'], category: PageFlowDiagnostic['category'], title: string, description: string, element?: Element, measured?: PageFlowDiagnostic['measured']): PageFlowDiagnostic {
-  const selector = element ? elementSelector(element) : undefined
+  const selector = element ? pageFlowElementSelector(element) : undefined
   const rect = element?.getBoundingClientRect()
   const bounds = rect && rect.width > 0 && rect.height > 0
     ? { x: rect.left + window.scrollX, y: rect.top + window.scrollY, width: rect.width, height: rect.height }
@@ -217,23 +198,6 @@ function deduplicateNestedDiagnostics(items: PageFlowDiagnostic[]) {
     }
   }
   return results
-}
-
-function accessibleName(element: Element) {
-  const labelledBy = element.getAttribute('aria-labelledby')
-    ?.split(/\s+/)
-    .map(id => document.getElementById(id)?.textContent?.trim())
-    .filter(Boolean)
-    .join(' ')
-  const labels = 'labels' in element
-    ? [...((element as HTMLInputElement).labels ?? [])].map(label => label.textContent?.trim()).filter(Boolean).join(' ')
-    : ''
-  return element.getAttribute('aria-label')?.trim()
-    || labelledBy
-    || labels
-    || element.getAttribute('title')?.trim()
-    || element.textContent?.trim()
-    || (element instanceof HTMLInputElement && element.type === 'button' ? element.value.trim() : '')
 }
 
 function resolveDiagnosticOptions(options: PageFlowDiagnosticOptions = {}): ResolvedPageFlowDiagnosticOptions {
@@ -296,7 +260,7 @@ export function scanCustomPageDiagnostics(input: PageFlowDiagnosticOptions = {})
     const interactive = element.matches(INTERACTIVE_SELECTOR)
     const interactiveEnabled = interactive && !disabled(element)
 
-    if (ruleEnabled(options, 'missing-accessible-name') && interactiveEnabled && !accessibleName(element)) {
+    if (ruleEnabled(options, 'missing-accessible-name') && interactiveEnabled && !pageFlowAccessibleName(element)) {
       results.push(diagnostic('missing-accessible-name', 'error', 'accessibility', '交互元素缺少名称', '添加可见文字、aria-label 或关联标签。', element))
     }
 
@@ -491,54 +455,6 @@ export function scanPageDiagnostics(input: PageFlowDiagnosticOptions = {}) {
   return promise
 }
 
-let diagnosticHighlight: HTMLElement | undefined
-
 export function highlightDiagnosticElement(selector: string) {
-  diagnosticHighlight?.remove()
-  diagnosticHighlight = undefined
-  let element: Element | null = null
-  try {
-    element = document.querySelector(selector)
-  } catch {
-    return false
-  }
-  if (!element) return false
-  element.scrollIntoView({ block: 'center', inline: 'center', behavior: 'auto' })
-  const rect = element.getBoundingClientRect()
-  const overlay = document.createElement('div')
-  const ripple = document.createElement('div')
-  overlay.setAttribute('data-unplugin-pageflow-diagnostic-highlight', '')
-  Object.assign(overlay.style, {
-    position: 'fixed',
-    zIndex: '2147483647',
-    pointerEvents: 'none',
-    left: `${rect.left - 3}px`,
-    top: `${rect.top - 3}px`,
-    width: `${rect.width + 6}px`,
-    height: `${rect.height + 6}px`,
-    border: '2px solid #ef4444',
-    borderRadius: '8px',
-    boxSizing: 'border-box',
-    boxShadow: '0 0 0 3px rgb(239 68 68 / 20%)',
-  })
-  Object.assign(ripple.style, {
-    position: 'absolute',
-    inset: '-2px',
-    border: '2px solid #ef4444',
-    borderRadius: 'inherit',
-    boxSizing: 'border-box',
-  })
-  overlay.append(ripple)
-  document.body.append(overlay)
-  ripple.animate([
-    { opacity: 0.8, transform: 'scale(1)' },
-    { opacity: 0, transform: 'scale(1.35)' },
-  ], { duration: 900, easing: 'ease-out', iterations: 3 })
-  diagnosticHighlight = overlay
-  window.setTimeout(() => {
-    if (diagnosticHighlight !== overlay) return
-    overlay.remove()
-    diagnosticHighlight = undefined
-  }, 3_000)
-  return true
+  return highlightPageFlowElement(window, selector)
 }

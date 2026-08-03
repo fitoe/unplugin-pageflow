@@ -11,11 +11,10 @@ import { findVueRouterAdapter } from './adapters/vue-router'
 import { findBrowserHistoryAdapter } from './adapters/browser-history'
 import { mountPageFlowLauncher } from './launcher'
 import { isLocalBusinessApiResponse } from './api-filter'
+import { collectApiFields } from './api-fields'
+import { instrumentPageFlowNetwork } from '../../packages/pageflow-runtime/src'
 
 const apiInspectionEnabled = new URLSearchParams(window.location.search).has('__unplugin_pageflow_inspect')
-const MAXIMUM_API_FIELDS = 2_000
-const MAXIMUM_API_ARRAY_ITEMS = 100
-
 function renderedPageValues() {
   const values = [document.body?.innerText ?? '']
   document.querySelectorAll<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>('input, textarea, select')
@@ -25,28 +24,16 @@ function renderedPageValues() {
   return values.join('\n')
 }
 
-function apiFields(value: unknown, path = '', fields: Array<{ path: string, value: string | number | boolean | null, used: boolean }> = [], pageValues = renderedPageValues()) {
-  if (fields.length >= MAXIMUM_API_FIELDS) return fields
-  if (Array.isArray(value)) {
-    value.slice(0, MAXIMUM_API_ARRAY_ITEMS).forEach((item, index) => apiFields(item, `${path}[${index}]`, fields, pageValues))
-  } else if (value && typeof value === 'object') {
-    Object.entries(value).forEach(([key, item]) => apiFields(item, path ? `${path}.${key}` : key, fields, pageValues))
-  } else if (path) {
-    const rendered = value == null ? String(value) : String(value)
-    const fieldValue = typeof value === 'string' && value.length > 160
-      ? `${value.slice(0, 157)}…`
-      : typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean'
-        ? value
-        : value == null
-          ? null
-        : rendered
-    fields.push({ path, value: fieldValue, used: rendered !== '' && pageValues.includes(rendered) })
-  }
-  return fields
+function yieldApiInspection() {
+  return new Promise<void>((resolve) => {
+    if (window.requestIdleCallback) window.requestIdleCallback(() => resolve(), { timeout: 100 })
+    else window.setTimeout(resolve, 0)
+  })
 }
 
-function reportApiResult(method: string, url: string, status: number, duration: number, value: unknown, responseSize = 0, contentType = '') {
+async function reportApiResult(method: string, url: string, status: number, duration: number, value: unknown, responseSize = 0, contentType = '') {
   if (!apiInspectionEnabled || window.parent === window || url.includes('/__unplugin-pageflow/') || !isLocalBusinessApiResponse(url, window.location.origin, contentType)) return
+  const fields = await collectApiFields(value, renderedPageValues(), { yieldToHost: yieldApiInspection })
   window.parent.postMessage({
     type: PAGEFLOW_API_RESULT_MESSAGE,
     result: {
@@ -58,7 +45,7 @@ function reportApiResult(method: string, url: string, status: number, duration: 
       occurredAt: Date.now(),
       responseSize,
       contentType,
-      fields: apiFields(value),
+      fields,
     },
   }, window.location.origin)
 }
@@ -90,21 +77,9 @@ function trackPreviewRequests() {
   const trackedWindow = window as PageFlowWindow
   if (trackedWindow.__UNPLUGIN_PAGEFLOW_PENDING_REQUESTS__) return
 
-  let pending = 0
-  const update = (change: number) => {
-    pending = Math.max(0, pending + change)
-    window.dispatchEvent(new window.Event(PAGEFLOW_NETWORK_EVENT))
-  }
-  trackedWindow.__UNPLUGIN_PAGEFLOW_PENDING_REQUESTS__ = () => pending
-
-  const originalFetch = window.fetch.bind(window)
-  window.fetch = (...args) => {
-    const startedAt = performance.now()
-    const request = args[0]
-    const method = (args[1]?.method ?? (request instanceof Request ? request.method : 'GET')).toUpperCase()
-    const url = request instanceof Request ? request.url : String(request)
-    update(1)
-    return originalFetch(...args).then(response => {
+  const tracker = instrumentPageFlowNetwork(window, {
+    onPendingChange: () => window.dispatchEvent(new window.Event(PAGEFLOW_NETWORK_EVENT)),
+    onFetchResponse: ({ method, url, startedAt }, response) => {
       const contentType = response.headers?.get?.('content-type') ?? ''
       if (apiInspectionEnabled && isLocalBusinessApiResponse(url, window.location.origin, contentType) && typeof response.clone === 'function') {
         const clone = response.clone()
@@ -115,50 +90,34 @@ function trackPreviewRequests() {
             try { value = JSON.parse(text) } catch {}
           }
           const size = new TextEncoder().encode(text).byteLength
-            requestAnimationFrame(() => reportApiResult(method, url, response.status, performance.now() - startedAt, value, size, contentType))
-        }).catch(() => requestAnimationFrame(() => reportApiResult(method, url, response.status, performance.now() - startedAt, undefined, 0, contentType)))
+            requestAnimationFrame(() => { void reportApiResult(method, url, response.status, performance.now() - startedAt, value, size, contentType) })
+        }).catch(() => requestAnimationFrame(() => { void reportApiResult(method, url, response.status, performance.now() - startedAt, undefined, 0, contentType) }))
         else if (typeof clone.json === 'function')
-          void clone.json().then(value => requestAnimationFrame(() => reportApiResult(method, url, response.status, performance.now() - startedAt, value, 0, contentType)))
+          void clone.json().then(value => requestAnimationFrame(() => { void reportApiResult(method, url, response.status, performance.now() - startedAt, value, 0, contentType) }))
             .catch(() => undefined)
       }
-      return response
-    }, (error) => {
+    },
+    onFetchError: ({ method, url, startedAt }) => {
       if (apiInspectionEnabled)
-        requestAnimationFrame(() => reportApiResult(method, url, 0, performance.now() - startedAt, undefined))
-      throw error
-    }).finally(() => update(-1))
-  }
-
-  const requests = new WeakMap<XMLHttpRequest, { method: string, url: string, startedAt: number }>()
-  const originalOpen = window.XMLHttpRequest.prototype.open
-  window.XMLHttpRequest.prototype.open = function (method: string, url: string | URL, ...args: unknown[]) {
-    requests.set(this, { method: method.toUpperCase(), url: String(url), startedAt: 0 })
-    return originalOpen.apply(this, [method, url, ...args] as Parameters<XMLHttpRequest['open']>)
-  }
-  const originalSend = window.XMLHttpRequest.prototype.send
-  window.XMLHttpRequest.prototype.send = function (...args) {
-    const request = requests.get(this)
-    if (request) request.startedAt = performance.now()
-    update(1)
-    this.addEventListener('loadend', () => {
-      update(-1)
-      const current = requests.get(this)
-      const contentType = this.getResponseHeader('content-type') ?? ''
-      if (!apiInspectionEnabled || !current || !isLocalBusinessApiResponse(this.responseURL || current.url, window.location.origin, contentType)) return
+        requestAnimationFrame(() => { void reportApiResult(method, url, 0, performance.now() - startedAt, undefined) })
+    },
+    onXhrComplete: (current, xhr) => {
+      const contentType = xhr.getResponseHeader('content-type') ?? ''
+      if (!apiInspectionEnabled || !isLocalBusinessApiResponse(xhr.responseURL || current.url, window.location.origin, contentType)) return
       try {
-        const text = this.responseType === '' || this.responseType === 'text' ? this.responseText : ''
-        let value: unknown = this.responseType === 'json' && this.response != null ? this.response : text
+        const text = xhr.responseType === '' || xhr.responseType === 'text' ? xhr.responseText : ''
+        let value: unknown = xhr.responseType === 'json' && xhr.response != null ? xhr.response : text
         if (text && (contentType.includes('json') || /^[\s]*[\[{]/.test(text))) {
           try { value = JSON.parse(text) } catch {}
         }
         const size = text ? new TextEncoder().encode(text).byteLength
-          : this.response instanceof Blob ? this.response.size
-            : this.response instanceof ArrayBuffer ? this.response.byteLength : 0
-        requestAnimationFrame(() => reportApiResult(current.method, this.responseURL || current.url, this.status, performance.now() - current.startedAt, value, size, contentType))
+          : xhr.response instanceof Blob ? xhr.response.size
+            : xhr.response instanceof ArrayBuffer ? xhr.response.byteLength : 0
+        requestAnimationFrame(() => { void reportApiResult(current.method, xhr.responseURL || current.url, xhr.status, performance.now() - current.startedAt, value, size, contentType) })
       } catch {}
-    }, { once: true })
-    return originalSend.apply(this, args)
-  }
+    },
+  })
+  trackedWindow.__UNPLUGIN_PAGEFLOW_PENDING_REQUESTS__ = tracker.pending
 }
 
 interface VueRenderedElement extends Element {

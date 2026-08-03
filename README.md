@@ -8,6 +8,8 @@
 
 PageFlow 是一个开发环境页面流程可视化插件。它自动读取项目路由，在无限画布中运行真实页面，并把页面之间的导航关系、接口请求、相关测试和诊断结果放进同一个上下文。
 
+PageFlow 也提供独立 Chrome 扩展：不改造目标项目即可使用页面、接口、基础诊断、截图和 Todo。需要源码、HMR 和测试集成时使用 unplugin；扩展的开发与安装说明见 [`packages/chrome-extension`](packages/chrome-extension/README.md)。
+
 **真实页面，不是截图 · 自动发现路由 · 不进入生产构建**
 
 [快速开始](#快速开始) · [在线文档](https://pageflowjs.github.io) · [框架接入](https://pageflowjs.github.io/guide/getting-started) · [npm](https://www.npmjs.com/package/unplugin-pageflow)

@@ -1,3 +1,7 @@
+import type { PageFlowApiField, PageFlowApiResult, PageFlowDiagnostic, PageFlowDiagnosticCategory, PageFlowDiagnosticSeverity } from '../../packages/pageflow-core/src/types'
+
+export type { PageFlowApiField, PageFlowApiResult, PageFlowDiagnostic, PageFlowDiagnosticCategory, PageFlowDiagnosticSeverity }
+
 export interface PageFlowOptions {
   enabled?: boolean
   /** Show the development launcher on host pages. */
@@ -135,26 +139,6 @@ export interface PageFlowGraph {
   version: number
 }
 
-export interface PageFlowApiField {
-  path: string
-  value: string | number | boolean | null
-  used: boolean
-}
-
-export interface PageFlowApiResult {
-  id: string
-  method: string
-  url: string
-  status: number
-  duration: number
-  occurredAt?: number
-  responseSize?: number
-  contentType?: string
-  occurrences?: number
-  lastIntervalMs?: number
-  fields: PageFlowApiField[]
-}
-
 export type PageFlowTestSource = 'config' | 'import' | 'route' | 'convention'
 export type PageFlowTestKind = 'e2e' | 'component' | 'unit'
 
@@ -176,24 +160,6 @@ export interface PageFlowPageTest {
   output?: string
   runnable?: boolean
   revision?: string
-}
-
-export type PageFlowDiagnosticSeverity = 'error' | 'warning' | 'suggestion'
-export type PageFlowDiagnosticCategory = 'accessibility' | 'visual' | 'interaction'
-
-export interface PageFlowDiagnostic {
-  id: string
-  ruleId: string
-  severity: PageFlowDiagnosticSeverity
-  category: PageFlowDiagnosticCategory
-  title: string
-  description: string
-  selector?: string
-  targetLabel?: string
-  bounds?: { x: number, y: number, width: number, height: number }
-  measured?: Record<string, string | number>
-  source?: string
-  navigation?: { method: string, target: string }
 }
 
 export interface PageFlowLighthouseIssue {

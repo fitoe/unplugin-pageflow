@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
+import { computed, defineAsyncComponent, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import UAccordion from '@nuxt/ui/components/Accordion.vue'
 import UAvatar from '@nuxt/ui/components/Avatar.vue'
 import UBadge from '@nuxt/ui/components/Badge.vue'
@@ -29,7 +29,7 @@ import type {
 import { cancelPageFlowTest, fetchPageFlowEditor, fetchPageFlowGraph, fetchPageFlowTests, openPageFlowEditor, publishPageFlowAIContext, reportPageTitle, runPageFlowLighthouse, runPageFlowTest, startRouteDiscovery, subscribeToPageFlowUpdates, type PageFlowEditorInfo } from './client/graph'
 import { planGraphUpdate } from './client/graph-update'
 import { resolvePreviewUrl, touchPreviewCache } from './client/preview'
-import { PAGEFLOW_DIAGNOSTIC_HIGHLIGHT_MESSAGE, PAGEFLOW_DIAGNOSTICS_SCAN_MESSAGE, PAGEFLOW_SCAN_MESSAGE } from './shared/protocol'
+import { PAGEFLOW_SCAN_MESSAGE } from './shared/protocol'
 import { forwardWheelToCanvas, PAGEFLOW_CANVAS_CONFIG, type PageFlowWheelInteraction } from './client/canvas'
 import { CaptureQueue } from './client/capture-queue'
 import { planNextCapture } from './client/capture-planner'
@@ -43,20 +43,26 @@ import { SceneNodeCache } from './client/scene-node-cache'
 import { FrameAnimation } from './client/frame-animation'
 import { PreviewFrameRegistry } from './client/preview-frame-registry'
 import { decodePreviewMessage } from './client/preview-message'
-import { createDiagnosticReport, diagnosticReportFilename } from './client/diagnostic-report'
 import { createPageFlowAIContext, createPageFlowAIPrompt } from './client/ai-context'
 import { createPageChecks, type PageFlowPageCheckStatus } from './client/page-checks'
 import { buildApiFieldTree } from './client/api-field-tree'
 import { createApiIssues, mergeApiResult, type PageFlowApiIssue } from './client/api-diagnostics'
-import { cachedPreviewUsers, configuredUsers, loadUserSessions, saveUserSessions, visibleSessionUsers } from './client/user-sessions'
+import { cachedPreviewUsers, configuredUsers, isPreviewUserStorageKey, loadUserSessions, saveUserSessions, visibleSessionUsers } from './client/user-sessions'
 import LayoutWorker from './client/layout.worker?worker&inline'
-import ApiFieldTree from './components/ApiFieldTree.vue'
 import { focusTargetSetKey, planPageUpdate } from './client/page-update'
 import { pageUpdateEffectTarget } from './client/page-update-effect'
 import { centerDiagnosticTransform, navigationDiagnosticBounds, planDiagnosticEvidence } from './client/diagnostic-evidence'
 import { runWithConcurrency } from './client/test-concurrency'
 import { isLocalBusinessApiResponse } from './runtime/api-filter'
+import { addPageFlowTodo, parsePageFlowTodos, removePageFlowTodo, togglePageFlowTodo, type PageFlowTodo } from '../packages/pageflow-core/src/todos'
+import { PAGEFLOW_TODOS_STORAGE_KEY } from '../packages/pageflow-core/src/storage'
+import { loadPageFlowTodos, savePageFlowTodos } from '../packages/pageflow-core/src/host-storage'
+import PageFlowTodoList from '../packages/pageflow-ui/src/PageFlowTodoList.vue'
+import PageFlowRequestList from '../packages/pageflow-ui/src/PageFlowRequestList.vue'
+import PageFlowDiagnosticList from '../packages/pageflow-ui/src/PageFlowDiagnosticList.vue'
+import PageFlowTabs from '../packages/pageflow-ui/src/PageFlowTabs.vue'
 import { initialPreviewMode } from './client/preview-mode'
+import { UnpluginPageFlowHost } from './client/unplugin-host'
 import { detectScaledPreviewSize, parsePreviewSize } from './client/preview-size'
 import {
   fetchThumbnailManifest,
@@ -87,6 +93,7 @@ import {
 } from './client/layout'
 
 const props = defineProps<{ config: ResolvedPageFlowOptions }>()
+const ApiFieldTree = defineAsyncComponent(() => import('./components/ApiFieldTree.vue'))
 
 const previewModes = {
   mobile: { label: '手机', width: 393, height: 852 },
@@ -103,7 +110,7 @@ function storedPcPreviewSize() {
 const initialPcPreviewSize = storedPcPreviewSize()
 const pcPreviewSize = ref(initialPcPreviewSize ?? { width: window.innerWidth, height: window.innerHeight })
 let pcDesignSizeDetected = Boolean(initialPcPreviewSize)
-const viewportTabs = [
+const viewportTabs: Array<Record<string, unknown>> = [
   { value: 'mobile', label: previewModes.mobile.label, icon: 'i-lucide-smartphone', ui: { label: 'sr-only' } },
   { value: 'tablet', label: previewModes.tablet.label, icon: 'i-lucide-tablet', ui: { label: 'sr-only' } },
   { value: 'pc', label: 'PC', icon: 'i-lucide-monitor', ui: { label: 'sr-only' } },
@@ -155,31 +162,13 @@ const focusedPageId = ref<string>()
 const focusedLinks = ref<PageFlowLink[]>([])
 const apiResultsByPage = ref<Record<string, PageFlowApiResult[]>>({})
 const expandedApiResults = ref(new Set<string>())
-const openApiResultId = ref<string>()
 const openApiIssueResultId = ref<string>()
 const panelTab = ref<'api' | 'tests' | 'diagnostics' | 'todos'>('api')
 const panelCollapsed = ref(false)
 const editorInfo = ref<PageFlowEditorInfo>({ id: 'system', name: '默认编辑器' })
 const editorOpening = ref(false)
 const editorOpenError = ref('')
-interface PageTodo { id: string; text: string; done: boolean }
-const PAGE_TODOS_STORAGE_KEY = 'unplugin-pageflow:page-todos'
-function loadPageTodos() {
-  try {
-    const value = JSON.parse(localStorage.getItem(PAGE_TODOS_STORAGE_KEY) ?? '{}') as Record<string, unknown>
-    return Object.fromEntries(Object.entries(value).map(([pageId, items]) => [
-      pageId,
-      Array.isArray(items) ? items.filter((item): item is PageTodo => Boolean(item)
-        && typeof item === 'object'
-        && typeof (item as PageTodo).id === 'string'
-        && typeof (item as PageTodo).text === 'string'
-        && typeof (item as PageTodo).done === 'boolean') : [],
-    ]))
-  } catch {
-    return {}
-  }
-}
-const pageTodos = ref<Record<string, PageTodo[]>>(loadPageTodos())
+const pageTodos = ref<Record<string, PageFlowTodo[]>>({})
 const newTodoText = ref('')
 const focusedDiagnostics = ref<PageFlowDiagnostic[]>([])
 const diagnosticsLoading = ref(false)
@@ -269,6 +258,10 @@ const headerUserMenuItems = computed(() => [
   })),
 ])
 
+function menuItemUser(item: unknown) {
+  return item && typeof item === 'object' && 'user' in item && typeof item.user === 'string' ? item.user : undefined
+}
+
 function pageUserMenuItems(pageId: string) {
   return users.value.map(user => ({
     label: userNotes.value[user] || user,
@@ -277,19 +270,14 @@ function pageUserMenuItems(pageId: string) {
 }
 
 function savePageTodos() {
-  try {
-    localStorage.setItem(PAGE_TODOS_STORAGE_KEY, JSON.stringify(pageTodos.value))
-  } catch {}
+  void savePageFlowTodos(pageFlowHost, pageTodos.value)
 }
 
 function addPageTodo() {
   const pageId = focusedPageId.value
   const text = newTodoText.value.trim()
   if (!pageId || !text) return
-  pageTodos.value = {
-    ...pageTodos.value,
-    [pageId]: [...(pageTodos.value[pageId] ?? []), { id: crypto.randomUUID(), text, done: false }],
-  }
+  pageTodos.value = addPageFlowTodo(pageTodos.value, pageId, text)
   newTodoText.value = ''
   savePageTodos()
 }
@@ -297,24 +285,17 @@ function addPageTodo() {
 function togglePageTodo(id: string) {
   const pageId = focusedPageId.value
   if (!pageId) return
-  pageTodos.value = {
-    ...pageTodos.value,
-    [pageId]: (pageTodos.value[pageId] ?? []).map(todo => todo.id === id ? { ...todo, done: !todo.done } : todo),
-  }
+  pageTodos.value = togglePageFlowTodo(pageTodos.value, pageId, id)
   savePageTodos()
 }
 
 function removePageTodo(id: string) {
   const pageId = focusedPageId.value
   if (!pageId) return
-  pageTodos.value = {
-    ...pageTodos.value,
-    [pageId]: (pageTodos.value[pageId] ?? []).filter(todo => todo.id !== id),
-  }
+  pageTodos.value = removePageFlowTodo(pageTodos.value, pageId, id)
   savePageTodos()
 }
 let leafer: Leafer | undefined
-let userSessionRefreshTimer: number | undefined
 let connectionLeafer: Leafer | undefined
 let edgeLayer: Group | undefined
 let connectionLayer: Group | undefined
@@ -324,10 +305,9 @@ let connectionNodes: SceneNodeCache<Path> | undefined
 let viewportFrame = 0
 let focusLayoutProgress = 0
 let viewportIdleTimer: ReturnType<typeof setTimeout> | undefined
-let backgroundCaptureStarted = false
 let backgroundCaptureNotBefore = 0
-const BACKGROUND_CAPTURE_INITIAL_DELAY = 1000
-const BACKGROUND_CAPTURE_INTERVAL = 600
+const PRIORITY_CAPTURE_DELAY = 300
+const OFFSCREEN_CAPTURE_DELAY = 2500
 const BACKGROUND_CAPTURE_INTERACTION_DELAY = 3000
 const PREVIEW_READY_QUIET_MS = 2500
 let copiedPathTimer: ReturnType<typeof setTimeout> | undefined
@@ -342,6 +322,7 @@ const failedPreviewIds = new Set<string>()
 const forcedThumbnailRefreshIds = new Set<string>()
 const manualCaptureIds = new Set<string>()
 const previewFrames = new PreviewFrameRegistry()
+const captureFrameElement = ref<HTMLIFrameElement>()
 const pageUpdateEffects = new Map<string, { group: Group, animation: FrameAnimation }>()
 const capturesInProgress = new Set<string>()
 const captureRetryCounts = new Map<string, number>()
@@ -377,8 +358,8 @@ const PARKED_PAGE_GAP = 180
 const SELECTED_PAGE_SCALE = 1.03
 const thumbnailResourceCache = new ThumbnailResourceCache(160)
 const captureQueue = new CaptureQueue({
-  setTimeout: (callback, delay) => window.setTimeout(callback, delay),
-  clearTimeout: timer => window.clearTimeout(timer),
+  setTimeout: (callback, delay) => setTimeout(callback, delay),
+  clearTimeout: timer => clearTimeout(timer),
   requestIdleCallback: window.requestIdleCallback?.bind(window),
   cancelIdleCallback: window.cancelIdleCallback?.bind(window),
 })
@@ -434,7 +415,10 @@ const renderedPages = computed(() => getRenderablePages(
   [...livePreviewCacheIds.value, capturePreviewId.value, focusedPageId.value, ...focusedTargetPageIds.value],
   maximumMountedPreviews.value,
 ))
-const previewPages = computed(() => renderedPages.value.filter(page => shouldRenderPreview(page.id)))
+const captureOnlyPage = computed(() => pages.value.find(page => page.id === capturePreviewId.value
+  && page.id !== focusedPageId.value
+  && !livePreviewCacheIds.value.includes(page.id)))
+const previewPages = computed(() => renderedPages.value.filter(page => shouldRenderPreview(page.id) && page.id !== captureOnlyPage.value?.id))
 const requiredThumbnailRecords = computed(() => {
   const records = renderedPages.value.flatMap(page => {
   const records = pageThumbnailTiles(page)
@@ -479,6 +463,12 @@ const connectionPaths = computed(() => focusScene.value?.connections ?? [])
 const focusedApiResults = computed(() => focusedPageId.value
   ? (apiResultsByPage.value[focusedPageId.value] ?? []).filter(result => isLocalBusinessApiResponse(result.url, window.location.origin, result.contentType))
   : [])
+const pageFlowHost = new UnpluginPageFlowHost({
+  config: props.config,
+  getFrame: () => focusedPageId.value ? previewFrames.get(focusedPageId.value) : undefined,
+  getRequests: () => focusedApiResults.value,
+  capture: captureFocusedPageForHost,
+})
 const focusedApiIssues = computed(() => createApiIssues(focusedApiResults.value, props.config.apiDiagnostics))
 interface FocusedDiagnosticGroup {
   value: string
@@ -563,6 +553,7 @@ async function runFocusedLighthouse() {
   const page = pages.value.find(item => item.id === focusedPageId.value)
   if (!page || lighthouseLoading.value) return
   lighthouseLoading.value = true
+  cancelScheduledCapture()
   lighthouseError.value = ''
   try {
     const frame = previewFrames.get(page.id)
@@ -587,12 +578,15 @@ async function runFocusedLighthouse() {
     lighthouseError.value = error instanceof Error ? error.message : 'Lighthouse 审计失败'
   } finally {
     lighthouseLoading.value = false
+    backgroundCaptureNotBefore = Date.now() + BACKGROUND_CAPTURE_INTERACTION_DELAY
+    scheduleNextCapture()
   }
 }
 
-function exportFocusedDiagnostics() {
+async function exportFocusedDiagnostics() {
   const page = pages.value.find(item => item.id === focusedPageId.value)
   if (!page) return
+  const { createDiagnosticReport, diagnosticReportFilename } = await import('./client/diagnostic-report')
   const report = createDiagnosticReport(page, focusedDiagnostics.value, lighthouseReport.value)
   const url = URL.createObjectURL(new Blob([`${JSON.stringify(report, null, 2)}\n`], { type: 'application/json' }))
   const link = document.createElement('a')
@@ -692,6 +686,7 @@ async function runFocusedPageTest(test: PageFlowPageTest) {
   const page = pages.value.find(item => item.id === focusedPageId.value)
   if (!page || runningPageTestIds.value.has(test.id)) return
   runningPageTestIds.value = new Set(runningPageTestIds.value).add(test.id)
+  cancelScheduledCapture()
   try {
     const result = await runPageFlowTest(props.config, page.path, test.id)
     if (focusedPageId.value === page.id)
@@ -705,6 +700,10 @@ async function runFocusedPageTest(test: PageFlowPageTest) {
     const next = new Set(runningPageTestIds.value)
     next.delete(test.id)
     runningPageTestIds.value = next
+    if (!next.size) {
+      backgroundCaptureNotBefore = Date.now() + BACKGROUND_CAPTURE_INTERACTION_DELAY
+      scheduleNextCapture()
+    }
   }
 }
 
@@ -752,6 +751,10 @@ function apiFieldTreeByResultId(id: string) {
   return result ? visibleApiFieldTree(result) : []
 }
 
+function asApiResult(result: unknown) {
+  return result as PageFlowApiResult
+}
+
 function unusedApiFieldCount(id: string) {
   return apiResultById(id)?.fields.filter(field => !field.used).length ?? 0
 }
@@ -768,24 +771,6 @@ function apiRoute(url: string) {
     // Keep the path extracted from malformed or non-standard request URLs.
   }
   return pathname.replace(/^\/(?:api|(?:prod|dev|test|stage)-api)(?=\/|$)/, '') || '/'
-}
-
-const apiAccordionItems = computed(() => focusedApiResults.value.map(result => ({
-  ...result,
-  value: result.id,
-  label: apiRoute(result.url),
-})))
-
-const apiMethodColors = {
-  GET: 'success',
-  POST: 'info',
-  PUT: 'warning',
-  PATCH: 'secondary',
-  DELETE: 'error',
-} as const
-
-function apiMethodColor(method: string) {
-  return apiMethodColors[method.toUpperCase() as keyof typeof apiMethodColors] ?? 'neutral'
 }
 
 function apiIssueColor(status: PageFlowApiIssue['status']) {
@@ -1205,6 +1190,19 @@ function refreshSessionUsers() {
   if (!users.value.includes(activeUser.value ?? '')) activeUser.value = users.value[0]
 }
 
+function handlePageFlowStorage(event: StorageEvent) {
+  if (isPreviewUserStorageKey(event.key)) refreshSessionUsers()
+  if (event.key === PAGEFLOW_TODOS_STORAGE_KEY) {
+    try { pageTodos.value = parsePageFlowTodos(event.newValue ? JSON.parse(event.newValue) : undefined) }
+    catch { pageTodos.value = {} }
+  }
+}
+
+function handleVisibilityChange() {
+  if (document.visibilityState === 'visible') scheduleNextCapture()
+  else cancelScheduledCapture()
+}
+
 function selectActiveUser(user: string) {
   activeUser.value = user
   saveCurrentUserSessions(user)
@@ -1304,16 +1302,24 @@ function cancelScheduledCapture() {
 }
 
 function scheduleNextCapture() {
-  if (!thumbnailManifestLoaded.value || capturePreviewId.value || viewportInteracting.value) return
+  if (!thumbnailManifestLoaded.value || capturePreviewId.value || viewportInteracting.value
+    || document.visibilityState !== 'visible' || runningPageTestIds.value.size || lighthouseLoading.value) return
   const hasManualCapture = manualCaptureIds.size > 0
   if (hasManualCapture && captureQueue.scheduled) cancelScheduledCapture()
   if (captureQueue.scheduled) return
+  const plan = planNextCapture({
+    pages: pages.value,
+    batchIds: captureBatchIds,
+    manualIds: manualCaptureIds,
+    priorityIds: new Set([livePreviewId.value, focusedPageId.value, ...visiblePageIds.value].filter(Boolean) as string[]),
+    failedIds: failedPreviewIds,
+    isCurrent: thumbnailIsCurrent,
+  })
+  captureBatchIds = plan.batchIds
+  if (!plan.pageId) return
   const delay = hasManualCapture
     ? 0
-    : Math.max(
-        backgroundCaptureStarted ? BACKGROUND_CAPTURE_INTERVAL : BACKGROUND_CAPTURE_INITIAL_DELAY,
-        backgroundCaptureNotBefore - Date.now(),
-      )
+    : Math.max(plan.priority ? PRIORITY_CAPTURE_DELAY : OFFSCREEN_CAPTURE_DELAY, backgroundCaptureNotBefore - Date.now())
   captureQueue.schedule(delay, !hasManualCapture, startNextCapture)
 }
 
@@ -1330,7 +1336,6 @@ function startNextCapture() {
   captureBatchIds = plan.batchIds
   capturePreviewId.value = plan.pageId
   const pageId = plan.pageId
-  if (pageId && !plan.manual) backgroundCaptureStarted = true
   if (pageId) void nextTick(() => {
     const frame = previewFrames.get(pageId)
     if (frame?.contentDocument?.readyState === 'complete')
@@ -1491,16 +1496,13 @@ function runFocusedDiagnostics() {
     diagnosticsLoading.value = false
     if (diagnosticsRefreshQueued) requestFocusedDiagnostics()
   }, 10_000)
-  frame.contentWindow.postMessage({ type: PAGEFLOW_DIAGNOSTICS_SCAN_MESSAGE }, window.location.origin)
+  void pageFlowHost.scan()
 }
 
 function highlightDiagnostic(item: PageFlowDiagnostic) {
   const pageId = focusedPageId.value
   if (!pageId || !item.selector) return
-  const highlight = () => previewFrames.get(pageId)?.contentWindow?.postMessage({
-      type: PAGEFLOW_DIAGNOSTIC_HIGHLIGHT_MESSAGE,
-      selector: item.selector,
-    }, window.location.origin)
+  const highlight = () => void pageFlowHost.highlight(item.selector!)
   const position = positions.value.get(pageId)
   if (!position || !leafer || !canvas.value) {
     highlight()
@@ -1572,6 +1574,27 @@ function exitFocus(animated = true, done?: () => void) {
 
 function waitForCapture(pageId: string, timeoutMs = 35000) {
   return captureQueue.waitFor(pageId, timeoutMs)
+}
+
+async function captureFocusedPageForHost() {
+  const pageId = focusedPageId.value
+  const frame = pageId ? previewFrames.get(pageId) : undefined
+  if (!pageId || !frame) throw new Error('PageFlow 没有可截图的聚焦页面')
+  cancelScheduledCapture()
+  capturePreviewId.value = pageId
+  forcedThumbnailRefreshIds.add(pageId)
+  manualCaptureIds.add(pageId)
+  await capturePreview(pageId, frame, true)
+  const record = compactThumbnailRecord(pageId)
+  if (!record) throw new Error('PageFlow 截图没有生成缩略图')
+  const response = await fetch(thumbnailUrl(props.config, record))
+  if (!response.ok) throw new Error(`PageFlow 截图读取失败 (${response.status})`)
+  return new Promise<string>((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onload = () => resolve(String(reader.result))
+    reader.onerror = () => reject(reader.error ?? new Error('PageFlow 截图读取失败'))
+    void response.blob().then(blob => reader.readAsDataURL(blob), reject)
+  })
 }
 
 function exitFocusAfterSnapshot(done?: () => void) {
@@ -1858,6 +1881,21 @@ function setPreviewFrame(pageId: string, element: Element | null) {
   }
 }
 
+let captureFramePageId: string | undefined
+watch([captureOnlyPage, captureFrameElement], ([page, frame]) => {
+  if (captureFramePageId && captureFramePageId !== page?.id) previewFrames.remove(captureFramePageId)
+  captureFramePageId = undefined
+  if (page && frame) {
+    setPreviewFrame(page.id, frame)
+    captureFramePageId = page.id
+  }
+}, { flush: 'post' })
+
+function handleCaptureFrameLoad(frame: HTMLIFrameElement) {
+  const page = captureOnlyPage.value
+  if (page) void handlePreviewLoad(page.id, frame)
+}
+
 function syncPreviewHotspots(pageId: string) {
   const layer = previewFrames.get(pageId)?.contentDocument?.querySelector<HTMLElement>('[data-unplugin-pageflow-hotspot-layer]')
   if (layer) layer.style.display = focusedPageId.value === pageId ? 'block' : 'none'
@@ -1964,7 +2002,6 @@ async function capturePreview(pageId: string, frame: HTMLIFrameElement, ready = 
 
 function resetPreviewRendering() {
   cancelScheduledCapture()
-  backgroundCaptureStarted = false
   previewGeneration++
   livePreviewId.value = undefined
   livePreviewCacheIds.value = []
@@ -2090,10 +2127,11 @@ function handlePreviewMessage(event: MessageEvent) {
       ...apiResultsByPage.value,
       [sourcePageId]: mergeApiResult(current, message.result),
     }
+    pageFlowHost.publish({ kind: 'request', request: message.result })
     return
   }
   if (message.type === 'page-reported') {
-    if (sourcePageId === focusedPageId.value) {
+    if (sourcePageId && sourcePageId === focusedPageId.value) {
       requestAnimationFrame(() => requestFocusedPageScan(sourcePageId))
       const page = pages.value.find(item => item.id === sourcePageId)
       if (!cachedPageDiagnostics(page)) requestAnimationFrame(requestFocusedDiagnostics)
@@ -2108,7 +2146,7 @@ function handlePreviewMessage(event: MessageEvent) {
     return
   }
   if (message.type === 'scan-result') {
-    if (sourcePageId !== focusedPageId.value || message.path !== pages.value.find(page => page.id === sourcePageId)?.path) return
+    if (!sourcePageId || sourcePageId !== focusedPageId.value || message.path !== pages.value.find(page => page.id === sourcePageId)?.path) return
     const nextLinks = message.links
     focusedLinksScannedPageId = sourcePageId
     syncPreviewHotspots(sourcePageId)
@@ -2125,6 +2163,7 @@ function handlePreviewMessage(event: MessageEvent) {
     diagnosticsLoading.value = false
     const sourceDiagnostics = pages.value.find(page => page.id === sourcePageId)?.diagnostics ?? []
     focusedDiagnostics.value = [...sourceDiagnostics, ...message.diagnostics]
+    pageFlowHost.publish({ kind: 'diagnostics', diagnostics: focusedDiagnostics.value })
     const page = pages.value.find(item => item.id === sourcePageId)
     if (page) diagnosticsByPage.set(page.id, { revision: page.revision ?? '', diagnostics: focusedDiagnostics.value })
     if (diagnosticsRefreshQueued) requestFocusedDiagnostics()
@@ -2540,13 +2579,18 @@ watch(capturePreviewId, (pageId) => {
   }
   const startedAt = performance.now()
   const tick = (time: number) => {
-    if (!capturePreviewId.value) return
+    if (!capturePreviewId.value || !capturePulseGroup) {
+      capturePulseFrame = 0
+      return
+    }
     const pulse = (1 - Math.cos((time - startedAt) / 900 * Math.PI * 2)) / 2
-    if (capturePulseGroup) setPageCardShadow(capturePulseGroup, capturePulseHighlighted, pulse)
+    setPageCardShadow(capturePulseGroup, capturePulseHighlighted, pulse)
     capturePulseFrame = requestAnimationFrame(tick)
   }
-  capturePulseFrame = requestAnimationFrame(tick)
   scheduleCanvasRender()
+  requestAnimationFrame(() => {
+    if (capturePulseGroup && capturePreviewId.value === pageId) capturePulseFrame = requestAnimationFrame(tick)
+  })
 })
 watch([focusedPageId, focusedDiagnostics, focusedApiResults, focusedPageTests, focusedLinks, lighthouseReport], scheduleAIContextSync, { deep: true })
 watch(focusedPageId, () => {
@@ -2566,9 +2610,11 @@ watch(focusedPageId, () => {
 })
 
 onMounted(async () => {
+  pageTodos.value = await loadPageFlowTodos(pageFlowHost)
   void fetchPageFlowEditor(props.config).then(value => { editorInfo.value = value }).catch(() => undefined)
   refreshSessionUsers()
-  userSessionRefreshTimer = window.setInterval(refreshSessionUsers, 1_000)
+  window.addEventListener('storage', handlePageFlowStorage)
+  document.addEventListener('visibilitychange', handleVisibilityChange)
   window.addEventListener('message', handlePreviewMessage)
   window.addEventListener('keydown', handleSearchShortcut)
   window.addEventListener('resize', handlePcViewportResize)
@@ -2643,7 +2689,8 @@ onMounted(async () => {
 })
 
 onUnmounted(() => {
-  window.clearInterval(userSessionRefreshTimer)
+  window.removeEventListener('storage', handlePageFlowStorage)
+  document.removeEventListener('visibilitychange', handleVisibilityChange)
   window.clearTimeout(aiContextTimer)
   window.clearTimeout(diagnosticsRequestTimer)
   removePageUpdateEffects()
@@ -2746,10 +2793,10 @@ onUnmounted(() => {
               <UAvatar :alt="activeUser" size="sm" />
             </button>
             <template #item-leading="{ item }">
-              <span>{{ item.user?.slice(0, 1).toUpperCase() }}</span>
+              <span>{{ menuItemUser(item)?.slice(0, 1).toUpperCase() }}</span>
             </template>
             <template #item-trailing="{ item }">
-              <button v-if="item.user" type="button" :aria-label="`编辑 ${item.user} 的备注`" :title="userNotes[item.user] || '添加备注'" @click.stop.prevent="editUserNote(item.user)">
+              <button v-if="menuItemUser(item)" type="button" :aria-label="`编辑 ${menuItemUser(item)} 的备注`" :title="userNotes[menuItemUser(item)!] || '添加备注'" @click.stop.prevent="editUserNote(menuItemUser(item)!)">
                 <svg viewBox="0 0 16 16" aria-hidden="true">
                   <path d="M10.8 2.2a1.4 1.4 0 0 1 2 2L5.2 11.8 2.5 12.5l.7-2.7z" />
                   <path d="m9.8 3.2 2 2" />
@@ -2811,6 +2858,17 @@ onUnmounted(() => {
         </div>
       </div>
       <div ref="connectionCanvas" class="connection-canvas"></div>
+      <iframe
+        v-if="thumbnailManifestLoaded && props.config.previewPath !== '/'"
+        ref="captureFrameElement"
+        class="capture-preview-frame"
+        :src="captureOnlyPage ? previewUrl(captureOnlyPage.path) : 'about:blank'"
+        title="Capture preview"
+        :style="{ width: `${currentPreviewMode.width}px`, height: `${currentPreviewMode.height}px` }"
+        aria-hidden="true"
+        tabindex="-1"
+        @load="handleCaptureFrameLoad($event.currentTarget as HTMLIFrameElement)"
+      ></iframe>
       <aside v-if="focusedPageId" class="api-panel" :class="{ 'is-collapsed': panelCollapsed }">
       <button
         type="button"
@@ -2824,7 +2882,7 @@ onUnmounted(() => {
         </svg>
       </button>
       <div v-show="!panelCollapsed" class="api-panel-content">
-      <UTabs v-model="panelTab" class="api-panel-tabs" :items="panelTabs" variant="link" aria-label="页面详情">
+      <PageFlowTabs v-model="panelTab" class="api-panel-tabs" :items="panelTabs" aria-label="页面详情">
         <template #api>
           <div v-if="focusedApiResults.length" class="api-panel-list">
             <div v-if="focusedApiIssues.length" class="border-b border-default py-3">
@@ -2862,40 +2920,26 @@ onUnmounted(() => {
                 </div>
               </div>
             </div>
-            <UAccordion v-model="openApiResultId" :items="apiAccordionItems">
-              <template #leading="{ item: result }">
-                <UBadge :label="result.method" :color="apiMethodColor(result.method)" variant="soft" size="sm" />
-              </template>
-              <template #default="{ item: result }">
-                <span class="min-w-0">
-                  <span class="flex min-w-0 items-center gap-1.5">
-                    <span class="min-w-0 flex-1 truncate">{{ result.label }}</span>
-                    <UBadge v-if="(result.occurrences ?? 1) > 1" :label="`×${result.occurrences}`" color="warning" variant="soft" size="sm" />
-                  </span>
-                  <span class="block text-xs text-muted">
-                    {{ result.status }} · {{ result.duration }}ms<span v-if="result.lastIntervalMs != null"> · 最近间隔 {{ result.lastIntervalMs }}ms</span>
-                  </span>
-                </span>
-              </template>
-              <template #body="{ item: result }">
+            <PageFlowRequestList :requests="focusedApiResults" :label="request => apiRoute(request.url)" empty-text="等待页面接口响应…">
+              <template #body="{ request: result }">
                 <div>
-                  <div v-if="visibleApiFields(result).length" class="api-fields">
-                    <ApiFieldTree :nodes="visibleApiFieldTree(result)" />
+                  <div v-if="visibleApiFields(asApiResult(result)).length" class="api-fields">
+                    <ApiFieldTree :nodes="visibleApiFieldTree(asApiResult(result))" />
                   </div>
                   <div v-else class="api-empty">页面暂未展示返回字段</div>
                   <UButton
-                    v-if="result.fields.some(field => !field.used)"
+                    v-if="asApiResult(result).fields.some(field => !field.used)"
                     color="neutral"
                     variant="link"
                     size="xs"
                     :trailing-icon="expandedApiResults.has(result.id) ? 'i-lucide-chevron-up' : 'i-lucide-chevron-down'"
                     @click="toggleApiResult(result.id)"
                   >
-                    {{ expandedApiResults.has(result.id) ? '隐藏未使用字段' : `显示未使用字段（${result.fields.filter(field => !field.used).length}）` }}
+                    {{ expandedApiResults.has(result.id) ? '隐藏未使用字段' : `显示未使用字段（${asApiResult(result).fields.filter(field => !field.used).length}）` }}
                   </UButton>
                 </div>
               </template>
-            </UAccordion>
+            </PageFlowRequestList>
           </div>
           <div v-else class="api-panel-waiting">等待页面接口响应…</div>
         </template>
@@ -3098,18 +3142,8 @@ onUnmounted(() => {
               <template #body="{ item: group }">
                 <div>
                   <p class="text-xs leading-5 text-muted">{{ group.description }}</p>
-                  <div v-if="group.items.some(item => item.selector || diagnosticMeasurement(item))" class="mt-2 divide-y divide-default">
-                    <div
-                      v-for="(item, index) in group.items"
-                      :key="item.id"
-                      class="py-2"
-                      :class="item.selector ? 'cursor-pointer' : undefined"
-                      :role="item.selector ? 'button' : undefined"
-                      :tabindex="item.selector ? 0 : undefined"
-                      @click="item.selector && highlightDiagnostic(item)"
-                      @keydown.enter="item.selector && highlightDiagnostic(item)"
-                      @keydown.space.prevent="item.selector && highlightDiagnostic(item)"
-                    >
+                  <PageFlowDiagnosticList v-if="group.items.some(item => item.selector || diagnosticMeasurement(item))" class="mt-2 divide-y divide-default" :items="group.items" compact @select="highlightDiagnostic">
+                    <template #evidence="{ item }">
                       <div
                         v-if="focusedDiagnosticEvidence.get(item.id)"
                         class="relative mb-2 overflow-hidden rounded-lg border border-default bg-muted"
@@ -3136,12 +3170,14 @@ onUnmounted(() => {
                           }"
                         />
                       </div>
+                    </template>
+                    <template #meta="{ item, index }">
                       <div class="min-w-0">
                         <div class="text-xs text-muted">{{ item.targetLabel || `问题 ${index + 1}` }}</div>
                         <div v-if="diagnosticMeasurement(item)" class="mt-0.5 text-xs text-dimmed">{{ diagnosticMeasurement(item) }}</div>
                       </div>
-                    </div>
-                  </div>
+                    </template>
+                  </PageFlowDiagnosticList>
                 </div>
               </template>
             </UAccordion>
@@ -3150,21 +3186,10 @@ onUnmounted(() => {
         </template>
         <template #todos>
           <div class="todo-panel">
-            <form class="todo-entry" @submit.prevent="addPageTodo">
-              <input v-model="newTodoText" type="text" maxlength="240" placeholder="添加当前页面待办…" aria-label="添加当前页面待办">
-              <UButton type="submit" size="sm" color="neutral" :disabled="!newTodoText.trim()">添加</UButton>
-            </form>
-            <div v-if="focusedTodos.length" class="todo-list">
-              <div v-for="todo in focusedTodos" :key="todo.id" class="todo-item">
-                <input :id="`todo-${todo.id}`" type="checkbox" :checked="todo.done" @change="togglePageTodo(todo.id)">
-                <label :for="`todo-${todo.id}`" :class="{ done: todo.done }">{{ todo.text }}</label>
-                <button type="button" aria-label="删除待办" title="删除待办" @click="removePageTodo(todo.id)">×</button>
-              </div>
-            </div>
-            <div v-else class="api-panel-waiting">当前页面暂无待办</div>
+            <PageFlowTodoList v-model:draft="newTodoText" :todos="focusedTodos" placeholder="添加当前页面待办…" empty-text="当前页面暂无待办" @add="addPageTodo" @toggle="togglePageTodo" @remove="removePageTodo" />
           </div>
         </template>
-      </UTabs>
+      </PageFlowTabs>
       <footer class="api-panel-statusbar">
         <span class="inline-flex" :title="editorButtonHint">
           <UButton

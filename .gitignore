@@ -17,3 +17,7 @@ docs/.vitepress/dist/
 /\[p.path
 /x.name)
 /tests/fixtures/page-tests/.pageflow
+
+# Chrome extension build output
+/packages/chrome-extension/.output/
+/packages/chrome-extension/.wxt/

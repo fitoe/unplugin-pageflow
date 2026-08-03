@@ -8,6 +8,10 @@ export interface PageFlowUserSessions {
 const STORAGE_KEY = 'unplugin-pageflow:user-sessions'
 const PAGE_STATE_PREFIX = 'unplugin-pageflow:page-state:'
 
+export function isPreviewUserStorageKey(key: string | null): key is string {
+  return Boolean(key?.startsWith(PAGE_STATE_PREFIX))
+}
+
 export function configuredUsers(previewRoles: Array<{ role: string }>) {
   return [...new Set(previewRoles.map(item => item.role).filter(Boolean))]
 }
@@ -16,7 +20,7 @@ export function cachedPreviewUsers(storage: Pick<Storage, 'length' | 'key'> = lo
   const users: string[] = []
   for (let index = 0; index < storage.length; index++) {
     const key = storage.key(index)
-    if (!key?.startsWith(PAGE_STATE_PREFIX)) continue
+    if (!isPreviewUserStorageKey(key)) continue
     const encodedUser = key.slice(PAGE_STATE_PREFIX.length).split(':', 1)[0]
     if (!encodedUser) continue
     try {

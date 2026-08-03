@@ -1,0 +1,15 @@
+{
+  "name": "@pageflow/core",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./api": "./src/api.ts",
+    "./todos": "./src/todos.ts",
+    "./types": "./src/types.ts",
+    "./host": "./src/host.ts",
+    "./storage": "./src/storage.ts",
+    "./host-storage": "./src/host-storage.ts"
+  }
+}

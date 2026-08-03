@@ -57,6 +57,7 @@ assert.deepEqual(packageManifest.dependencies, {
   'puppeteer-core': '^25.4.0',
   tailwindcss: '^4.3.3',
   unplugin: '^2.3.5',
+  'vue-json-pretty': '^2.6.0',
 })
 assert.match(clientOutput, /origin\.createCanvas/)
 assert.doesNotMatch(clientOutput, /from\s*["']vue["']/)
