@@ -5,6 +5,11 @@ on:
     branches: [master]
     paths:
       - docs/**
+      - packages/chrome-extension/**
+      - packages/pageflow-core/**
+      - packages/pageflow-runtime/**
+      - packages/pageflow-ui/**
+      - scripts/generate-chrome-update.mjs
       - package.json
       - pnpm-lock.yaml
       - .github/workflows/pages.yml
@@ -35,6 +40,17 @@ jobs:
           cache: pnpm
       - uses: actions/configure-pages@v5
       - run: pnpm install --frozen-lockfile
+      - name: Build signed Chrome extension
+        env:
+          CHROME_EXTENSION_KEY_BASE64: ${{ secrets.CHROME_EXTENSION_KEY_BASE64 }}
+        run: |
+          test -n "$CHROME_EXTENSION_KEY_BASE64" || { echo "Missing CHROME_EXTENSION_KEY_BASE64 secret"; exit 1; }
+          printf '%s' "$CHROME_EXTENSION_KEY_BASE64" | base64 --decode > "$RUNNER_TEMP/pageflow.pem"
+          pnpm build:chrome
+          google-chrome --pack-extension="$GITHUB_WORKSPACE/packages/chrome-extension/.output/chrome-mv3" --pack-extension-key="$RUNNER_TEMP/pageflow.pem"
+          mkdir -p docs/public/chrome
+          mv packages/chrome-extension/.output/chrome-mv3.crx docs/public/chrome/pageflow.crx
+          node scripts/generate-chrome-update.mjs "$RUNNER_TEMP/pageflow.pem" packages/chrome-extension/.output/chrome-mv3/manifest.json docs/public/chrome/updates.xml
       - run: pnpm docs:build
       - uses: actions/upload-pages-artifact@v4
         with:

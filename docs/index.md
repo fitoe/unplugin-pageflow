@@ -17,6 +17,9 @@ hero:
       text: Get started
       link: /en/guide/getting-started
     - theme: alt
+      text: Download Chrome extension
+      link: /chrome/pageflow.crx
+    - theme: alt
       text: View on GitHub
       link: https://github.com/fitoe/unplugin-pageflow
 
@@ -42,6 +45,10 @@ features:
 ---
 
 <FrameworkGrid bundler-title="Supported bundlers" title="Supported frameworks" link="/en/integrations/" />
+
+::: warning Installation support
+Chrome only permits direct installation of a self-hosted CRX on Linux. Windows and macOS require an administrator-managed enterprise policy. Once installed, the extension updates automatically from this website. [Installation guide →](/en/guide/chrome-extension)
+:::
 
 ## More pages, less visibility
 

@@ -97,6 +97,7 @@ export default defineConfig({
   manifest: {
     name: 'PageFlow',
     description: '在独立画板中查看页面流、接口、诊断和 Todo。',
+    update_url: 'https://fitoe.github.io/unplugin-pageflow/chrome/updates.xml',
     action: { default_title: '打开 PageFlow' },
     permissions: enhanced ? ['storage', 'unlimitedStorage', 'tabs', 'debugger'] : ['storage', 'unlimitedStorage', 'tabs'],
     host_permissions: ['<all_urls>'],

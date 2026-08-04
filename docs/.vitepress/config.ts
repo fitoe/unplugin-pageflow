@@ -5,6 +5,7 @@ export default defineConfig({
   description: 'See every application page and navigation path on one infinite canvas.',
   base: process.env.VITEPRESS_BASE || '/unplugin-pageflow/',
   cleanUrls: true,
+  ignoreDeadLinks: [/^\/chrome\/pageflow\.crx$/],
   lastUpdated: true,
   srcExclude: ['smoke-test-plan.md'],
   rewrites(id) {
@@ -31,6 +32,7 @@ export default defineConfig({
             text: '指南',
             items: [
               { text: '快速开始', link: '/guide/getting-started' },
+              { text: 'Chrome 插件', link: '/guide/chrome-extension' },
               { text: '基本概念', link: '/guide/concepts' },
               { text: '使用画布', link: '/guide/canvas' },
               { text: '动态路由', link: '/guide/dynamic-routes' },
@@ -830,6 +832,7 @@ export default defineConfig({
         text: 'Guide',
         items: [
           { text: 'Getting started', link: '/en/guide/getting-started' },
+          { text: 'Chrome extension', link: '/en/guide/chrome-extension' },
           { text: 'Core concepts', link: '/en/guide/concepts' },
           { text: 'Using the canvas', link: '/en/guide/canvas' },
           { text: 'Dynamic routes', link: '/en/guide/dynamic-routes' },

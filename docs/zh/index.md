@@ -17,6 +17,9 @@ hero:
       text: 快速开始
       link: /guide/getting-started
     - theme: alt
+      text: 下载 Chrome 插件
+      link: /chrome/pageflow.crx
+    - theme: alt
       text: 查看 GitHub
       link: https://github.com/fitoe/unplugin-pageflow
 
@@ -42,6 +45,10 @@ features:
 ---
 
 <FrameworkGrid bundler-title="支持的打包器" title="支持的框架" link="/integrations/" />
+
+::: warning 安装限制
+Chrome 仅允许 Linux 用户直接安装官网托管的 CRX；Windows 和 macOS 需要由管理员通过企业策略安装。安装后，插件会从官网自动更新。[查看安装说明 →](/guide/chrome-extension)
+:::
 
 ## 页面越多，越难看全
 
