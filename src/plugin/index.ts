@@ -21,6 +21,7 @@ import type {
   PageFlowRouteMode,
   ResolvedPageFlowOptions,
 } from '../shared/types.ts'
+import { expandDynamicRoutes } from '../shared/dynamic-routes.ts'
 import { PAGEFLOW_GRAPH_EVENT, PAGEFLOW_PAGE_EVENT } from '../shared/protocol.ts'
 import { resolvePageFlowApiDiagnosticOptions, resolvePageFlowDiagnosticOptions } from '../shared/options.ts'
 import {
@@ -119,6 +120,7 @@ function resolveOptions(options: PageFlowOptions = {}): ResolvedPageFlowOptions 
     dynamicParams: options.dynamicParams ?? {},
     previewRoles: options.previewRoles ?? [],
     groupNames: options.groupNames ?? {},
+    pageNames: options.pageNames ?? {},
     canvasLayouts: options.canvasLayouts ?? {},
     pageTests: options.pageTests ?? {},
     testCommands: options.testCommands ?? {},
@@ -144,6 +146,7 @@ async function loadProjectOptions(root: string, options: PageFlowOptions = {}) {
     routes: options.routes ?? stored.routes,
     previewRoles: options.previewRoles ?? stored.previewRoles,
     groupNames: { ...(options.groupNames ?? {}), ...(stored.groupNames ?? {}) },
+    pageNames: { ...(options.pageNames ?? {}), ...(stored.pageNames ?? {}) },
     canvasLayouts: { ...(options.canvasLayouts ?? {}), ...(stored.canvasLayouts ?? {}) },
     pageTests: options.pageTests ?? stored.pageTests,
     testCommands: options.testCommands ?? stored.testCommands,
@@ -239,8 +242,10 @@ function createGraph(
   version: number,
   routeMode: PageFlowRouteMode,
   projectRoot: string,
+  dynamicParams: ResolvedPageFlowOptions['dynamicParams'],
   uniAppHomePath?: string,
 ): PageFlowGraph {
+  routes = expandDynamicRoutes(routes, dynamicParams)
   const projectSourceFile = (file: string | undefined) => {
     if (!file) return undefined
     const relativeFile = normalizeFile(relative(projectRoot, resolve(projectRoot, file)))
@@ -323,7 +328,7 @@ function createGraph(
       : sourceEntryForPath(staticLinksByFile, sourcePath) ?? []
     const links = new Map<string, PageFlowPage['links'][number]>()
     ;[...staticLinks, ...(reportedPages.get(page.path)?.links ?? [])].forEach(link => {
-      const target = resolveTarget(link.to)
+      const target = resolveTarget(link.location ?? link.to)
       if (!target) return
       const hotspotKey = link.hotspot
         ? `${link.hotspot.centerX}:${link.hotspot.centerY}`
@@ -560,7 +565,7 @@ const factory: UnpluginFactory<PageFlowOptions | undefined> = (options) => {
   }
 
   const rebuildGraph = (updatedPaths?: string | string[]) => {
-    graph = createGraph(routes, reportedPages, staticLinksByFile, staticDiagnosticsByFile, configuredTitlesByPath, routeOrderByPath, sourceRevisionsByFile, sourceRedirectsByFile, tabPaths, resolved.diagnostics.rules, graph.version + 1, routeMode, projectRoot, uniAppHomePath)
+    graph = createGraph(routes, reportedPages, staticLinksByFile, staticDiagnosticsByFile, configuredTitlesByPath, routeOrderByPath, sourceRevisionsByFile, sourceRedirectsByFile, tabPaths, resolved.diagnostics.rules, graph.version + 1, routeMode, projectRoot, resolved.dynamicParams, uniAppHomePath)
     if (updatedPaths) {
       const paths = Array.isArray(updatedPaths) ? updatedPaths : [updatedPaths]
       paths.forEach((path) => {
@@ -758,6 +763,7 @@ const factory: UnpluginFactory<PageFlowOptions | undefined> = (options) => {
           const stylePath = `${resolved.previewPath}style.css`
           const clientVersionPath = `${resolved.previewPath}api/client-version`
           const groupNamePath = `${resolved.previewPath}api/group-name`
+          const pageNamePath = `${resolved.previewPath}api/page-name`
           const canvasLayoutPath = `${resolved.previewPath}api/canvas-layout`
           const testsPath = `${resolved.previewPath}api/tests`
           const lighthousePath = `${resolved.previewPath}api/lighthouse`
@@ -988,6 +994,33 @@ const factory: UnpluginFactory<PageFlowOptions | undefined> = (options) => {
               stored.groupNames = groupNames
               await writeFile(configFile, `${JSON.stringify(stored, null, 2)}\n`)
               resolved.groupNames = groupNames
+              const configModule = server.moduleGraph.getModuleById(PAGEFLOW_CONFIG_RESOLVED_ID)
+              if (configModule) server.moduleGraph.invalidateModule(configModule)
+              response.setHeader('Content-Type', 'application/json; charset=utf-8')
+              response.end(JSON.stringify({ key, name }))
+            } catch (error) {
+              response.statusCode = 400
+              response.setHeader('Content-Type', 'application/json; charset=utf-8')
+              response.end(JSON.stringify({ error: error instanceof Error ? error.message : 'Invalid request' }))
+            }
+            return
+          }
+
+          if (pathname === pageNamePath && request.method === 'POST') {
+            try {
+              const body = await readJson(request)
+              const key = typeof body.key === 'string' ? body.key.trim() : ''
+              const name = typeof body.name === 'string' ? body.name.trim() : ''
+              if (!key || key.length > 500) throw new Error('Invalid page key')
+              if (name.length > 80) throw new Error('Page name is too long')
+              const configFile = resolve(projectRoot, '.pageflow')
+              const stored = JSON.parse(stripJsonComments(await readFile(configFile, 'utf8'))) as PageFlowOptions
+              const pageNames = { ...(stored.pageNames ?? {}) }
+              if (name) pageNames[key] = name
+              else delete pageNames[key]
+              stored.pageNames = pageNames
+              await writeFile(configFile, `${JSON.stringify(stored, null, 2)}\n`)
+              resolved.pageNames = pageNames
               const configModule = server.moduleGraph.getModuleById(PAGEFLOW_CONFIG_RESOLVED_ID)
               if (configModule) server.moduleGraph.invalidateModule(configModule)
               response.setHeader('Content-Type', 'application/json; charset=utf-8')

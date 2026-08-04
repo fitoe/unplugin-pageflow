@@ -11,6 +11,8 @@ mountPageFlow(document.querySelector('#app'), {
   dynamicParams: {},
   previewRoles: [],
   groupNames: {},
+  pageNames: {},
+  canvasLayouts: {},
   pageTests: {},
   testCommands: {},
   diagnostics: resolvePageFlowDiagnosticOptions(),

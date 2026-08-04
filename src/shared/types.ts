@@ -2,6 +2,8 @@ import type { PageFlowApiField, PageFlowApiResult, PageFlowDiagnostic, PageFlowD
 
 export type { PageFlowApiField, PageFlowApiResult, PageFlowDiagnostic, PageFlowDiagnosticCategory, PageFlowDiagnosticSeverity }
 
+export type PageFlowDynamicParamValues = Record<string, string | number>
+
 export interface PageFlowOptions {
   enabled?: boolean
   /** Show the development launcher on host pages. */
@@ -13,9 +15,10 @@ export interface PageFlowOptions {
   routes?: PageFlowRuntimeRoute[]
   previewPath?: string
   appUrl?: string
-  dynamicParams?: Record<string, Record<string, string | number>>
+  dynamicParams?: Record<string, PageFlowDynamicParamValues | PageFlowDynamicParamValues[]>
   previewRoles?: Array<{ match: string; role: string }>
   groupNames?: Record<string, string>
+  pageNames?: Record<string, string>
   canvasLayouts?: Record<string, Record<string, [number, number]>>
   /** Explicit route or route-glob to test file/glob mappings. */
   pageTests?: Record<string, string[]>
@@ -60,9 +63,10 @@ export interface ResolvedPageFlowOptions {
   routes: PageFlowRuntimeRoute[]
   previewPath: string
   appUrl: string
-  dynamicParams: Record<string, Record<string, string | number>>
+  dynamicParams: Record<string, PageFlowDynamicParamValues | PageFlowDynamicParamValues[]>
   previewRoles: Array<{ match: string; role: string }>
   groupNames: Record<string, string>
+  pageNames: Record<string, string>
   canvasLayouts: Record<string, Record<string, [number, number]>>
   pageTests: Record<string, string[]>
   testCommands: Partial<Record<PageFlowTestKind, PageFlowTestCommand>>

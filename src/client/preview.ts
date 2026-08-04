@@ -20,7 +20,8 @@ export function resolvePreviewUrl(
   navigationLocation?: string,
   user?: string,
 ) {
-  const params = config.dynamicParams[path] ?? {}
+  const configuredParams = config.dynamicParams[path]
+  const params = Array.isArray(configuredParams) ? configuredParams[0] ?? {} : configuredParams ?? {}
   const resolvedPath = navigationLocation ?? path.replace(/:([A-Za-z0-9_]+)(\([^)]*\))?[?+*]?/g, (_token, name: string, pattern?: string) => {
     const value = params[name] ?? (pattern?.includes('\\d') ? 1 : 'unplugin-pageflow')
     return encodeURIComponent(value)

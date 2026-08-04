@@ -5,8 +5,9 @@ import { createServer } from 'vite'
 test('lays out linked pages in layers and limits previews to the viewport', async () => {
   const server = await createServer({ configFile: false, server: { middlewareMode: true }, appType: 'custom', logLevel: 'silent' })
   try {
-    const { assignOrderedFocusSides, centerPageTransform, collapseRepeatedListLinks, createPageSpatialIndex, createRouteDeckView, fitFocusedPreviewTransform, getRenderablePages, getVisiblePageIds, layoutPageGrid, layoutPagesByRoute, promotedRouteGroupPath, queryPageSpatialIndex, responsivePageGridColumns, routeDeckPathForPage } = await server.ssrLoadModule('/src/client/layout.ts')
+    const { assignOrderedFocusSides, centerPageTransform, collapseRepeatedListLinks, createPageSpatialIndex, createRouteDeckView, fitFocusedPreviewTransform, fitPageBoundsTransform, getRenderablePages, getVisiblePageIds, layoutPageGrid, layoutPagesByRoute, promotedRouteGroupPath, queryPageSpatialIndex, responsivePageGridColumns, routeDeckPathForPage } = await server.ssrLoadModule('/src/client/layout.ts')
     const { forwardWheelToCanvas, PAGEFLOW_CANVAS_CONFIG } = await server.ssrLoadModule('/src/client/canvas.ts')
+    const { expandDynamicRoutes } = await server.ssrLoadModule('/src/shared/dynamic-routes.ts')
     const { resolvePreviewUrl, touchPreviewCache } = await server.ssrLoadModule('/src/client/preview.ts')
     const { fullThumbnailTiles, thumbnailPageKey, thumbnailRecordsAreCurrent, thumbnailRevision, thumbnailSlot, thumbnailTierForZoom, thumbnailUrl, visibleThumbnailTiles, visibleThumbnailTilesOrCompact } = await server.ssrLoadModule('/src/client/thumbnails.ts')
     const { boundedPreviewDocumentHeight, isInfiniteListDocument, maskedIconBackground, materializeMaskedIcons, previewDocumentHeight } = await server.ssrLoadModule('/src/client/snapshot.ts')
@@ -18,6 +19,17 @@ test('lays out linked pages in layers and limits previews to the viewport', asyn
       accent: '#ff795d',
       links: index < 2 ? [{ label: 'Next', to: `page-${index + 1}` }] : [],
     }))
+    assert.deepEqual(expandDynamicRoutes([
+      { id: 'legacy', path: '/screen/legacy/:page', title: '扩展页面' },
+    ], {
+      '/screen/legacy/:page': [
+        { page: 'yuye', $title: '渔业服务大屏' },
+        { page: 'damoxing', $title: 'AI 大模型' },
+      ],
+    }).map(page => [page.id, page.path, page.title]), [
+      ['legacy::/screen/legacy/yuye', '/screen/legacy/yuye', '渔业服务大屏'],
+      ['legacy::/screen/legacy/damoxing', '/screen/legacy/damoxing', 'AI 大模型'],
+    ])
     assert.equal(collapseRepeatedListLinks([0.2, 0.4, 0.6, 0.8].map((centerY, index) => ({
       label: `Row ${index}`,
       to: '/detail',
@@ -55,6 +67,11 @@ test('lays out linked pages in layers and limits previews to the viewport', asyn
     )
     const widthLimitedFocus = fitFocusedPreviewTransform([100, 200], 80, { width: 1000, height: 800 }, 1.03, 32, 16, 500)
     assert(widthLimitedFocus.scaleX * 240 * 1.03 <= 500)
+    const fittedBounds = fitPageBoundsTransform({ left: 100, top: 200, right: 1300, bottom: 1000 }, { width: 1000, height: 800 })
+    assert(Math.abs(fittedBounds.x + 100 * fittedBounds.scaleX - 72) < 0.001)
+    assert(Math.abs(fittedBounds.x + 1300 * fittedBounds.scaleX - 928) < 0.001)
+    assert(fittedBounds.y + 200 * fittedBounds.scaleY >= 72)
+    assert(fittedBounds.y + 1000 * fittedBounds.scaleY <= 728)
     assert.deepEqual(touchPreviewCache([], 'home'), ['home'])
     assert.deepEqual(touchPreviewCache(['home', 'about', 'contact'], 'home'), ['about', 'contact', 'home'])
     assert.equal(previewDocumentHeight({

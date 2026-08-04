@@ -257,11 +257,16 @@ function bindHotspotHover(element: Element, targets: string[]) {
   bindHotspotHoverDelegation()
 }
 
-function isElementInViewport(element: Element) {
-  const rect = element.getBoundingClientRect()
+type HotspotRect = Pick<DOMRect, 'left' | 'top' | 'width' | 'height'>
+
+function isRectInViewport(rect: HotspotRect) {
   return rect.width > 0 && rect.height > 0
     && rect.left + rect.width > 0 && rect.top + rect.height > 0
     && rect.left < window.innerWidth && rect.top < window.innerHeight
+}
+
+function isElementInViewport(element: Element) {
+  return isRectInViewport(element.getBoundingClientRect())
 }
 
 function internalLinks() {
@@ -286,8 +291,8 @@ function linkLabel(element: Element, fallback: string) {
     || fallback
 }
 
-function hotspotCenter(element: Element) {
-  const rect = element.getBoundingClientRect()
+function hotspotCenter(element: Element, hotspotRect?: HotspotRect) {
+  const rect = hotspotRect ?? element.getBoundingClientRect()
   const root = document.documentElement
   return {
     centerX: (rect.left + rect.width / 2) / Math.max(1, root.clientWidth, window.innerWidth),
@@ -304,9 +309,9 @@ function observePreviewScroll(callback: () => void, delay = 32) {
   document.addEventListener('scroll', onScroll, true)
 }
 
-function addHotspot(layer: HTMLElement, element: Element, type: 'link' | 'event', targets: string[], locations = targets) {
-  if (!isElementInViewport(element)) return false
-  const rect = element.getBoundingClientRect()
+function addHotspot(layer: HTMLElement, element: Element, type: 'link' | 'event', targets: string[], locations = targets, hotspotRect?: HotspotRect) {
+  const rect = hotspotRect ?? element.getBoundingClientRect()
+  if (!isRectInViewport(rect)) return false
   if (!rect.width || !rect.height) return false
   const overlay = document.createElement('div')
   overlay.setAttribute('data-unplugin-pageflow-hotspot', type)
@@ -357,6 +362,49 @@ function addHotspot(layer: HTMLElement, element: Element, type: 'link' | 'event'
   return true
 }
 
+function nestedFrameLinks() {
+  const links: Array<{ element: HTMLAnchorElement | HTMLAreaElement, target: URL, rect: HotspotRect }> = []
+  const visit = (owner: Document, mapRect: (rect: HotspotRect) => HotspotRect) => {
+    owner.querySelectorAll<HTMLIFrameElement>('iframe').forEach((frame) => {
+      let nestedDocument: Document | null
+      let nestedWindow: Window | null
+      try {
+        nestedDocument = frame.contentDocument
+        nestedWindow = frame.contentWindow
+        if (!nestedDocument || !nestedWindow) return
+      } catch {
+        return
+      }
+      const frameRect = mapRect(frame.getBoundingClientRect())
+      if (!isRectInViewport(frameRect)) return
+      const scaleX = frameRect.width / Math.max(1, nestedWindow.innerWidth)
+      const scaleY = frameRect.height / Math.max(1, nestedWindow.innerHeight)
+      const mapNestedRect = (rect: HotspotRect): HotspotRect => ({
+        left: frameRect.left + rect.left * scaleX,
+        top: frameRect.top + rect.top * scaleY,
+        width: rect.width * scaleX,
+        height: rect.height * scaleY,
+      })
+      for (const element of nestedDocument.links) {
+        let target: URL
+        try {
+          const frameLocation = nestedWindow.location.href
+          const base = frameLocation.startsWith('http') ? frameLocation : window.location.href
+          target = new URL(element.getAttribute('href') ?? element.href, base)
+        } catch {
+          continue
+        }
+        if (!['http:', 'https:'].includes(target.protocol) || target.origin !== window.location.origin) continue
+        target.hash = ''
+        links.push({ element, target, rect: mapNestedRect(element.getBoundingClientRect()) })
+      }
+      visit(nestedDocument, mapNestedRect)
+    })
+  }
+  visit(document, rect => rect)
+  return links
+}
+
 function isFormControlRegion(element: Element) {
   if (element.matches('input, textarea, select, option, [contenteditable="true"]')) return true
   if (element.matches('a[href], button, [role="link"], [role="button"], uni-button')) return false
@@ -401,6 +449,13 @@ function collectLinks(router: PageFlowRouterAdapter, visibleOnly = false) {
     if (!addHotspot(layer, anchor, 'link', [navigation.path], [navigation.location])) return
     links.push({ label, to: navigation.path, location: navigation.location, kind: 'link', hotspot: hotspotCenter(anchor) })
   })
+  nestedFrameLinks().forEach(({ element: anchor, target, rect }) => {
+    if (visibleOnly && !isRectInViewport(rect)) return
+    const label = linkLabel(anchor, target.pathname)
+    const navigation = router.resolveAnchor(target)
+    if (!addHotspot(layer!, anchor, 'link', [navigation.path], [navigation.location], rect)) return
+    links.push({ label, to: navigation.path, location: navigation.location, kind: 'link', hotspot: hotspotCenter(anchor, rect) })
+  })
   document.querySelectorAll<HTMLElement>('[data-pageflow-to]').forEach(element => {
     if (element.closest('[data-unplugin-pageflow-launcher]')) return
     if (visibleOnly && !isElementInViewport(element)) return
@@ -417,10 +472,7 @@ function collectLinks(router: PageFlowRouterAdapter, visibleOnly = false) {
     if (visibleOnly && !isElementInViewport(element)) return
     const label = element.getAttribute('aria-label')?.trim() || element.textContent?.trim() || 'Navigation'
     const targets = router.renderedNavigationTargets?.(element) ?? []
-    // A click handler alone is not a page relationship (checkboxes, inputs,
-    // accordions, etc.). Only render an event hotspot after a navigation
-    // target has actually been resolved.
-    if (!targets.length || !addHotspot(layer!, element, 'event', targets)) return
+    if (!addHotspot(layer!, element, 'event', targets) || !targets.length) return
     const hotspot = hotspotCenter(element)
     targets.forEach(to => links.push({ label, to, kind: 'event', hotspot }))
   })
@@ -462,8 +514,56 @@ async function scanRenderedPage(router: PageFlowRouterAdapter) {
   return { path: router.currentPath(), title: document.title, links: collectLinks(router, true) }
 }
 
+export function interceptNestedFrameLink(
+  anchor: HTMLAnchorElement,
+  event: Event,
+  frame: HTMLIFrameElement,
+  router: PageFlowRouterAdapter,
+) {
+  const frameLocation = frame.contentWindow?.location.href
+  const base = frameLocation?.startsWith('http') ? frameLocation : window.location.href
+  const target = new URL(anchor.getAttribute('href') ?? anchor.href, base)
+  if (target.origin !== window.location.origin) return false
+  event.preventDefault()
+  event.stopImmediatePropagation()
+  const navigation = router.resolveAnchor(target)
+  notifyNavigation(navigation.path, navigation.location, 'hotspot')
+  return true
+}
+
+function protectNestedFrameLinks(router: PageFlowRouterAdapter) {
+  const attachedFrames = new WeakSet<HTMLIFrameElement>()
+  const attachedDocuments = new WeakSet<Document>()
+  const bindDocument = (frame: HTMLIFrameElement) => {
+    let nestedDocument: Document | null
+    try {
+      nestedDocument = frame.contentDocument
+    } catch {
+      return
+    }
+    if (!nestedDocument || attachedDocuments.has(nestedDocument)) return
+    attachedDocuments.add(nestedDocument)
+    nestedDocument.addEventListener('click', (event) => {
+      const anchor = (event.target as Element | null)?.closest?.('a[href]') as HTMLAnchorElement | null
+      if (!anchor) return
+      interceptNestedFrameLink(anchor, event, frame, router)
+    }, true)
+  }
+  const attach = (frame: HTMLIFrameElement) => {
+    if (attachedFrames.has(frame)) return
+    attachedFrames.add(frame)
+    frame.addEventListener('load', () => bindDocument(frame))
+    bindDocument(frame)
+  }
+  document.querySelectorAll<HTMLIFrameElement>('iframe').forEach(attach)
+  new MutationObserver(() => {
+    document.querySelectorAll<HTMLIFrameElement>('iframe').forEach(attach)
+  }).observe(document.body, { childList: true, subtree: true })
+}
+
 function protectPreviewInteractions(router: PageFlowRouterAdapter, config: ResolvedPageFlowOptions) {
   if (!new URLSearchParams(window.location.search).has(PAGEFLOW_PREVIEW_PARAM)) return
+  protectNestedFrameLinks(router)
   document.addEventListener('click', event => {
     lastClickedElement = event.target as Element | null
     setTimeout(() => { lastClickedElement = null })

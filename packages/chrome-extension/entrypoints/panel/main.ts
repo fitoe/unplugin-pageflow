@@ -26,6 +26,8 @@ const config: ResolvedPageFlowOptions = {
   dynamicParams: {},
   previewRoles: [],
   groupNames: {},
+  pageNames: {},
+  canvasLayouts: {},
   pageTests: {},
   testCommands: {},
   diagnostics: resolvePageFlowDiagnosticOptions(),

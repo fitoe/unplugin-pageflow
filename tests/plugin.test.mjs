@@ -5,7 +5,7 @@ import test from 'node:test'
 import { resolve } from 'node:path'
 import { createServer } from 'vite'
 
-test('persists edited group names and refreshes the virtual client config', async () => {
+test('persists edited group and page names and refreshes the virtual client config', async () => {
   const root = await mkdtemp(resolve(os.tmpdir(), 'pageflow-group-names-'))
   await writeFile(resolve(root, '.pageflow'), JSON.stringify({
     enabled: true,
@@ -35,13 +35,21 @@ test('persists edited group names and refreshes the virtual client config', asyn
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ key: '/business', positions: { overview: [120, 240] } }),
     })
+    const savePageName = await fetch(`${origin}/__unplugin-pageflow/api/page-name`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ key: '/screen/legacy/yuye', name: '渔业演示' }),
+    })
     const refreshedConfig = await (await fetch(configUrl)).text()
     const stored = JSON.parse(await readFile(resolve(root, '.pageflow'), 'utf8'))
     assert.equal(save.status, 200)
     assert.equal(saveLayout.status, 200)
+    assert.equal(savePageName.status, 200)
     assert.match(refreshedConfig, /业务流程/)
     assert.match(refreshedConfig, /overview/)
+    assert.match(refreshedConfig, /渔业演示/)
     assert.equal(stored.groupNames.business, '业务流程')
+    assert.equal(stored.pageNames['/screen/legacy/yuye'], '渔业演示')
     assert.deepEqual(stored.canvasLayouts['/business'].overview, [120, 240])
   } finally {
     await server.close()

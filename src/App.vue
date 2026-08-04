@@ -79,6 +79,7 @@ import {
 } from './client/thumbnails'
 import {
   centerPageTransform,
+  fitPageBoundsTransform,
   fitFocusedPreviewTransform,
   createPageSpatialIndex,
   createRouteDeckView,
@@ -145,6 +146,7 @@ const routeGroupPath = ref<string[]>([])
 const active = ref('home')
 const status = ref(props.config.previewPath === '/' ? 'Demo data' : 'Discovering routes…')
 const groupNames = ref({ ...props.config.groupNames })
+const pageNames = ref({ ...props.config.pageNames })
 const canvasLayouts = ref({ ...props.config.canvasLayouts })
 const zoomPercent = ref(90)
 const visiblePageIds = ref(new Set<string>())
@@ -403,9 +405,20 @@ let canvasViewport = { width: 0, height: 0 }
 let hostThumbnailQueueRunning = false
 let hostCanvasOrigin = ''
 let hostCanvasStorage: Record<string, unknown> = {}
+let hostCanvasSaveQueue = Promise.resolve()
+let initialCanvasFitted = false
 let storedHostThumbnails: StoredHostThumbnail[] = []
 const hostPageUrls = new Map<string, string>()
 const failedHostThumbnailIds = new Set<string>()
+
+function persistHostCanvas(patch: Record<string, unknown>) {
+  if (!props.host || !hostCanvasOrigin) return Promise.reject(new Error('画板存储尚未就绪'))
+  hostCanvasSaveQueue = hostCanvasSaveQueue.catch(() => {}).then(async () => {
+    hostCanvasStorage = { ...hostCanvasStorage, ...patch, updatedAt: Date.now() }
+    await savePageFlowCanvas(props.host!, hostCanvasOrigin, hostCanvasStorage)
+  })
+  return hostCanvasSaveQueue
+}
 const currentPreviewMode = computed(() => previewMode.value === 'pc'
   ? { label: 'PC', ...pcPreviewSize.value }
   : previewModes[previewMode.value])
@@ -444,6 +457,7 @@ const renderedPages = computed(() => getRenderablePages(
   maximumMountedPreviews.value,
 ))
 const captureOnlyPage = computed(() => pages.value.find(page => page.id === capturePreviewId.value
+  && !focusedPageId.value
   && page.id !== focusedPageId.value
   && !livePreviewCacheIds.value.includes(page.id)))
 const previewPages = computed(() => renderedPages.value.filter(page => shouldRenderPreview(page.id) && page.id !== captureOnlyPage.value?.id))
@@ -458,7 +472,7 @@ const requiredThumbnailRecords = computed(() => {
   })
   routeDeckView.value.decks
     .filter(deck => visiblePageIds.value.has(deck.representative.id))
-    .forEach(deck => visibleDeckLayerPages(deck.representative.id).forEach(page => {
+    .forEach(deck => deck.pages.forEach(page => {
       const compact = compactThumbnailRecord(page.id)
       if (compact) records.push(compact)
     }))
@@ -869,12 +883,18 @@ function setHoveredHotspot(
 
 function compactThumbnailRecord(pageId: string) {
   const page = pages.value.find(page => page.id === pageId)
-  return thumbnailManifest.value[thumbnailSlot(page ? thumbnailPageKey(page, pages.value) : pageId, previewMode.value, 'compact')]
+  const pageKey = page ? thumbnailPageKey(page, pages.value) : pageId
+  return thumbnailManifest.value[thumbnailSlot(pageKey, previewMode.value, 'compact')]
+    ?? (pageKey !== pageId ? thumbnailManifest.value[thumbnailSlot(pageId, previewMode.value, 'compact')] : undefined)
 }
 
 function fullThumbnailRecords(pageId: string) {
   const page = pages.value.find(page => page.id === pageId)
-  return fullThumbnailTiles(thumbnailManifest.value, page ? thumbnailPageKey(page, pages.value) : pageId, previewMode.value)
+  const pageKey = page ? thumbnailPageKey(page, pages.value) : pageId
+  const records = fullThumbnailTiles(thumbnailManifest.value, pageKey, previewMode.value)
+  return records.length || pageKey === pageId
+    ? records
+    : fullThumbnailTiles(thumbnailManifest.value, pageId, previewMode.value)
 }
 
 function thumbnailIsCurrent(page: PageFlowPage) {
@@ -912,7 +932,7 @@ async function captureHostThumbnail(page: PageFlowPage, capturedSource?: string)
   const pageUrl = hostPageUrls.get(page.id)
   const captured = capturedSource
     ?? (props.host.capturePage && pageUrl ? await props.host.capturePage(pageUrl, viewport) : await props.host.capture())
-  const { encodeHostThumbnail, persistHostThumbnails } = await import('./client/host-thumbnail-capture')
+  const { encodeHostThumbnail } = await import('./client/host-thumbnail-capture')
   const encoded = await encodeHostThumbnail(captured, PAGE_CARD_WIDTH)
   const revision = pageThumbnailRevision(page)
   const { source, height: thumbnailHeight } = encoded
@@ -952,7 +972,7 @@ async function captureHostThumbnail(page: PageFlowPage, capturedSource?: string)
   storedHostThumbnails = upsertStoredHostThumbnail(storedHostThumbnails, stored)
   if (hostCanvasOrigin && props.host) {
     try {
-      hostCanvasStorage = await persistHostThumbnails(props.host, hostCanvasOrigin, hostCanvasStorage, storedHostThumbnails)
+      await persistHostCanvas({ thumbnails: storedHostThumbnails })
     } catch (error) {
       console.warn('PageFlow failed to persist host thumbnail', error)
     }
@@ -1086,9 +1106,7 @@ async function saveCurrentCanvasLayout(positionOverrides: Record<string, [number
   canvasLayouts.value = nextLayouts
   try {
     if (props.host) {
-      if (!hostCanvasOrigin) throw new Error('画板存储尚未就绪')
-      hostCanvasStorage = { ...hostCanvasStorage, canvasLayouts: nextLayouts, updatedAt: Date.now() }
-      await savePageFlowCanvas(props.host, hostCanvasOrigin, hostCanvasStorage)
+      await persistHostCanvas({ canvasLayouts: nextLayouts })
     } else {
       const response = await fetch(`${props.config.previewPath}api/canvas-layout`, {
         method: 'POST',
@@ -1123,6 +1141,7 @@ function fitRouteGroupTransform(
   layoutPages: PageFlowPage[],
   layoutPositions: Map<string, [number, number]>,
   maximumScale: number,
+  padding = 72,
 ): CanvasTransform | undefined {
   if (!canvas.value || !layoutPages.length) return
   const positioned = layoutPages.flatMap(page => {
@@ -1135,18 +1154,16 @@ function fitRouteGroupTransform(
   const right = Math.max(...positioned.map(item => item.position[0] + PAGE_CARD_WIDTH))
   const bottom = Math.max(...positioned.map(item => item.position[1] + pageCardHeight(item.page.id)))
   const viewport = { width: canvas.value.clientWidth, height: canvas.value.clientHeight }
-  const padding = 72
-  const scale = Math.max(0.05, Math.min(
-    maximumScale,
-    (viewport.width - padding * 2) / Math.max(1, right - left),
-    (viewport.height - padding * 2) / Math.max(1, bottom - top),
-  ))
-  return {
-    x: viewport.width / 2 - (left + right) / 2 * scale,
-    y: viewport.height / 2 - (top + bottom) / 2 * scale,
-    scaleX: scale,
-    scaleY: scale,
-  }
+  return fitPageBoundsTransform({ left, top, right, bottom }, viewport, maximumScale, padding)
+}
+
+function fitInitialCanvas() {
+  if (initialCanvasFitted || !leafer) return
+  const transform = fitRouteGroupTransform(canvasPages.value, positions.value, 0.9)
+  if (!transform) return
+  initialCanvasFitted = true
+  leafer.zoomLayer.set(transform)
+  syncOverlay(true)
 }
 
 function requestLayout(nextPages = pages.value, _animate = false) {
@@ -1166,6 +1183,7 @@ function requestLayout(nextPages = pages.value, _animate = false) {
     }, layoutPagesList, heights),
   ), layoutPagesList), layoutPagesList)
   draw()
+  fitInitialCanvas()
   initialLayoutSettled.value = true
   scheduleInitialSceneReveal()
 }
@@ -1181,7 +1199,7 @@ function animateDeckExpansion(path: string[], sourcePageId: string, next: Return
     scaleX: layer.scaleX ?? 1,
     scaleY: layer.scaleY ?? 1,
   }
-  const cameraTarget = fitRouteGroupTransform(next.pages, next.positions, cameraStart.scaleX) ?? cameraStart
+  const cameraTarget = fitRouteGroupTransform(next.pages, next.positions, 2.3, 24) ?? cameraStart
   const siblingPages = canvasPages.value.filter(page => page.id !== sourcePageId)
   const sourceGroupDepth = routeGroupPath.value.length
   const siblingStarts = new Map(siblingPages.map(page => [page.id, positions.value.get(page.id) ?? sourcePosition]))
@@ -1290,8 +1308,17 @@ function animateDeckCollapse(path: string[], next: ReturnType<typeof layoutRoute
   const restoringPages = next.pages.filter(page => parkedPages.value[page.id])
   const restoringStarts = new Map(restoringPages.map(page => [page.id, parkedPagePositions.value[page.id]]))
   const starts = new Map(currentPages.map(page => [page.id, positions.value.get(page.id) ?? targetPosition]))
+  const layer = leafer.zoomLayer
+  const cameraStart: CanvasTransform = {
+    x: layer.x ?? 0,
+    y: layer.y ?? 0,
+    scaleX: layer.scaleX ?? 1,
+    scaleY: layer.scaleY ?? 1,
+  }
+  const cameraTarget = fitRouteGroupTransform(next.pages, next.positions, 2.3, 24) ?? cameraStart
   viewportInteracting.value = true
   flightAnimation.start(680, progress => {
+    const cameraProgress = 1 - (1 - progress) ** 3
     positions.value = new Map(currentPages.map((page, index) => {
       const start = starts.get(page.id)!
       const stackLayer = Math.min(index, MAX_DECK_LAYERS - 1)
@@ -1320,6 +1347,12 @@ function animateDeckCollapse(path: string[], next: ReturnType<typeof layoutRoute
         return [page.id, (1 - local) ** 3]
       })),
     }
+    layer.set({
+      x: cameraStart.x + (cameraTarget.x - cameraStart.x) * cameraProgress,
+      y: cameraStart.y + (cameraTarget.y - cameraStart.y) * cameraProgress,
+      scaleX: cameraStart.scaleX + (cameraTarget.scaleX - cameraStart.scaleX) * cameraProgress,
+      scaleY: cameraStart.scaleY + (cameraTarget.scaleY - cameraStart.scaleY) * cameraProgress,
+    })
     renderCanvasScene()
     syncOverlay(false)
   }, () => {
@@ -1331,6 +1364,7 @@ function animateDeckCollapse(path: string[], next: ReturnType<typeof layoutRoute
     parkedPageDepth.value = Object.fromEntries(Object.entries(parkedPageDepth.value).filter(([id]) => keepParked(id)))
     parkedPageProgress.value = Object.fromEntries(Object.entries(parkedPageProgress.value).filter(([id]) => keepParked(id)))
     visiblePageIds.value = new Set(next.pages.map(page => page.id))
+    layer.set(cameraTarget)
     viewportInteracting.value = false
     renderCanvasScene()
     syncOverlay(true)
@@ -1382,14 +1416,12 @@ function enterRouteGroup(path: string[], animate = true, sourceDeckPageId?: stri
   }
   const target = next.pages[0]
   const targetPosition = target && next.positions.get(target.id)
+  const groupTransform = fitRouteGroupTransform(next.pages, next.positions, 2.3, 24)
   if (animate && target && targetPosition && leafer)
-    flyToPage(target.id, targetPosition, apply, 1, { x: 0, y: 0, scaleX: 1, scaleY: 1 })
+    flyToPage(target.id, targetPosition, apply, 1, groupTransform)
   else {
     apply()
-    if (leafer) {
-      leafer.zoomLayer.set({ x: 0, y: 0, scaleX: 1, scaleY: 1 })
-      syncOverlay(true)
-    }
+    fitCurrentRouteGroup()
   }
 }
 
@@ -1520,8 +1552,8 @@ function handleViewportTransform() {
 
 function shouldRenderPreview(pageId: string) {
   if (props.config.previewPath === '/') return false
-  if (capturePreviewId.value === pageId) return true
   if (focusedPageId.value) return pageId === focusedPageId.value
+  if (capturePreviewId.value === pageId) return true
   return livePreviewCacheIds.value.includes(pageId)
 }
 
@@ -1529,9 +1561,18 @@ function cancelScheduledCapture() {
   captureQueue.cancel()
 }
 
+function pauseAutomaticCapture() {
+  cancelScheduledCapture()
+  const pageId = capturePreviewId.value
+  if (!pageId || manualCaptureIds.has(pageId)) return
+  captureBatchIds.delete(pageId)
+  capturePreviewId.value = undefined
+  captureQueue.complete(pageId)
+}
+
 function scheduleNextCapture() {
   if (!thumbnailManifestLoaded.value || capturePreviewId.value || viewportInteracting.value
-    || document.visibilityState !== 'visible' || runningPageTestIds.value.size || lighthouseLoading.value) return
+    || focusedPageId.value || document.visibilityState !== 'visible' || runningPageTestIds.value.size || lighthouseLoading.value) return
   const hasManualCapture = manualCaptureIds.size > 0
   if (hasManualCapture && captureQueue.scheduled) cancelScheduledCapture()
   if (captureQueue.scheduled) return
@@ -1552,7 +1593,7 @@ function scheduleNextCapture() {
 }
 
 function startNextCapture() {
-  if (!thumbnailManifestLoaded.value || capturePreviewId.value || viewportInteracting.value) return
+  if (!thumbnailManifestLoaded.value || capturePreviewId.value || focusedPageId.value || viewportInteracting.value) return
   const plan = planNextCapture({
     pages: pages.value,
     batchIds: captureBatchIds,
@@ -1574,7 +1615,7 @@ function startNextCapture() {
 function finishCapture(pageId: string) {
   captureBatchIds.delete(pageId)
   manualCaptureIds.delete(pageId)
-  capturePreviewId.value = undefined
+  if (capturePreviewId.value === pageId) capturePreviewId.value = undefined
   if (Object.keys(pendingThumbnailRecords).length) {
     thumbnailManifest.value = { ...thumbnailManifest.value, ...pendingThumbnailRecords }
     Object.keys(pendingThumbnailRecords).forEach(id => delete pendingThumbnailRecords[id])
@@ -1625,6 +1666,7 @@ function activatePreview(pageId: string, animate = true) {
   }
   const targetPosition = next?.positions.get(pageId) ?? positions.value.get(pageId)
   const apply = () => {
+    pauseAutomaticCapture()
     cacheCurrentFocusedLinks()
     if (next) {
       routeGroupPath.value = targetGroupPath
@@ -1649,7 +1691,6 @@ function activatePreview(pageId: string, animate = true) {
     failedPreviewIds.delete(pageId)
     scheduleCanvasRender()
     if (!animate) centerFocusedPage(pageId)
-    scheduleNextCapture()
     if (cachedLinks) void requestFocusedLayout()
     else void nextTick(() => requestFocusedPageScan(pageId))
   }
@@ -1667,7 +1708,7 @@ function selectSearchPage(pageId: string) {
 function handleSearchShortcut(event: KeyboardEvent) {
   if (event.key === 'Escape' && focusedPageId.value) {
     event.preventDefault()
-    exitFocusAfterSnapshot(() => zoomCanvas('out'))
+    exitFocusedPage()
     return
   }
   if (event.key.toLowerCase() !== 'k' || (!event.metaKey && !event.ctrlKey)) return
@@ -1782,6 +1823,7 @@ function clearFocus() {
   livePreviewId.value = undefined
   focusLayoutProgress = 0
   scheduleCanvasRender()
+  scheduleNextCapture()
 }
 
 function animateFocusLayout(target: 0 | 1, done?: () => void) {
@@ -1868,6 +1910,39 @@ function exitFocusAfterSnapshot(done?: () => void) {
   void exitAfterCapture()
 }
 
+function fitCurrentRouteGroup() {
+  if (!leafer) return
+  const target = fitRouteGroupTransform(canvasPages.value, positions.value, 2.3, 24)
+  if (!target) return
+  const layer = leafer.zoomLayer
+  const start: CanvasTransform = {
+    x: layer.x ?? 0,
+    y: layer.y ?? 0,
+    scaleX: layer.scaleX ?? 1,
+    scaleY: layer.scaleY ?? 1,
+  }
+  flightAnimation.cancel()
+  viewportInteracting.value = true
+  flightAnimation.start(520, progress => {
+    const eased = 1 - (1 - progress) ** 3
+    layer.set({
+      x: start.x + (target.x - start.x) * eased,
+      y: start.y + (target.y - start.y) * eased,
+      scaleX: start.scaleX + (target.scaleX - start.scaleX) * eased,
+      scaleY: start.scaleY + (target.scaleY - start.scaleY) * eased,
+    })
+    syncOverlay(false)
+  }, () => {
+    layer.set(target)
+    viewportInteracting.value = false
+    syncOverlay(true)
+  })
+}
+
+function exitFocusedPage() {
+  exitFocusAfterSnapshot(fitCurrentRouteGroup)
+}
+
 async function copyPagePath(path: string) {
   try {
     await navigator.clipboard.writeText(path)
@@ -1887,6 +1962,14 @@ function groupDisplayName(key: string, fallback: string) {
   return groupNames.value[key] || fallback
 }
 
+function pageDisplayName(page: PageFlowPage) {
+  return pageNames.value[page.path] || page.title
+}
+
+function hostPageNamesStorageKey(origin: string) {
+  return `pageflow:page-names:${origin}`
+}
+
 async function editGroupName(key: string, fallback: string) {
   const current = groupDisplayName(key, fallback)
   const input = window.prompt('编辑分组名称（留空恢复路由名称）', current)
@@ -1897,9 +1980,7 @@ async function editGroupName(key: string, fallback: string) {
   else delete next[key]
   try {
     if (props.host) {
-      if (!hostCanvasOrigin) throw new Error('画板存储尚未就绪')
-      hostCanvasStorage = { ...hostCanvasStorage, groupNames: next, updatedAt: Date.now() }
-      await savePageFlowCanvas(props.host, hostCanvasOrigin, hostCanvasStorage)
+      await persistHostCanvas({ groupNames: next })
     } else {
       const response = await fetch(`${props.config.previewPath}api/group-name`, {
         method: 'POST',
@@ -1912,6 +1993,33 @@ async function editGroupName(key: string, fallback: string) {
     scheduleCanvasRender()
   } catch {
     status.value = '分组名称保存失败'
+  }
+}
+
+async function editPageName(page: PageFlowPage) {
+  const key = page.path
+  const input = window.prompt('编辑页面名称（留空恢复原始名称）', pageDisplayName(page))
+  if (input == null) return
+  const name = input.trim()
+  const next = { ...pageNames.value }
+  if (name) next[key] = name
+  else delete next[key]
+  try {
+    if (props.host) {
+      if (!hostCanvasOrigin) throw new Error('画板存储尚未就绪')
+      await props.host.saveStorage(hostPageNamesStorageKey(hostCanvasOrigin), { pageNames: next, updatedAt: Date.now() })
+    } else {
+      const response = await fetch(`${props.config.previewPath}api/page-name`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ key, name }),
+      })
+      if (!response.ok) throw new Error('保存失败')
+    }
+    pageNames.value = next
+    scheduleCanvasRender()
+  } catch {
+    status.value = '页面名称保存失败'
   }
 }
 
@@ -1938,7 +2046,7 @@ function handleCanvasClick(event: MouseEvent) {
     const sourceLocalY = worldY - sourceY
     if (sourceLocalX >= PAGE_CARD_WIDTH - 30 && sourceLocalX <= PAGE_CARD_WIDTH && sourceLocalY >= sourcePreviewH + 30 && sourceLocalY <= sourcePreviewH + 58) openPage(focus.source.path)
     else if (sourceLocalX >= 0 && sourceLocalX < PAGE_CARD_WIDTH - 30 && sourceLocalY >= sourcePreviewH + 32 && sourceLocalY <= sourcePreviewH + 56) void copyPagePath(focus.source.path)
-    else if (!(sourceLocalX >= 0 && sourceLocalX <= PAGE_CARD_WIDTH && sourceLocalY >= 0 && sourceLocalY <= sourcePreviewH)) void exitFocusAfterSnapshot()
+    else if (!(sourceLocalX >= 0 && sourceLocalX <= PAGE_CARD_WIDTH && sourceLocalY >= 0 && sourceLocalY <= sourcePreviewH)) exitFocusedPage()
     return
   }
   const page = [...pages.value].reverse().find(item => {
@@ -1971,7 +2079,8 @@ function handleCanvasClick(event: MouseEvent) {
   const localX = worldX - position[0]
   const localY = worldY - position[1]
   const previewH = pagePreviewHeight(page.id)
-  if (localX >= PAGE_CARD_WIDTH - 30 && localX <= PAGE_CARD_WIDTH && localY >= previewH + 30 && localY <= previewH + 58) openPage(page.path)
+  if (localX >= 0 && localX < PAGE_CARD_WIDTH - 30 && localY >= previewH + 6 && localY <= previewH + 32) void editPageName(page)
+  else if (localX >= PAGE_CARD_WIDTH - 30 && localX <= PAGE_CARD_WIDTH && localY >= previewH + 30 && localY <= previewH + 58) openPage(page.path)
   else if (localX >= 0 && localX < PAGE_CARD_WIDTH - 30 && localY >= previewH + 32 && localY <= previewH + 56) void copyPagePath(page.path)
   else if (localX >= 0 && localX <= PAGE_CARD_WIDTH && localY >= 0 && localY <= previewH) activatePreview(page.id)
 }
@@ -2039,6 +2148,7 @@ function handleFocusTargetPointerMove(event: PointerEvent) {
     const deltaY = (event.clientY - canvasDrag.startClientY) / scale
     if (!canvasDrag.moved && Math.hypot(deltaX, deltaY) < 3) return
     canvasDrag.moved = true
+    setCanvasCursor('move')
     focusTargetDraggedAt = performance.now()
     pendingCanvasDragPosition = [canvasDrag.startX + deltaX, canvasDrag.startY + deltaY]
     scheduleCanvasRender()
@@ -2053,6 +2163,7 @@ function handleFocusTargetPointerMove(event: PointerEvent) {
   const deltaY = (event.clientY - drag.startClientY) / scale
   if (!drag.moved && Math.hypot(deltaX, deltaY) < 3) return
   drag.moved = true
+  setCanvasCursor('move')
   focusTargetDraggedAt = performance.now()
   focusedTargetPositions.value = {
     ...focusedTargetPositions.value,
@@ -2080,16 +2191,17 @@ function handleFocusTargetHover(event: PointerEvent) {
   setHoveredHotspot(target ? { targets: [target.page.id] } : undefined)
 }
 
+function setCanvasCursor(cursor: 'default' | 'pointer' | 'move') {
+  if (!canvas.value) return
+  const canvasView = canvas.value.querySelector<HTMLElement>('.leafer-canvas-view')
+  canvas.value.style.cursor = cursor
+  if (canvasView) canvasView.style.cursor = cursor
+}
+
 function handleCanvasCursor(event: PointerEvent) {
   if (!canvas.value || !leafer) return
-  const canvasView = canvas.value.querySelector<HTMLElement>('.leafer-canvas-view')
-  const setCursor = (cursor: 'default' | 'pointer' | 'move') => {
-    if (!canvas.value) return
-    canvas.value.style.cursor = cursor
-    if (canvasView) canvasView.style.cursor = cursor
-  }
-  if (focusTargetDrag || canvasPageDrag) {
-    setCursor('move')
+  if (focusTargetDrag?.moved || canvasPageDrag?.moved) {
+    setCanvasCursor('move')
     return
   }
   const bounds = canvas.value.getBoundingClientRect()
@@ -2117,21 +2229,23 @@ function handleCanvasCursor(event: PointerEvent) {
       const arrowHit = localX >= PAGE_CARD_WIDTH - 28
         && localY >= previewHeight + 6 && localY <= previewHeight + 32
       const pathHit = localY >= previewHeight + 32 && localY <= previewHeight + 60
-      linkHit = arrowHit || pathHit
+      const titleHit = !focusScene.value && localX < PAGE_CARD_WIDTH - 28
+        && localY >= previewHeight + 6 && localY <= previewHeight + 32
+      linkHit = arrowHit || pathHit || titleHit
     }
     return hit
   })
   if (linkHit) {
     setTimeout(() => {
-      setCursor('pointer')
+      setCanvasCursor('pointer')
     }, 0)
   } else if (pageHit) {
     setTimeout(() => {
-      setCursor(focusScene.value ? 'default' : 'move')
+      setCanvasCursor('default')
     }, 0)
   } else {
     setTimeout(() => {
-      setCursor('pointer')
+      setCanvasCursor('pointer')
     }, 0)
   }
 }
@@ -2186,6 +2300,7 @@ function handleFocusTargetPointerUp(event: PointerEvent) {
     const moved = drag.moved
     flushPendingCanvasDragPosition(drag)
     canvasPageDrag = undefined
+    setCanvasCursor('default')
     if (moved) {
       focusTargetDraggedAt = performance.now()
       suppressCanvasClickUntil = performance.now() + 500
@@ -2218,6 +2333,7 @@ function handleFocusTargetPointerUp(event: PointerEvent) {
     event.stopPropagation()
   }
   focusTargetDrag = undefined
+  setCanvasCursor('default')
   handleFocusTargetHover(event)
 }
 
@@ -2540,7 +2656,8 @@ function handlePreviewMessage(event: MessageEvent) {
   const hotspotNavigation = message.hotspot
   if (!sourcePageId || sourcePageId !== focusedPageId.value || sourcePageId !== livePreviewId.value
     || (!hotspotNavigation && !readyPreviewIds.value.has(sourcePageId))) return
-  const target = pages.value.find(page => page.path === message.to)
+  const locationPath = message.location?.split(/[?#]/, 1)[0]
+  const target = pages.value.find(page => page.path === message.to || page.path === locationPath)
   if (!target) return
   if (message.location) {
     readyPreviewIds.value = new Set([...readyPreviewIds.value].filter(id => id !== target.id))
@@ -2553,7 +2670,7 @@ function handlePreviewMessage(event: MessageEvent) {
 function createCardGroup(page: PageFlowPage, x: number, y: number, scale = 1, highlighted = false, compactOnly = false, hideMeta = false) {
   const compact = compactThumbnailRecord(page.id)
   return createPageCardGroup({
-    page,
+    page: { ...page, title: pageDisplayName(page) },
     x,
     y,
     scale,
@@ -2676,7 +2793,7 @@ function renderCanvasScene() {
     const deck = routeDeckByPageId.value.get(page.id)
     const cardSignature = [
       previewH,
-      page.title,
+      pageDisplayName(page),
       page.path,
       page.id === active.value,
       copiedPath.value === page.path,
@@ -2970,7 +3087,7 @@ watch(requiredThumbnailRecords, records => {
     const source = thumbnailResourceCache.get(url)
     return source ? [[url, source] as const] : []
   }))
-  thumbnailResources.value = Object.fromEntries(cachedResources)
+  thumbnailResources.value = { ...thumbnailResources.value, ...Object.fromEntries(cachedResources) }
   scheduleCanvasRender()
   void Promise.all(urls.map(async url => {
     try {
@@ -3086,6 +3203,7 @@ onMounted(async () => {
     } else {
       positions.value = nextPositions
       draw()
+      fitInitialCanvas()
     }
     initialLayoutSettled.value = true
     scheduleInitialSceneReveal()
@@ -3126,6 +3244,20 @@ onMounted(async () => {
         groupNames.value = {
           ...groupNames.value,
           ...Object.fromEntries(Object.entries(storedGroupNames).filter((entry): entry is [string, string] => typeof entry[1] === 'string')),
+        }
+      }
+      const storedPageNames = hostCanvasStorage.pageNames
+      if (storedPageNames && typeof storedPageNames === 'object' && !Array.isArray(storedPageNames)) {
+        pageNames.value = {
+          ...pageNames.value,
+          ...Object.fromEntries(Object.entries(storedPageNames).filter((entry): entry is [string, string] => typeof entry[1] === 'string')),
+        }
+      }
+      const dedicatedPageNames = await props.host.loadStorage<{ pageNames?: unknown }>(hostPageNamesStorageKey(hostCanvasOrigin))
+      if (dedicatedPageNames?.pageNames && typeof dedicatedPageNames.pageNames === 'object' && !Array.isArray(dedicatedPageNames.pageNames)) {
+        pageNames.value = {
+          ...pageNames.value,
+          ...Object.fromEntries(Object.entries(dedicatedPageNames.pageNames).filter((entry): entry is [string, string] => typeof entry[1] === 'string')),
         }
       }
       restoreHostThumbnails(hostCanvasStorage.thumbnails)

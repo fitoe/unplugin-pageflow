@@ -146,13 +146,18 @@ test('Chrome extension captures the PageFlow runtime loop', { timeout: 90_000 },
     await dashboard.mouse.down()
     await dashboard.mouse.move(aboutBefore.x + aboutBefore.width / 2 + 170, aboutBefore.y + aboutBefore.height + 120, { steps: 8 })
     await dashboard.mouse.up()
-    await dashboard.waitForTimeout(300)
+    await dashboard.waitForTimeout(600)
     const aboutWorldPosition = await aboutPreview.evaluate(element => [Number.parseFloat(element.style.left), Number.parseFloat(element.style.top)])
+    const movedAbout = await aboutPreview.boundingBox()
+    assert(movedAbout)
+    dashboard.once('dialog', dialog => dialog.accept('关于页面自定义名'))
+    await dashboard.mouse.click(movedAbout.x + movedAbout.width / 2, movedAbout.y + movedAbout.height + 18)
 
     await dashboard.waitForFunction(async () => {
       const stored = await browser.storage.local.get(null)
       return Object.values(stored).flatMap(value => Array.isArray(value?.thumbnails) ? value.thumbnails : []).length >= 5
         && Object.values(stored).some(value => value?.canvasLayouts?.['/'])
+        && Object.values(stored).some(value => value?.pageNames?.['/about'] === '关于页面自定义名')
     }, undefined, { timeout: 20_000 })
     const stored = await worker.evaluate(async () => chrome.storage.local.get(null))
     const thumbnails = Object.values(stored).flatMap(value => Array.isArray(value?.thumbnails) ? value.thumbnails : [])

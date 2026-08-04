@@ -5,7 +5,7 @@ import { createServer } from 'vite'
 test('positions focused targets and connects hotspot centers to page edges', async () => {
   const server = await createServer({ configFile: false, server: { middlewareMode: true }, appType: 'custom', logLevel: 'silent' })
   try {
-    const { createFocusScene, resolveFocusTargetPageIds } = await server.ssrLoadModule('/src/client/focus-layout.ts')
+    const { createFocusScene, curvedConnectionPath, nearestPointOnRect, resolveFocusTargetPageIds } = await server.ssrLoadModule('/src/client/focus-layout.ts')
     const page = (id, path) => ({ id, path, title: id, accent: '#fff', links: [] })
     const pages = [page('source', '/source'), page('right', '/right')]
     const scene = createFocusScene({
@@ -25,7 +25,9 @@ test('positions focused targets and connects hotspot centers to page edges', asy
     assert(Math.abs(coordinates[0] - 318.88) < 0.01)
     assert(Math.abs(coordinates[1] - 306.61) < 0.01)
     assert.equal(coordinates.at(-2), 500)
-    assert.equal(coordinates.at(-1), 430)
+    assert(Math.abs(coordinates.at(-1) - 306.61) < 0.01)
+    assert.deepEqual(nearestPointOnRect({ x: 320, y: 300 }, { x: 500, y: 600, width: 120, height: 460 }), { x: 500, y: 600 })
+    assert.match(curvedConnectionPath({ x: 320, y: 300 }, { x: 500, y: 600 }), /^M320 300 C320 /)
 
     const repeated = createFocusScene({
       pages,
@@ -47,6 +49,19 @@ test('positions focused targets and connects hotspot centers to page edges', asy
       resolveFocusTargetPageIds(pages, [{ label: 'By id', to: 'right' }], 'source'),
       ['right'],
     )
+
+    const dynamicPages = [...pages, page('legacy-yuye', '/screen/legacy/yuye')]
+    const dynamicLink = { label: '渔业', to: '/screen/legacy/:page', location: '/screen/legacy/yuye' }
+    assert.deepEqual(resolveFocusTargetPageIds(dynamicPages, [dynamicLink], 'source'), ['legacy-yuye'])
+    assert.equal(createFocusScene({
+      pages: dynamicPages,
+      focusedPageId: 'source',
+      links: [dynamicLink],
+      positions: new Map([['source', [100, 100]]]),
+      targetPositions: {},
+      pagePreviewHeight: () => 852,
+      pageCardHeight: () => 920,
+    }).connections.length, 1)
   } finally {
     await server.close()
   }

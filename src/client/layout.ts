@@ -28,6 +28,25 @@ export interface PageBounds {
   bottom: number
 }
 
+export function fitPageBoundsTransform(
+  bounds: PageBounds,
+  viewport: ViewportSize,
+  maximumScale = 0.9,
+  padding = 72,
+): CanvasTransform {
+  const scale = Math.max(0.05, Math.min(
+    maximumScale,
+    (viewport.width - padding * 2) / Math.max(1, bounds.right - bounds.left),
+    (viewport.height - padding * 2) / Math.max(1, bounds.bottom - bounds.top),
+  ))
+  return {
+    x: viewport.width / 2 - (bounds.left + bounds.right) / 2 * scale,
+    y: viewport.height / 2 - (bounds.top + bounds.bottom) / 2 * scale,
+    scaleX: scale,
+    scaleY: scale,
+  }
+}
+
 export function centerPageTransform(
   position: [number, number],
   pageHeight: number,
