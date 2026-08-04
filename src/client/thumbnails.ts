@@ -8,6 +8,16 @@ import type { CanvasTransform, ViewportSize } from './layout'
 
 export type PageFlowPreviewMode = 'mobile' | 'tablet' | 'pc'
 export type PageFlowThumbnailTier = 'compact' | 'full'
+
+export function thumbnailRecordsAreCurrent(
+  revision: string,
+  compact: Pick<PageFlowThumbnailRecord, 'revision'> | undefined,
+  full: Array<Pick<PageFlowThumbnailRecord, 'revision'>>,
+  allowStale = false,
+) {
+  if (!compact || !full.length) return false
+  return allowStale || (compact.revision === revision && full.every(record => record.revision === revision))
+}
 export const PAGEFLOW_THUMBNAIL_TILE_HEIGHT = 512
 export const PAGEFLOW_MAX_SINGLE_THUMBNAIL_HEIGHT = 4096
 const PAGEFLOW_THUMBNAIL_CAPTURE_VERSION = 20

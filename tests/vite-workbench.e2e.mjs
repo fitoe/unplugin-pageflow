@@ -1,10 +1,13 @@
 import assert from 'node:assert/strict'
+import { readFile, writeFile } from 'node:fs/promises'
 import test from 'node:test'
 import { fileURLToPath } from 'node:url'
 import { chromium } from '@playwright/test'
 import { createServer } from 'vite'
 
 test('Vite workbench smoke covers navigation, focus, viewport, theme, hotspots, diagnostics, and todos', { timeout: 60_000 }, async () => {
+  const canvasConfigFile = fileURLToPath(new URL('../playground/basic/.pageflow', import.meta.url))
+  const originalCanvasConfig = await readFile(canvasConfigFile, 'utf8')
   const server = await createServer({
     configFile: fileURLToPath(new URL('../playground/basic/vite.config.ts', import.meta.url)),
     server: { host: '127.0.0.1', port: 0 },
@@ -22,9 +25,8 @@ test('Vite workbench smoke covers navigation, focus, viewport, theme, hotspots, 
     const page = await browser.newPage({ viewport: { width: 1440, height: 1000 } })
     const errors = []
     let savedCanvasLayout
-    await page.route('**/__unplugin-pageflow/api/canvas-layout', async (route) => {
-      savedCanvasLayout = route.request().postDataJSON()
-      await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(savedCanvasLayout) })
+    page.on('request', (request) => {
+      if (request.url().endsWith('/__unplugin-pageflow/api/canvas-layout')) savedCanvasLayout = request.postDataJSON()
     })
     page.on('pageerror', error => errors.push(error.message))
     await page.goto(`${origin}/__unplugin-pageflow/`, { waitUntil: 'networkidle' })
@@ -88,18 +90,36 @@ test('Vite workbench smoke covers navigation, focus, viewport, theme, hotspots, 
     assert(checkoutBefore)
     await page.mouse.move(checkoutBefore.x + checkoutBefore.width / 2, checkoutBefore.y + checkoutBefore.height + 20)
     await page.mouse.down()
-    await page.mouse.move(checkoutBefore.x + checkoutBefore.width / 2 + 80, checkoutBefore.y + checkoutBefore.height + 70, { steps: 4 })
+    await page.mouse.move(checkoutBefore.x + checkoutBefore.width / 2 - 170, checkoutBefore.y + checkoutBefore.height + 120, { steps: 8 })
+    await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))))
+    const checkoutDuringDrag = await checkoutPreview.boundingBox()
+    assert(checkoutDuringDrag)
+    assert(checkoutDuringDrag.x < checkoutBefore.x - 150)
+    assert(checkoutDuringDrag.y > checkoutBefore.y + 90)
     await page.mouse.up()
-    await page.waitForTimeout(100)
+    await page.waitForTimeout(300)
     const checkoutAfter = await checkoutPreview.boundingBox()
     assert(checkoutAfter)
-    assert(checkoutAfter.x > checkoutBefore.x + 70)
-    assert(checkoutAfter.y > checkoutBefore.y + 40)
+    assert(Math.hypot(checkoutAfter.x - checkoutDuringDrag.x, checkoutAfter.y - checkoutDuringDrag.y) > 20)
     assert.equal(savedCanvasLayout.key, '/')
     assert.deepEqual(Object.keys(savedCanvasLayout.positions).sort(), ['checkout', 'explore', 'home', 'product', 'sign-in'])
+    const storedCanvasConfig = JSON.parse(await readFile(canvasConfigFile, 'utf8'))
+    assert.deepEqual(storedCanvasConfig.canvasLayouts['/'].checkout, savedCanvasLayout.positions.checkout)
+    const checkoutWorldPosition = await checkoutPreview.evaluate(element => [Number.parseFloat(element.style.left), Number.parseFloat(element.style.top)])
+    await page.reload({ waitUntil: 'networkidle' })
+    await page.getByText('0 组 / 5 页').waitFor()
+    const restoredSearch = page.getByPlaceholder('搜索页面…')
+    await restoredSearch.fill('Checkout')
+    await restoredSearch.press('Enter')
+    await page.keyboard.press('Escape')
+    await page.waitForTimeout(800)
+    const restoredWorldPosition = await page.locator('.page-preview[data-page-id="checkout"]')
+      .evaluate(element => [Number.parseFloat(element.style.left), Number.parseFloat(element.style.top)])
+    assert.deepEqual(restoredWorldPosition, checkoutWorldPosition)
     assert.deepEqual(errors, [])
   } finally {
     await browser?.close()
     await server.close()
+    await writeFile(canvasConfigFile, originalCanvasConfig)
   }
 })

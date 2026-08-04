@@ -68,6 +68,7 @@ import {
   fetchThumbnailManifest,
   fullThumbnailTiles,
   thumbnailRevision,
+  thumbnailRecordsAreCurrent,
   thumbnailPageKey,
   thumbnailSlot,
   thumbnailTierForZoom,
@@ -89,6 +90,8 @@ import {
   routeDeckPathForPage,
   PAGE_CARD_META_HEIGHT,
   PAGE_CARD_WIDTH,
+  PAGE_GRID_GAP_X,
+  PAGE_GRID_GAP_Y,
   PAGEFLOW_AUTO_PREVIEW_SCALE,
   PAGE_PREVIEW_INSET,
   type CanvasTransform,
@@ -329,6 +332,7 @@ let layoutTimeout: ReturnType<typeof setTimeout> | undefined
 let initialRevealTimer: ReturnType<typeof setTimeout> | undefined
 const failedPreviewIds = new Set<string>()
 const forcedThumbnailRefreshIds = new Set<string>()
+const deferredThumbnailRefreshIds = new Set<string>()
 const manualCaptureIds = new Set<string>()
 const previewFrames = new PreviewFrameRegistry()
 const captureFrameElement = ref<HTMLIFrameElement>()
@@ -360,7 +364,12 @@ let focusTargetDrag: {
   startY: number
   moved: boolean
 } | undefined
-let canvasPageDrag: typeof focusTargetDrag
+let canvasPageDrag: (NonNullable<typeof focusTargetDrag> & {
+  gridOrigin: [number, number]
+  rowStep: number
+}) | undefined
+let pendingCanvasDragPosition: [number, number] | undefined
+let canvasSnappingPageId: string | undefined
 let previewGeneration = 0
 const MAX_MOUNTED_PREVIEWS = 96
 const MAX_DECK_LAYERS = 5
@@ -381,6 +390,7 @@ const animationHost = {
 const focusAnimation = new FrameAnimation(animationHost)
 const hoverAnimation = new FrameAnimation(animationHost)
 const flightAnimation = new FrameAnimation(animationHost)
+const canvasSnapAnimation = new FrameAnimation(animationHost)
 let thumbnailResourceGeneration = 0
 let focusedTestsRequest = 0
 let sceneRenderFrame = 0
@@ -872,9 +882,7 @@ function thumbnailIsCurrent(page: PageFlowPage) {
   const revision = pageThumbnailRevision(page)
   const compact = compactThumbnailRecord(page.id)
   const full = fullThumbnailRecords(page.id)
-  return compact?.revision === revision
-    && Boolean(full.length)
-    && full.every(record => record.revision === revision)
+  return thumbnailRecordsAreCurrent(revision, compact, full, deferredThumbnailRefreshIds.has(page.id))
 }
 
 function pageThumbnailTiles(page: PageFlowPage) {
@@ -928,6 +936,7 @@ async function captureHostThumbnail(page: PageFlowPage, capturedSource?: string)
     ...Object.fromEntries(records.map(record => [thumbnailUrl(props.config, record), source])),
   }
   forcedThumbnailRefreshIds.delete(page.id)
+  deferredThumbnailRefreshIds.delete(page.id)
   manualCaptureIds.delete(page.id)
   failedHostThumbnailIds.delete(page.id)
   draw()
@@ -954,7 +963,8 @@ function restoreHostThumbnails(value: unknown) {
   storedHostThumbnails = parseStoredHostThumbnails(value)
   storedHostThumbnails.forEach((item) => {
     const page = pages.value.find(page => thumbnailPageKey(page, pages.value) === item.pageId)
-    if (!page || item.revision !== pageThumbnailRevision(page, item.mode)) return
+    if (!page) return
+    if (item.revision !== pageThumbnailRevision(page, item.mode)) deferredThumbnailRefreshIds.add(page.id)
     const records = storedHostThumbnailRecords(item)
     Object.assign(thumbnailManifest.value, Object.fromEntries(records.map(record => [record.slot, record])))
     records.forEach((record) => {
@@ -1007,8 +1017,9 @@ function pagePreviewHeight(pageId: string) {
   const fullRoot = fullThumbnailRecords(pageId)[0]
   const revision = pages.value.find(page => page.id === pageId)
   const currentRevision = revision ? pageThumbnailRevision(revision) : undefined
-  const currentCompact = compact?.revision === currentRevision ? compact : undefined
-  const currentFullRoot = fullRoot?.revision === currentRevision ? fullRoot : undefined
+  const allowStale = deferredThumbnailRefreshIds.has(pageId)
+  const currentCompact = allowStale || compact?.revision === currentRevision ? compact : undefined
+  const currentFullRoot = allowStale || fullRoot?.revision === currentRevision ? fullRoot : undefined
   return currentCompact?.pageHeight ?? currentCompact?.height ?? currentFullRoot?.pageHeight ?? currentFullRoot?.height
     ?? Math.round(PAGE_CARD_WIDTH * currentPreviewMode.value.height / currentPreviewMode.value.width)
 }
@@ -1065,13 +1076,14 @@ function restoreCanvasLayout(
   return next
 }
 
-async function saveCurrentCanvasLayout() {
+async function saveCurrentCanvasLayout(positionOverrides: Record<string, [number, number]> = {}) {
   const key = canvasLayoutKey()
   const storedPositions = Object.fromEntries(canvasPages.value.flatMap((page) => {
-    const position = positions.value.get(page.id)
+    const position = positionOverrides[page.id] ?? positions.value.get(page.id)
     return position ? [[page.id, position] as const] : []
   }))
   const nextLayouts = { ...canvasLayouts.value, [key]: storedPositions }
+  canvasLayouts.value = nextLayouts
   try {
     if (props.host) {
       if (!hostCanvasOrigin) throw new Error('画板存储尚未就绪')
@@ -1085,7 +1097,6 @@ async function saveCurrentCanvasLayout() {
       })
       if (!response.ok) throw new Error('保存失败')
     }
-    canvasLayouts.value = nextLayouts
   } catch {
     status.value = '页面布局保存失败'
   }
@@ -1980,6 +1991,11 @@ function handleFocusTargetPointerDown(event: PointerEvent) {
     })
     const position = page ? positions.value.get(page.id) : undefined
     if (!page || !position) return
+    canvasSnapAnimation.cancel()
+    canvasSnappingPageId = undefined
+    pendingCanvasDragPosition = undefined
+    const gridPages = canvasPages.value.filter(item => item.id !== page.id)
+    const gridPositions = gridPages.flatMap(item => positions.value.get(item.id) ?? [])
     canvasPageDrag = {
       pointerId: event.pointerId,
       pageId: page.id,
@@ -1988,6 +2004,10 @@ function handleFocusTargetPointerDown(event: PointerEvent) {
       startX: position[0],
       startY: position[1],
       moved: false,
+      gridOrigin: gridPositions.length
+        ? [Math.min(...gridPositions.filter((_, index) => index % 2 === 0)), Math.min(...gridPositions.filter((_, index) => index % 2 === 1))]
+        : position,
+      rowStep: Math.max(pageCardHeight(page.id), ...gridPages.map(item => pageCardHeight(item.id))) + PAGE_GRID_GAP_Y,
     }
     event.preventDefault()
     event.stopPropagation()
@@ -2020,7 +2040,7 @@ function handleFocusTargetPointerMove(event: PointerEvent) {
     if (!canvasDrag.moved && Math.hypot(deltaX, deltaY) < 3) return
     canvasDrag.moved = true
     focusTargetDraggedAt = performance.now()
-    positions.value = new Map(positions.value).set(canvasDrag.pageId, [canvasDrag.startX + deltaX, canvasDrag.startY + deltaY])
+    pendingCanvasDragPosition = [canvasDrag.startX + deltaX, canvasDrag.startY + deltaY]
     scheduleCanvasRender()
     event.preventDefault()
     event.stopPropagation()
@@ -2121,14 +2141,70 @@ function clearFocusTargetHover() {
   setHoveredHotspot(undefined)
 }
 
+function nearestFreeCanvasGridPosition(drag: NonNullable<typeof canvasPageDrag>, position: [number, number]) {
+  const columnStep = PAGE_CARD_WIDTH + PAGE_GRID_GAP_X
+  const centerColumn = Math.round((position[0] - drag.gridOrigin[0]) / columnStep)
+  const centerRow = Math.round((position[1] - drag.gridOrigin[1]) / drag.rowStep)
+  const otherPages = canvasPages.value.flatMap((page) => {
+    const pagePosition = page.id === drag.pageId ? undefined : positions.value.get(page.id)
+    return pagePosition ? [{ position: pagePosition, height: pageCardHeight(page.id) }] : []
+  })
+  const isFree = ([x, y]: [number, number]) => otherPages.every(other => (
+    x + PAGE_CARD_WIDTH + 8 <= other.position[0]
+    || x >= other.position[0] + PAGE_CARD_WIDTH + 8
+    || y + pageCardHeight(drag.pageId) + 8 <= other.position[1]
+    || y >= other.position[1] + other.height + 8
+  ))
+  for (let radius = 0; radius < 100; radius++) {
+    const candidates: Array<[number, number]> = []
+    for (let rowOffset = -radius; rowOffset <= radius; rowOffset++) {
+      for (let columnOffset = -radius; columnOffset <= radius; columnOffset++) {
+        if (Math.max(Math.abs(columnOffset), Math.abs(rowOffset)) !== radius) continue
+        candidates.push([
+          drag.gridOrigin[0] + (centerColumn + columnOffset) * columnStep,
+          drag.gridOrigin[1] + (centerRow + rowOffset) * drag.rowStep,
+        ])
+      }
+    }
+    candidates.sort((left, right) => Math.hypot(left[0] - position[0], left[1] - position[1])
+      - Math.hypot(right[0] - position[0], right[1] - position[1]))
+    const free = candidates.find(isFree)
+    if (free) return free
+  }
+  return position
+}
+
+function flushPendingCanvasDragPosition(drag = canvasPageDrag) {
+  if (!drag || !pendingCanvasDragPosition) return
+  positions.value = new Map(positions.value).set(drag.pageId, pendingCanvasDragPosition)
+  pendingCanvasDragPosition = undefined
+}
+
 function handleFocusTargetPointerUp(event: PointerEvent) {
   if (canvasPageDrag && canvasPageDrag.pointerId === event.pointerId) {
-    const moved = canvasPageDrag.moved
+    const drag = canvasPageDrag
+    const moved = drag.moved
+    flushPendingCanvasDragPosition(drag)
     canvasPageDrag = undefined
     if (moved) {
       focusTargetDraggedAt = performance.now()
       suppressCanvasClickUntil = performance.now() + 500
-      void saveCurrentCanvasLayout()
+      const start = positions.value.get(drag.pageId) ?? [drag.startX, drag.startY]
+      const target = nearestFreeCanvasGridPosition(drag, start)
+      void saveCurrentCanvasLayout({ [drag.pageId]: target })
+      canvasSnappingPageId = drag.pageId
+      canvasSnapAnimation.start(180, (progress) => {
+        const eased = 1 - (1 - progress) ** 3
+        positions.value = new Map(positions.value).set(drag.pageId, [
+          start[0] + (target[0] - start[0]) * eased,
+          start[1] + (target[1] - start[1]) * eased,
+        ])
+        scheduleCanvasRender()
+      }, () => {
+        positions.value = new Map(positions.value).set(drag.pageId, target)
+        canvasSnappingPageId = undefined
+        scheduleCanvasRender()
+      })
       event.preventDefault()
       event.stopPropagation()
     }
@@ -2252,6 +2328,7 @@ async function capturePreview(pageId: string, frame: HTMLIFrameElement, ready = 
     if (retryTimer) window.clearTimeout(retryTimer)
     captureRetryTimers.delete(pageId)
     forcedThumbnailRefreshIds.delete(pageId)
+    deferredThumbnailRefreshIds.delete(pageId)
   } catch (error) {
     forcedThumbnailRefreshIds.delete(pageId)
     failedPreviewIds.add(pageId)
@@ -2687,6 +2764,20 @@ function scheduleCanvasRender() {
   if (sceneRenderFrame) return
   sceneRenderFrame = requestAnimationFrame(() => {
     sceneRenderFrame = 0
+    const movingPageId = canvasPageDrag?.pageId ?? canvasSnappingPageId
+    flushPendingCanvasDragPosition()
+    if (movingPageId) {
+      const position = positions.value.get(movingPageId)
+      const node = cardNodes?.get(movingPageId)
+      if (position && node) {
+        const scale = movingPageId === active.value ? SELECTED_PAGE_SCALE : 1
+        node.set({
+          x: position[0] - PAGE_CARD_WIDTH * (scale - 1) / 2,
+          y: position[1] - pagePreviewHeight(movingPageId) * (scale - 1) / 2,
+        })
+        return
+      }
+    }
     renderCanvasScene()
   })
 }
@@ -2751,6 +2842,14 @@ function applyGraph(nextPages: PageFlowPage[], nextRouteMode: PageFlowRouteMode)
   }
   focusedPageStateCache.retain(plan.pageIds)
   if (plan.focusedPageRemoved) exitFocus()
+  const previousPages = new Map(pages.value.map(page => [page.id, page]))
+  nextPages.forEach((page) => {
+    const previous = previousPages.get(page.id)
+    if (previous && pageThumbnailRevision(previous) !== pageThumbnailRevision(page)) deferredThumbnailRefreshIds.add(page.id)
+  })
+  deferredThumbnailRefreshIds.forEach((pageId) => {
+    if (!plan.pageIds.has(pageId)) deferredThumbnailRefreshIds.delete(pageId)
+  })
   pages.value = nextPages
   if (followsPromotedRoot) routeGroupPath.value = nextPromotedPath
   active.value = plan.activeId
@@ -2781,6 +2880,7 @@ function applyPageUpdate(nextPage: PageFlowPage) {
   }
   pages.value = plan.pages
   if (plan.sourceChanged) {
+    deferredThumbnailRefreshIds.add(nextPage.id)
     diagnosticsByPage.delete(nextPage.id)
     if (nextPage.id === focusedPageId.value) {
       focusedDiagnostics.value = nextPage.diagnostics ?? []
@@ -3094,9 +3194,12 @@ onUnmounted(() => {
   window.removeEventListener('pointercancel', handleFocusTargetPointerUp, true)
   cancelAnimationFrame(viewportFrame)
   cancelAnimationFrame(sceneRenderFrame)
+  pendingCanvasDragPosition = undefined
+  canvasSnappingPageId = undefined
   cancelAnimationFrame(capturePulseFrame)
   hoverAnimation.dispose()
   flightAnimation.dispose()
+  canvasSnapAnimation.dispose()
   focusAnimation.dispose()
   clearTimeout(viewportIdleTimer)
   cancelScheduledCapture()

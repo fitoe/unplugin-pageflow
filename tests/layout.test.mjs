@@ -8,7 +8,7 @@ test('lays out linked pages in layers and limits previews to the viewport', asyn
     const { assignOrderedFocusSides, centerPageTransform, collapseRepeatedListLinks, createPageSpatialIndex, createRouteDeckView, fitFocusedPreviewTransform, getRenderablePages, getVisiblePageIds, layoutPageGrid, layoutPagesByRoute, promotedRouteGroupPath, queryPageSpatialIndex, responsivePageGridColumns, routeDeckPathForPage } = await server.ssrLoadModule('/src/client/layout.ts')
     const { forwardWheelToCanvas, PAGEFLOW_CANVAS_CONFIG } = await server.ssrLoadModule('/src/client/canvas.ts')
     const { resolvePreviewUrl, touchPreviewCache } = await server.ssrLoadModule('/src/client/preview.ts')
-    const { fullThumbnailTiles, thumbnailPageKey, thumbnailRevision, thumbnailSlot, thumbnailTierForZoom, thumbnailUrl, visibleThumbnailTiles, visibleThumbnailTilesOrCompact } = await server.ssrLoadModule('/src/client/thumbnails.ts')
+    const { fullThumbnailTiles, thumbnailPageKey, thumbnailRecordsAreCurrent, thumbnailRevision, thumbnailSlot, thumbnailTierForZoom, thumbnailUrl, visibleThumbnailTiles, visibleThumbnailTilesOrCompact } = await server.ssrLoadModule('/src/client/thumbnails.ts')
     const { boundedPreviewDocumentHeight, isInfiniteListDocument, maskedIconBackground, materializeMaskedIcons, previewDocumentHeight } = await server.ssrLoadModule('/src/client/snapshot.ts')
     const { FocusedPageStateCache, preserveScannedFocusedLinks } = await server.ssrLoadModule('/src/client/focus-cache.ts')
     const pages = Array.from({ length: 30 }, (_, index) => ({
@@ -127,6 +127,9 @@ test('lays out linked pages in layers and limits previews to the viewport', asyn
       thumbnailUrl({ previewPath: '/preview/' }, { slot: 'home', revision: 'one', updatedAt: 1 }),
       thumbnailUrl({ previewPath: '/preview/' }, { slot: 'home', revision: 'one', updatedAt: 2 }),
     )
+    assert.equal(thumbnailRecordsAreCurrent('new', { revision: 'old' }, [{ revision: 'old' }]), false)
+    assert.equal(thumbnailRecordsAreCurrent('new', { revision: 'old' }, [{ revision: 'old' }], true), true)
+    assert.equal(thumbnailRecordsAreCurrent('new', undefined, [], true), false)
     const positions = layoutPageGrid(pages)
     assert.equal(positions.get('page-5')[1] - positions.get('page-0')[1], 286)
     assert.equal(responsivePageGridColumns({ width: 1_440, height: 900 }, pages), 4)

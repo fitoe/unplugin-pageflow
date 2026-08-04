@@ -14,6 +14,10 @@ export class SceneNodeCache<T extends UI> {
     return this.entries.size
   }
 
+  get(id: string) {
+    return this.entries.get(id)?.node
+  }
+
   upsert(id: string, signature: string, create: () => T, update: (node: T) => void) {
     const existing = this.entries.get(id)
     if (existing?.signature === signature) {
