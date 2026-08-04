@@ -8,7 +8,7 @@ test('lays out linked pages in layers and limits previews to the viewport', asyn
     const { assignOrderedFocusSides, centerPageTransform, collapseRepeatedListLinks, createPageSpatialIndex, createRouteDeckView, fitFocusedPreviewTransform, getRenderablePages, getVisiblePageIds, layoutPageGrid, layoutPagesByRoute, promotedRouteGroupPath, queryPageSpatialIndex, responsivePageGridColumns, routeDeckPathForPage } = await server.ssrLoadModule('/src/client/layout.ts')
     const { forwardWheelToCanvas, PAGEFLOW_CANVAS_CONFIG } = await server.ssrLoadModule('/src/client/canvas.ts')
     const { resolvePreviewUrl, touchPreviewCache } = await server.ssrLoadModule('/src/client/preview.ts')
-    const { fullThumbnailTiles, thumbnailPageKey, thumbnailRevision, thumbnailSlot, thumbnailTierForZoom, thumbnailUrl, visibleThumbnailTiles } = await server.ssrLoadModule('/src/client/thumbnails.ts')
+    const { fullThumbnailTiles, thumbnailPageKey, thumbnailRevision, thumbnailSlot, thumbnailTierForZoom, thumbnailUrl, visibleThumbnailTiles, visibleThumbnailTilesOrCompact } = await server.ssrLoadModule('/src/client/thumbnails.ts')
     const { boundedPreviewDocumentHeight, isInfiniteListDocument, maskedIconBackground, materializeMaskedIcons, previewDocumentHeight } = await server.ssrLoadModule('/src/client/snapshot.ts')
     const { FocusedPageStateCache, preserveScannedFocusedLinks } = await server.ssrLoadModule('/src/client/focus-cache.ts')
     const pages = Array.from({ length: 30 }, (_, index) => ({
@@ -129,8 +129,14 @@ test('lays out linked pages in layers and limits previews to the viewport', asyn
     )
     const positions = layoutPageGrid(pages)
     assert.equal(positions.get('page-5')[1] - positions.get('page-0')[1], 286)
-    assert.equal(responsivePageGridColumns(1_440, pages.length), 4)
-    assert.equal(responsivePageGridColumns(720, pages.length), 2)
+    assert.equal(responsivePageGridColumns({ width: 1_440, height: 900 }, pages), 4)
+    assert.equal(responsivePageGridColumns({ width: 720, height: 900 }, pages), 2)
+    const shortPages = pages.slice(0, 4)
+    const shortPageHeights = new Map(shortPages.map(page => [page.id, 150]))
+    assert.equal(responsivePageGridColumns({ width: 1_440, height: 900 }, shortPages, shortPageHeights), 2)
+    const shortPagePositions = layoutPageGrid(shortPages, shortPageHeights, 2)
+    assert.equal(new Set([...shortPagePositions.values()].map(([x]) => x)).size, 2)
+    assert.equal(new Set([...shortPagePositions.values()].map(([, y]) => y)).size, 2)
     const masonryPositions = layoutPageGrid(pages.slice(0, 5), new Map([
       ['page-0', 500],
       ['page-1', 200],
@@ -333,6 +339,11 @@ test('lays out linked pages in layers and limits previews to the viewport', asyn
     assert.deepEqual(
       visibleThumbnailTiles(tiles, 64, { width: 1000, height: 700 }, { x: 0, y: 0, scaleX: 1, scaleY: 1 }, 0).map(tile => tile.tileIndex),
       [0, 1],
+    )
+    const compactFallback = { ...tiles[0], slot: thumbnailSlot('home', 'pc', 'compact'), tileCount: undefined, tileIndex: undefined, tileTop: undefined }
+    assert.deepEqual(
+      visibleThumbnailTilesOrCompact(tiles, compactFallback, 10_000, { width: 1000, height: 700 }, { x: 0, y: 0, scaleX: 1, scaleY: 1 }, 0),
+      [compactFallback],
     )
     assert.equal(resolvePreviewUrl('/products/:id', {
       enabled: true,

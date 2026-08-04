@@ -72,7 +72,7 @@ import {
   thumbnailSlot,
   thumbnailTierForZoom,
   thumbnailUrl,
-  visibleThumbnailTiles,
+  visibleThumbnailTilesOrCompact,
   type PageFlowPreviewMode,
   type PageFlowThumbnailTier,
 } from './client/thumbnails'
@@ -142,6 +142,7 @@ const routeGroupPath = ref<string[]>([])
 const active = ref('home')
 const status = ref(props.config.previewPath === '/' ? 'Demo data' : 'Discovering routes…')
 const groupNames = ref({ ...props.config.groupNames })
+const canvasLayouts = ref({ ...props.config.canvasLayouts })
 const zoomPercent = ref(90)
 const visiblePageIds = ref(new Set<string>())
 const viewportInteracting = ref(false)
@@ -359,6 +360,7 @@ let focusTargetDrag: {
   startY: number
   moved: boolean
 } | undefined
+let canvasPageDrag: typeof focusTargetDrag
 let previewGeneration = 0
 const MAX_MOUNTED_PREVIEWS = 96
 const MAX_DECK_LAYERS = 5
@@ -415,11 +417,12 @@ function deckLayerPages(pageId: string) {
 function visibleDeckLayerPages(pageId: string) {
   return deckLayerPages(pageId).slice(0, MAX_DECK_LAYERS)
 }
-const positions = ref(layoutPageGrid(
+const initialGridPositions = layoutPageGrid(
   canvasPages.value,
   cardHeights.value,
-  responsivePageGridColumns(window.innerWidth, canvasPages.value.length),
-))
+  responsivePageGridColumns({ width: window.innerWidth, height: window.innerHeight }, canvasPages.value, cardHeights.value),
+)
+const positions = ref(restoreCanvasLayout(initialGridPositions, canvasPages.value))
 const spatialIndex = computed(() => createPageSpatialIndex(canvasPages.value, positions.value, cardHeights.value))
 const focusedTargetPageIds = computed(() => {
   return resolveFocusTargetPageIds(pages.value, focusedLinks.value, focusedPageId.value)
@@ -879,9 +882,13 @@ function pageThumbnailTiles(page: PageFlowPage) {
   if (thumbnailTier.value === 'compact') return compact ? [compact] : []
   const full = fullThumbnailRecords(page.id)
   if (!full.length) return compact ? [compact] : []
-  return visibleThumbnailTiles(
+  const focusedTarget = focusScene.value?.targets.find(target => target.page.id === page.id)
+  const pageWorldY = focusedTarget?.y
+    ?? (focusScene.value?.source.id === page.id ? focusScene.value.sourcePosition[1] : pagePosition(page.id)[1])
+  return visibleThumbnailTilesOrCompact(
     full,
-    pagePosition(page.id)[1],
+    compact,
+    pageWorldY,
     { width: canvas.value?.clientWidth ?? 0, height: canvas.value?.clientHeight ?? 0 },
     settledTransform.value,
   )
@@ -1027,16 +1034,77 @@ function centerLayoutHorizontally(source: Map<string, [number, number]>, layoutP
   return new Map([...source].map(([id, [x, y]]) => [id, [x + offset, y] as [number, number]]))
 }
 
+function canvasLayoutKey(path = routeGroupPath.value) {
+  return `/${path.map(segment => encodeURIComponent(segment)).join('/')}`
+}
+
+function parseCanvasLayouts(value: unknown) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return {}
+  return Object.fromEntries(Object.entries(value).flatMap(([key, layout]) => {
+    if (!layout || typeof layout !== 'object' || Array.isArray(layout)) return []
+    const positions = Object.fromEntries(Object.entries(layout).filter((entry): entry is [string, [number, number]] => {
+      const position = entry[1]
+      return Array.isArray(position) && position.length === 2 && position.every(item => typeof item === 'number' && Number.isFinite(item))
+    }))
+    return [[key, positions]]
+  }))
+}
+
+function restoreCanvasLayout(
+  source: Map<string, [number, number]>,
+  layoutPages: PageFlowPage[],
+  path = routeGroupPath.value,
+) {
+  const stored = canvasLayouts.value[canvasLayoutKey(path)]
+  if (!stored) return source
+  const next = new Map(source)
+  layoutPages.forEach((page) => {
+    const position = stored[page.id]
+    if (Array.isArray(position) && position.length === 2 && position.every(Number.isFinite)) next.set(page.id, position)
+  })
+  return next
+}
+
+async function saveCurrentCanvasLayout() {
+  const key = canvasLayoutKey()
+  const storedPositions = Object.fromEntries(canvasPages.value.flatMap((page) => {
+    const position = positions.value.get(page.id)
+    return position ? [[page.id, position] as const] : []
+  }))
+  const nextLayouts = { ...canvasLayouts.value, [key]: storedPositions }
+  try {
+    if (props.host) {
+      if (!hostCanvasOrigin) throw new Error('画板存储尚未就绪')
+      hostCanvasStorage = { ...hostCanvasStorage, canvasLayouts: nextLayouts, updatedAt: Date.now() }
+      await savePageFlowCanvas(props.host, hostCanvasOrigin, hostCanvasStorage)
+    } else {
+      const response = await fetch(`${props.config.previewPath}api/canvas-layout`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ key, positions: storedPositions }),
+      })
+      if (!response.ok) throw new Error('保存失败')
+    }
+    canvasLayouts.value = nextLayouts
+  } catch {
+    status.value = '页面布局保存失败'
+  }
+}
+
 function layoutRouteGroup(path: string[]) {
   const layoutPagesList = canvasPagesFor(pages.value, path)
+  const heights = new Map(layoutPagesList.map(page => [page.id, pageCardHeight(page.id)]))
   const layoutPositions = layoutPageGrid(
     layoutPagesList,
-    new Map(layoutPagesList.map(page => [page.id, pageCardHeight(page.id)])),
-    responsivePageGridColumns(canvas.value?.clientWidth ?? window.innerWidth, layoutPagesList.length),
+    heights,
+    responsivePageGridColumns({
+      width: canvas.value?.clientWidth ?? window.innerWidth,
+      height: canvas.value?.clientHeight ?? window.innerHeight,
+    }, layoutPagesList, heights),
   )
   return {
     pages: layoutPagesList,
-    positions: centerLayoutHorizontally(layoutPositions, layoutPagesList),
+    positions: restoreCanvasLayout(centerLayoutHorizontally(layoutPositions, layoutPagesList), layoutPagesList, path),
   }
 }
 
@@ -1078,11 +1146,14 @@ function requestLayout(nextPages = pages.value, _animate = false) {
   ++layoutRequestId
   const layoutPagesList = canvasPagesFor(nextPages)
   const heights = new Map(layoutPagesList.map(page => [page.id, pageCardHeight(page.id)]))
-  positions.value = centerLayoutHorizontally(layoutPageGrid(
+  positions.value = restoreCanvasLayout(centerLayoutHorizontally(layoutPageGrid(
     layoutPagesList,
     heights,
-    responsivePageGridColumns(canvas.value?.clientWidth ?? window.innerWidth, layoutPagesList.length),
-  ), layoutPagesList)
+    responsivePageGridColumns({
+      width: canvas.value?.clientWidth ?? window.innerWidth,
+      height: canvas.value?.clientHeight ?? window.innerHeight,
+    }, layoutPagesList, heights),
+  ), layoutPagesList), layoutPagesList)
   draw()
   initialLayoutSettled.value = true
   scheduleInitialSceneReveal()
@@ -1897,11 +1968,31 @@ function handleCanvasClick(event: MouseEvent) {
 function handleFocusTargetPointerDown(event: PointerEvent) {
   if (!leafer || !canvas.value || event.button !== 0) return
   const focus = focusScene.value
-  if (!focus) return
   const bounds = canvas.value.getBoundingClientRect()
   const layer = leafer.zoomLayer
   const worldX = (event.clientX - bounds.left - (layer.x ?? 0)) / (layer.scaleX ?? 1)
   const worldY = (event.clientY - bounds.top - (layer.y ?? 0)) / (layer.scaleY ?? 1)
+  if (!focus) {
+    const page = [...canvasPages.value].reverse().find((item) => {
+      const position = positions.value.get(item.id)
+      return position && worldX >= position[0] && worldX <= position[0] + PAGE_CARD_WIDTH
+        && worldY >= position[1] && worldY <= position[1] + pageCardHeight(item.id)
+    })
+    const position = page ? positions.value.get(page.id) : undefined
+    if (!page || !position) return
+    canvasPageDrag = {
+      pointerId: event.pointerId,
+      pageId: page.id,
+      startClientX: event.clientX,
+      startClientY: event.clientY,
+      startX: position[0],
+      startY: position[1],
+      moved: false,
+    }
+    event.preventDefault()
+    event.stopPropagation()
+    return
+  }
   const target = [...focus.targets].reverse().find(item => worldX >= item.x
     && worldX <= item.x + PAGE_CARD_WIDTH * item.scale
     && worldY >= item.y
@@ -1921,6 +2012,20 @@ function handleFocusTargetPointerDown(event: PointerEvent) {
 }
 
 function handleFocusTargetPointerMove(event: PointerEvent) {
+  const canvasDrag = canvasPageDrag
+  if (canvasDrag && canvasDrag.pointerId === event.pointerId && leafer) {
+    const scale = leafer.zoomLayer.scaleX ?? 1
+    const deltaX = (event.clientX - canvasDrag.startClientX) / scale
+    const deltaY = (event.clientY - canvasDrag.startClientY) / scale
+    if (!canvasDrag.moved && Math.hypot(deltaX, deltaY) < 3) return
+    canvasDrag.moved = true
+    focusTargetDraggedAt = performance.now()
+    positions.value = new Map(positions.value).set(canvasDrag.pageId, [canvasDrag.startX + deltaX, canvasDrag.startY + deltaY])
+    scheduleCanvasRender()
+    event.preventDefault()
+    event.stopPropagation()
+    return
+  }
   const drag = focusTargetDrag
   if (!drag || drag.pointerId !== event.pointerId || !leafer) return
   const scale = leafer.zoomLayer.scaleX ?? 1
@@ -1939,7 +2044,7 @@ function handleFocusTargetPointerMove(event: PointerEvent) {
 }
 
 function handleFocusTargetHover(event: PointerEvent) {
-  if (focusTargetDrag || !leafer || !canvas.value) return
+  if (focusTargetDrag || canvasPageDrag || !leafer || !canvas.value) return
   const focus = focusScene.value
   if (!focus) return
   const bounds = canvas.value.getBoundingClientRect()
@@ -1963,7 +2068,7 @@ function handleCanvasCursor(event: PointerEvent) {
     canvas.value.style.cursor = cursor
     if (canvasView) canvasView.style.cursor = cursor
   }
-  if (focusTargetDrag) {
+  if (focusTargetDrag || canvasPageDrag) {
     setCursor('move')
     return
   }
@@ -2002,7 +2107,7 @@ function handleCanvasCursor(event: PointerEvent) {
     }, 0)
   } else if (pageHit) {
     setTimeout(() => {
-      setCursor('default')
+      setCursor(focusScene.value ? 'default' : 'move')
     }, 0)
   } else {
     setTimeout(() => {
@@ -2012,11 +2117,23 @@ function handleCanvasCursor(event: PointerEvent) {
 }
 
 function clearFocusTargetHover() {
-  if (focusTargetDrag || hoveredHotspot.value?.centerX != null) return
+  if (focusTargetDrag || canvasPageDrag || hoveredHotspot.value?.centerX != null) return
   setHoveredHotspot(undefined)
 }
 
 function handleFocusTargetPointerUp(event: PointerEvent) {
+  if (canvasPageDrag && canvasPageDrag.pointerId === event.pointerId) {
+    const moved = canvasPageDrag.moved
+    canvasPageDrag = undefined
+    if (moved) {
+      focusTargetDraggedAt = performance.now()
+      suppressCanvasClickUntil = performance.now() + 500
+      void saveCurrentCanvasLayout()
+      event.preventDefault()
+      event.stopPropagation()
+    }
+    return
+  }
   if (!focusTargetDrag || focusTargetDrag.pointerId !== event.pointerId) return
   if (focusTargetDrag.moved) {
     focusTargetDraggedAt = performance.now()
@@ -2855,7 +2972,10 @@ onMounted(async () => {
       return
     }
     const layoutPagesList = canvasPagesFor(pages.value)
-    const nextPositions = centerLayoutHorizontally(new Map<string, [number, number]>(event.data.positions), layoutPagesList)
+    const nextPositions = restoreCanvasLayout(
+      centerLayoutHorizontally(new Map<string, [number, number]>(event.data.positions), layoutPagesList),
+      layoutPagesList,
+    )
     status.value = pages.value.length ? 'Routes synced' : status.value
     const targetPosition = nextPositions.get(active.value)
     if (animateLayoutRequest && initialSceneReady.value && positions.value.has(active.value) && targetPosition) {
@@ -2896,6 +3016,11 @@ onMounted(async () => {
       applyHostState(session.state)
       hostCanvasOrigin = session.origin
       hostCanvasStorage = session.storage
+      canvasLayouts.value = {
+        ...canvasLayouts.value,
+        ...parseCanvasLayouts(hostCanvasStorage.canvasLayouts),
+      }
+      requestLayout()
       const storedGroupNames = hostCanvasStorage.groupNames
       if (storedGroupNames && typeof storedGroupNames === 'object' && !Array.isArray(storedGroupNames)) {
         groupNames.value = {

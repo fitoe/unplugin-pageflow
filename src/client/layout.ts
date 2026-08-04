@@ -142,10 +142,19 @@ export function getRenderablePages(
   return pages.filter(page => selectedIds.has(page.id))
 }
 
-export function responsivePageGridColumns(viewportWidth: number, itemCount: number) {
-  const availableWidth = Math.max(PAGE_CARD_WIDTH, viewportWidth - PAGE_GRID_INSET * 2)
-  const columns = Math.max(1, Math.floor((availableWidth + PAGE_GRID_GAP_X) / (PAGE_CARD_WIDTH + PAGE_GRID_GAP_X)))
-  return Math.min(Math.max(1, itemCount), columns)
+export function responsivePageGridColumns(
+  viewport: ViewportSize,
+  items: PageFlowPage[],
+  cardHeights = new Map<string, number>(),
+) {
+  const availableWidth = Math.max(PAGE_CARD_WIDTH, viewport.width - PAGE_GRID_INSET * 2)
+  const availableHeight = Math.max(PAGE_CARD_HEIGHT, viewport.height - PAGE_GRID_INSET * 2)
+  const maximumColumns = Math.max(1, Math.floor((availableWidth + PAGE_GRID_GAP_X) / (PAGE_CARD_WIDTH + PAGE_GRID_GAP_X)))
+  const totalCardHeight = items.reduce((total, page) => total + (cardHeights.get(page.id) ?? PAGE_CARD_HEIGHT) + PAGE_GRID_GAP_Y, 0)
+  const balancedColumns = Math.max(1, Math.round(Math.sqrt(
+    (availableWidth / availableHeight) * totalCardHeight / (PAGE_CARD_WIDTH + PAGE_GRID_GAP_X),
+  )))
+  return Math.min(Math.max(1, items.length), maximumColumns, balancedColumns)
 }
 
 export function layoutPageGrid(items: PageFlowPage[], cardHeights = new Map<string, number>(), columns = 5) {

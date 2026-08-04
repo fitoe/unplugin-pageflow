@@ -145,3 +145,15 @@ export function visibleThumbnailTiles(
     return bottom >= -margin && top <= viewport.height + margin
   })
 }
+
+export function visibleThumbnailTilesOrCompact(
+  records: PageFlowThumbnailRecord[],
+  compact: PageFlowThumbnailRecord | undefined,
+  pageWorldY: number,
+  viewport: ViewportSize,
+  transform: CanvasTransform,
+  margin = 240,
+) {
+  const visible = visibleThumbnailTiles(records, pageWorldY, viewport, transform, margin)
+  return visible.length ? visible : compact ? [compact] : []
+}

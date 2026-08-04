@@ -119,6 +119,7 @@ function resolveOptions(options: PageFlowOptions = {}): ResolvedPageFlowOptions 
     dynamicParams: options.dynamicParams ?? {},
     previewRoles: options.previewRoles ?? [],
     groupNames: options.groupNames ?? {},
+    canvasLayouts: options.canvasLayouts ?? {},
     pageTests: options.pageTests ?? {},
     testCommands: options.testCommands ?? {},
     diagnostics: resolvePageFlowDiagnosticOptions(options.diagnostics),
@@ -143,6 +144,7 @@ async function loadProjectOptions(root: string, options: PageFlowOptions = {}) {
     routes: options.routes ?? stored.routes,
     previewRoles: options.previewRoles ?? stored.previewRoles,
     groupNames: { ...(options.groupNames ?? {}), ...(stored.groupNames ?? {}) },
+    canvasLayouts: { ...(options.canvasLayouts ?? {}), ...(stored.canvasLayouts ?? {}) },
     pageTests: options.pageTests ?? stored.pageTests,
     testCommands: options.testCommands ?? stored.testCommands,
     diagnostics: {
@@ -756,6 +758,7 @@ const factory: UnpluginFactory<PageFlowOptions | undefined> = (options) => {
           const stylePath = `${resolved.previewPath}style.css`
           const clientVersionPath = `${resolved.previewPath}api/client-version`
           const groupNamePath = `${resolved.previewPath}api/group-name`
+          const canvasLayoutPath = `${resolved.previewPath}api/canvas-layout`
           const testsPath = `${resolved.previewPath}api/tests`
           const lighthousePath = `${resolved.previewPath}api/lighthouse`
           const aiContextPath = `${resolved.previewPath}api/ai-context`
@@ -989,6 +992,39 @@ const factory: UnpluginFactory<PageFlowOptions | undefined> = (options) => {
               if (configModule) server.moduleGraph.invalidateModule(configModule)
               response.setHeader('Content-Type', 'application/json; charset=utf-8')
               response.end(JSON.stringify({ key, name }))
+            } catch (error) {
+              response.statusCode = 400
+              response.setHeader('Content-Type', 'application/json; charset=utf-8')
+              response.end(JSON.stringify({ error: error instanceof Error ? error.message : 'Invalid request' }))
+            }
+            return
+          }
+
+          if (pathname === canvasLayoutPath && request.method === 'POST') {
+            try {
+              const body = await readJson(request)
+              const key = typeof body.key === 'string' ? body.key.trim() : ''
+              const entries = body.positions && typeof body.positions === 'object' && !Array.isArray(body.positions)
+                ? Object.entries(body.positions)
+                : []
+              if (!key || key.length > 300) throw new Error('Invalid canvas layout key')
+              const positions = Object.fromEntries(entries.map(([pageId, position]) => {
+                if (!pageId || pageId.length > 500 || !Array.isArray(position) || position.length !== 2
+                  || !position.every(value => typeof value === 'number' && Number.isFinite(value) && Math.abs(value) <= 10_000_000)) {
+                  throw new Error('Invalid canvas position')
+                }
+                return [pageId, position as [number, number]]
+              }))
+              const configFile = resolve(projectRoot, '.pageflow')
+              const stored = JSON.parse(stripJsonComments(await readFile(configFile, 'utf8'))) as PageFlowOptions
+              const canvasLayouts = { ...(stored.canvasLayouts ?? {}), [key]: positions }
+              stored.canvasLayouts = canvasLayouts
+              await writeFile(configFile, `${JSON.stringify(stored, null, 2)}\n`)
+              resolved.canvasLayouts = canvasLayouts
+              const configModule = server.moduleGraph.getModuleById(PAGEFLOW_CONFIG_RESOLVED_ID)
+              if (configModule) server.moduleGraph.invalidateModule(configModule)
+              response.setHeader('Content-Type', 'application/json; charset=utf-8')
+              response.end(JSON.stringify({ key, positions }))
             } catch (error) {
               response.statusCode = 400
               response.setHeader('Content-Type', 'application/json; charset=utf-8')

@@ -30,11 +30,19 @@ test('persists edited group names and refreshes the virtual client config', asyn
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ key: 'business', name: '业务流程' }),
     })
+    const saveLayout = await fetch(`${origin}/__unplugin-pageflow/api/canvas-layout`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ key: '/business', positions: { overview: [120, 240] } }),
+    })
     const refreshedConfig = await (await fetch(configUrl)).text()
     const stored = JSON.parse(await readFile(resolve(root, '.pageflow'), 'utf8'))
     assert.equal(save.status, 200)
+    assert.equal(saveLayout.status, 200)
     assert.match(refreshedConfig, /业务流程/)
+    assert.match(refreshedConfig, /overview/)
     assert.equal(stored.groupNames.business, '业务流程')
+    assert.deepEqual(stored.canvasLayouts['/business'].overview, [120, 240])
   } finally {
     await server.close()
     await rm(root, { recursive: true, force: true })

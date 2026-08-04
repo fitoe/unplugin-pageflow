@@ -16,6 +16,7 @@ export interface PageFlowOptions {
   dynamicParams?: Record<string, Record<string, string | number>>
   previewRoles?: Array<{ match: string; role: string }>
   groupNames?: Record<string, string>
+  canvasLayouts?: Record<string, Record<string, [number, number]>>
   /** Explicit route or route-glob to test file/glob mappings. */
   pageTests?: Record<string, string[]>
   /** Explicit test commands. Placeholders: {file}, {name}. Commands run without a shell. */
@@ -62,6 +63,7 @@ export interface ResolvedPageFlowOptions {
   dynamicParams: Record<string, Record<string, string | number>>
   previewRoles: Array<{ match: string; role: string }>
   groupNames: Record<string, string>
+  canvasLayouts: Record<string, Record<string, [number, number]>>
   pageTests: Record<string, string[]>
   testCommands: Partial<Record<PageFlowTestKind, PageFlowTestCommand>>
   diagnostics: ResolvedPageFlowDiagnosticOptions
