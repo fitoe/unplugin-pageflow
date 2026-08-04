@@ -3,6 +3,7 @@ import type { ExtensionMessage } from './shared'
 
 export class ChromePageFlowHost implements PageFlowHost {
   readonly sourceId: string
+  capturePage?: (url: string, viewport: { width: number; height: number }) => Promise<string>
 
   constructor(readonly tabId: number) {
     this.sourceId = `chrome-tab:${tabId}`
@@ -26,6 +27,14 @@ export class ChromePageFlowHost implements PageFlowHost {
 
   capture() {
     return browser.runtime.sendMessage({ type: 'pageflow:capture', tabId: this.tabId } satisfies ExtensionMessage) as Promise<string>
+  }
+
+  enableBackgroundCapture() {
+    this.capturePage = async (url: string, viewport: { width: number; height: number }) => {
+      const response = await browser.runtime.sendMessage({ type: 'pageflow:capture-page', tabId: this.tabId, url, viewport } satisfies ExtensionMessage) as { ok: boolean; value?: string; error?: string }
+      if (!response?.ok || !response.value) throw new Error(response?.error ?? 'PageFlow background capture failed')
+      return response.value
+    }
   }
 
   async loadStorage<T>(key: string) {

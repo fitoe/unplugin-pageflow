@@ -1,4 +1,5 @@
 import type { PageFlowDiagnostic, PageFlowDiagnosticOptions, ResolvedPageFlowDiagnosticOptions } from '../shared/types'
+import { resolvePageFlowDiagnosticOptions } from '../shared/options'
 import type axeCore from 'axe-core'
 import { pageFlowInspectorRevision, runPageFlowInspectors } from './inspectors.ts'
 import { highlightPageFlowElement, pageFlowAccessibleName, pageFlowElementSelector } from '../../packages/pageflow-runtime/src'
@@ -201,12 +202,10 @@ function deduplicateNestedDiagnostics(items: PageFlowDiagnostic[]) {
 }
 
 function resolveDiagnosticOptions(options: PageFlowDiagnosticOptions = {}): ResolvedPageFlowDiagnosticOptions {
-  return {
-    minimumFontSize: Number.isFinite(options.minimumFontSize) && options.minimumFontSize! > 0 ? options.minimumFontSize! : 12,
-    minimumTapSize: Number.isFinite(options.minimumTapSize) && options.minimumTapSize! > 0 ? options.minimumTapSize! : 44,
+  return resolvePageFlowDiagnosticOptions({
+    ...options,
     ignoreSelectors: [...INTERNAL_DIAGNOSTIC_IGNORE_SELECTORS, ...(options.ignoreSelectors ?? [])],
-    rules: options.rules ?? {},
-  }
+  })
 }
 
 function ruleEnabled(options: ResolvedPageFlowDiagnosticOptions, ruleId: string) {

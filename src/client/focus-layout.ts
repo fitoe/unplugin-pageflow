@@ -12,6 +12,15 @@ export interface FocusLayoutOptions {
   selectedPageScale?: number
 }
 
+export function resolveFocusTargetPageIds(pages: PageFlowPage[], links: PageFlowLink[], focusedPageId?: string) {
+  const pagesById = new Map(pages.map(page => [page.id, page]))
+  const pagesByPath = new Map(pages.map(page => [page.path, page]))
+  return [...new Set(links.flatMap((link) => {
+    const target = pagesById.get(link.to) ?? pagesByPath.get(link.to)
+    return target && target.id !== focusedPageId ? [target.id] : []
+  }))]
+}
+
 export function createFocusScene(options: FocusLayoutOptions) {
   const {
     pages,

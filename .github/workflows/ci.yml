@@ -19,4 +19,7 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: pnpm exec playwright install --with-deps chromium
-      - run: pnpm run check
+      - name: Run cross-platform smoke suite
+        run: pnpm test:smoke
+      - name: Verify distributable outputs
+        run: pnpm build:demo && pnpm check:package && pnpm build:playground && pnpm check:production && pnpm pack:check

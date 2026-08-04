@@ -5,18 +5,27 @@
   "type": "module",
   "scripts": {
     "dev": "wxt",
+    "dev:enhanced": "cross-env PAGEFLOW_CHROME_ENHANCED=1 wxt",
     "build": "wxt build",
+    "build:enhanced": "cross-env PAGEFLOW_CHROME_ENHANCED=1 wxt build",
     "zip": "wxt zip",
+    "zip:enhanced": "cross-env PAGEFLOW_CHROME_ENHANCED=1 wxt zip",
     "typecheck": "vue-tsc --noEmit"
   },
   "dependencies": {
+    "@nuxt/ui": "^4.10.0",
     "@pageflow/core": "workspace:*",
     "@pageflow/runtime": "workspace:*",
     "@pageflow/ui": "workspace:*",
-    "vue": "^3.5.17"
+    "vue": "^3.5.17",
+    "leafer-ui": "^2.2.6",
+    "@leafer-in/view": "^2.2.6",
+    "@leafer-in/viewport": "^2.2.6"
   },
   "devDependencies": {
     "@wxt-dev/module-vue": "^1.0.3",
+    "@iconify-json/lucide": "^1.2.71",
+    "cross-env": "^7.0.3",
     "typescript": "~5.8.3",
     "vue-tsc": "^3.0.5",
     "wxt": "^0.21.3"

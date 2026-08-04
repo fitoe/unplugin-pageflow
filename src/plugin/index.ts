@@ -22,6 +22,7 @@ import type {
   ResolvedPageFlowOptions,
 } from '../shared/types.ts'
 import { PAGEFLOW_GRAPH_EVENT, PAGEFLOW_PAGE_EVENT } from '../shared/protocol.ts'
+import { resolvePageFlowApiDiagnosticOptions, resolvePageFlowDiagnosticOptions } from '../shared/options.ts'
 import {
   PAGEFLOW_CLIENT_ID,
   PAGEFLOW_CLIENT_RESOLVED_ID,
@@ -107,25 +108,6 @@ function normalizePreviewPath(path: string) {
   return `/${path.replace(/^\/+|\/+$/g, '')}/`
 }
 
-function resolveDiagnosticOptions(options: PageFlowOptions['diagnostics'] = {}) {
-  const positiveNumber = (value: number | undefined, fallback: number) => Number.isFinite(value) && value! > 0 ? value! : fallback
-  return {
-    minimumFontSize: positiveNumber(options.minimumFontSize, 12),
-    minimumTapSize: positiveNumber(options.minimumTapSize, 44),
-    ignoreSelectors: [...new Set((options.ignoreSelectors ?? []).map(selector => selector.trim()).filter(Boolean))],
-    rules: options.rules ?? {},
-  }
-}
-
-function resolveApiDiagnosticOptions(options: PageFlowOptions['apiDiagnostics'] = {}) {
-  const nonNegativeNumber = (value: number | undefined, fallback: number) => Number.isFinite(value) && value! >= 0 ? value! : fallback
-  return {
-    slowRequestMs: nonNegativeNumber(options.slowRequestMs, 1_000),
-    largeResponseBytes: nonNegativeNumber(options.largeResponseBytes, 500_000),
-    duplicateWindowMs: nonNegativeNumber(options.duplicateWindowMs, 1_000),
-  }
-}
-
 function resolveOptions(options: PageFlowOptions = {}): ResolvedPageFlowOptions {
   return {
     enabled: options.enabled ?? true,
@@ -139,8 +121,8 @@ function resolveOptions(options: PageFlowOptions = {}): ResolvedPageFlowOptions 
     groupNames: options.groupNames ?? {},
     pageTests: options.pageTests ?? {},
     testCommands: options.testCommands ?? {},
-    diagnostics: resolveDiagnosticOptions(options.diagnostics),
-    apiDiagnostics: resolveApiDiagnosticOptions(options.apiDiagnostics),
+    diagnostics: resolvePageFlowDiagnosticOptions(options.diagnostics),
+    apiDiagnostics: resolvePageFlowApiDiagnosticOptions(options.apiDiagnostics),
   }
 }
 
@@ -344,7 +326,7 @@ function createGraph(
       const hotspotKey = link.hotspot
         ? `${link.hotspot.centerX}:${link.hotspot.centerY}`
         : 'static'
-      links.set(`${target}:${hotspotKey}:${link.location ?? ''}`, { label: link.label, to: target, location: link.location, hotspot: link.hotspot })
+      links.set(`${target}:${hotspotKey}:${link.location ?? ''}`, { label: link.label, to: target, location: link.location, kind: link.kind, hotspot: link.hotspot })
     })
     page.links = [...links.values()]
     const navigationDiagnostics: import('../shared/types.ts').PageFlowDiagnostic[] = []

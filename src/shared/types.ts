@@ -88,7 +88,8 @@ export interface PageFlowRuntimeLink {
   label: string
   to: string
   location?: string
-  hotspot?: { centerX: number; centerY: number }
+  kind?: 'link' | 'event'
+  hotspot?: { centerX: number; centerY: number; width?: number; height?: number }
 }
 
 export interface PageFlowRuntimePage {
@@ -101,7 +102,8 @@ export interface PageFlowLink {
   label: string
   to: string
   location?: string
-  hotspot?: { centerX: number; centerY: number }
+  kind?: 'link' | 'event'
+  hotspot?: { centerX: number; centerY: number; width?: number; height?: number }
 }
 
 export interface PageFlowPage {

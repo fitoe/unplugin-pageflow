@@ -210,12 +210,12 @@ test('discovers Vue Router routes and reports rendered navigation hotspots', asy
       path: '/',
       title: '',
       links: [
-        { label: 'About us', to: '/about', location: '/about?from=hotspot', hotspot: { centerX: 0.068359375, centerY: 0.0546875 } },
-        { label: 'Nested service', to: '/about', location: '/about', hotspot: { centerX: 0.068359375, centerY: 0.30078125 } },
-        { label: 'Declared target', to: '/about', location: '/about', hotspot: { centerX: 0.078125, centerY: 0.08984375 } },
-        { label: 'Declared action', to: '/about', hotspot: { centerX: 0.078125, centerY: 0.09895833333333333 } },
-        { label: 'Helper action', to: '/about', hotspot: { centerX: 0.078125, centerY: 0.15104166666666666 } },
-        { label: 'Select role', to: '/about', hotspot: { centerX: 0.078125, centerY: 0.2552083333333333 } },
+        { label: 'About us', to: '/about', location: '/about?from=hotspot', kind: 'link', hotspot: { centerX: 0.068359375, centerY: 0.0546875 } },
+        { label: 'Nested service', to: '/about', location: '/about', kind: 'link', hotspot: { centerX: 0.068359375, centerY: 0.30078125 } },
+        { label: 'Declared target', to: '/about', location: '/about', kind: 'link', hotspot: { centerX: 0.078125, centerY: 0.08984375 } },
+        { label: 'Declared action', to: '/about', kind: 'event', hotspot: { centerX: 0.078125, centerY: 0.09895833333333333 } },
+        { label: 'Helper action', to: '/about', kind: 'event', hotspot: { centerX: 0.078125, centerY: 0.15104166666666666 } },
+        { label: 'Select role', to: '/about', kind: 'event', hotspot: { centerX: 0.078125, centerY: 0.2552083333333333 } },
       ],
     })
 
@@ -285,6 +285,16 @@ test('discovers Vue Router routes and reports rendered navigation hotspots', asy
       message: { type: 'unplugin-pageflow:navigate', to: '/about', location: '/about' },
       origin: 'http://localhost',
     })
+
+    link.getBoundingClientRect = () => ({ left: 20, top: 900, right: 120, bottom: 924, width: 100, height: 24 })
+    const scanCount = parentMessages.filter(item => item.message.type === 'unplugin-pageflow:scan-result').length
+    window.document.dispatchEvent(new window.Event('scroll'))
+    await waitFor(() => parentMessages.filter(item => item.message.type === 'unplugin-pageflow:scan-result').length > scanCount)
+    const scrolledPage = parentMessages.findLast(item => item.message.type === 'unplugin-pageflow:scan-result').message.page
+    assert.equal(scrolledPage.links.some(item => item.label === 'About us'), false)
+    assert.equal([...window.document.querySelectorAll('[data-unplugin-pageflow-hotspot]')]
+      .some(element => element.style.top === '900px'), false)
+
     const navigationCount = parentMessages.filter(item => item.message.type === 'unplugin-pageflow:navigate').length
     router.currentRoute.value = { path: '/about', matched: [routes[1]] }
     router.afterEachCallback()

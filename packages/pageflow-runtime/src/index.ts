@@ -13,6 +13,73 @@ export interface NetworkInstrumentationOptions {
 
 type PageFlowBrowserWindow = Window & { XMLHttpRequest: typeof XMLHttpRequest }
 
+export interface PageFlowDocumentLink {
+  element: HTMLAnchorElement | HTMLAreaElement
+  target: URL
+}
+
+export function pageFlowInternalLinks(document: Document, limit = 1_000): PageFlowDocumentLink[] {
+  const location = document.defaultView?.location
+  if (!location) return []
+  const links: PageFlowDocumentLink[] = []
+  for (const element of document.links) {
+    if (links.length >= limit) break
+    let target: URL
+    try {
+      target = new URL(element.href, location.href)
+    } catch {
+      continue
+    }
+    if (!['http:', 'https:'].includes(target.protocol) || target.origin !== location.origin) continue
+    target.hash = ''
+    links.push({ element, target })
+  }
+  return links
+}
+
+export function pageFlowLinkLabel(element: Element, fallback: string) {
+  return element.getAttribute('aria-label')?.trim()
+    || element.textContent?.replace(/\s+/g, ' ').trim()
+    || fallback
+}
+
+export function pageFlowHotspotCenter(element: Element) {
+  const view = element.ownerDocument.defaultView
+  const root = element.ownerDocument.documentElement
+  const rect = element.getBoundingClientRect()
+  return {
+    centerX: (rect.left + rect.width / 2) / Math.max(1, root.clientWidth, view?.innerWidth ?? 0),
+    centerY: (rect.top + rect.height / 2) / Math.max(1, root.clientHeight, view?.innerHeight ?? 0),
+  }
+}
+
+export function pageFlowHotspotBounds(element: Element) {
+  const view = element.ownerDocument.defaultView
+  const root = element.ownerDocument.documentElement
+  const rect = element.getBoundingClientRect()
+  const width = Math.max(1, root.clientWidth, view?.innerWidth ?? 0)
+  const height = Math.max(1, root.clientHeight, view?.innerHeight ?? 0)
+  return {
+    centerX: (rect.left + rect.width / 2) / width,
+    centerY: (rect.top + rect.height / 2) / height,
+    width: rect.width / width,
+    height: rect.height / height,
+  }
+}
+
+export function observePageFlowScroll(document: Document, callback: () => void, delay = 32) {
+  let timer: ReturnType<typeof setTimeout> | undefined
+  const onScroll = () => {
+    clearTimeout(timer)
+    timer = setTimeout(callback, delay)
+  }
+  document.addEventListener('scroll', onScroll, true)
+  return () => {
+    clearTimeout(timer)
+    document.removeEventListener('scroll', onScroll, true)
+  }
+}
+
 export function instrumentPageFlowNetwork(win: PageFlowBrowserWindow, options: NetworkInstrumentationOptions = {}) {
   let pending = 0
   const update = (change: number) => {
@@ -21,7 +88,7 @@ export function instrumentPageFlowNetwork(win: PageFlowBrowserWindow, options: N
   }
 
   const originalFetch = win.fetch.bind(win)
-  win.fetch = (...args) => {
+  const wrappedFetch: typeof win.fetch = (...args) => {
     const input = args[0]
     const request: PageFlowRequest = {
       method: (args[1]?.method ?? (input instanceof Request ? input.method : 'GET')).toUpperCase(),
@@ -37,15 +104,17 @@ export function instrumentPageFlowNetwork(win: PageFlowBrowserWindow, options: N
       throw error
     }).finally(() => update(-1))
   }
+  win.fetch = wrappedFetch
 
   const requests = new WeakMap<XMLHttpRequest, PageFlowRequest>()
   const originalOpen = win.XMLHttpRequest.prototype.open
-  win.XMLHttpRequest.prototype.open = function (method: string, url: string | URL, ...args: unknown[]) {
+  const wrappedOpen: typeof originalOpen = function (this: XMLHttpRequest, method: string, url: string | URL, ...args: unknown[]) {
     requests.set(this, { method: method.toUpperCase(), url: String(url), startedAt: 0 })
     return originalOpen.apply(this, [method, url, ...args] as Parameters<XMLHttpRequest['open']>)
   }
+  win.XMLHttpRequest.prototype.open = wrappedOpen
   const originalSend = win.XMLHttpRequest.prototype.send
-  win.XMLHttpRequest.prototype.send = function (...args: Parameters<XMLHttpRequest['send']>) {
+  const wrappedSend: typeof originalSend = function (this: XMLHttpRequest, ...args: Parameters<XMLHttpRequest['send']>) {
     const request = requests.get(this)
     if (request) request.startedAt = win.performance.now()
     update(1)
@@ -56,8 +125,16 @@ export function instrumentPageFlowNetwork(win: PageFlowBrowserWindow, options: N
     }, { once: true })
     return originalSend.apply(this, args)
   }
+  win.XMLHttpRequest.prototype.send = wrappedSend
 
-  return { pending: () => pending }
+  return {
+    pending: () => pending,
+    dispose: () => {
+      if (win.fetch === wrappedFetch) win.fetch = originalFetch
+      if (win.XMLHttpRequest.prototype.open === wrappedOpen) win.XMLHttpRequest.prototype.open = originalOpen
+      if (win.XMLHttpRequest.prototype.send === wrappedSend) win.XMLHttpRequest.prototype.send = originalSend
+    },
+  }
 }
 
 export function instrumentPageFlowHistory(win: Window, callback: (url: string | URL, method: 'pushState' | 'replaceState') => void) {

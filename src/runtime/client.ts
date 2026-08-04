@@ -257,7 +257,55 @@ function bindHotspotHover(element: Element, targets: string[]) {
   bindHotspotHoverDelegation()
 }
 
+function isElementInViewport(element: Element) {
+  const rect = element.getBoundingClientRect()
+  return rect.width > 0 && rect.height > 0
+    && rect.left + rect.width > 0 && rect.top + rect.height > 0
+    && rect.left < window.innerWidth && rect.top < window.innerHeight
+}
+
+function internalLinks() {
+  const links: Array<{ element: HTMLAnchorElement | HTMLAreaElement, target: URL }> = []
+  for (const element of document.links) {
+    let target: URL
+    try {
+      target = new URL(element.href, window.location.href)
+    } catch {
+      continue
+    }
+    if (!['http:', 'https:'].includes(target.protocol) || target.origin !== window.location.origin) continue
+    target.hash = ''
+    links.push({ element, target })
+  }
+  return links
+}
+
+function linkLabel(element: Element, fallback: string) {
+  return element.getAttribute('aria-label')?.trim()
+    || element.textContent?.replace(/\s+/g, ' ').trim()
+    || fallback
+}
+
+function hotspotCenter(element: Element) {
+  const rect = element.getBoundingClientRect()
+  const root = document.documentElement
+  return {
+    centerX: (rect.left + rect.width / 2) / Math.max(1, root.clientWidth, window.innerWidth),
+    centerY: (rect.top + rect.height / 2) / Math.max(1, root.clientHeight, window.innerHeight),
+  }
+}
+
+function observePreviewScroll(callback: () => void, delay = 32) {
+  let timer: ReturnType<typeof setTimeout> | undefined
+  const onScroll = () => {
+    clearTimeout(timer)
+    timer = setTimeout(callback, delay)
+  }
+  document.addEventListener('scroll', onScroll, true)
+}
+
 function addHotspot(layer: HTMLElement, element: Element, type: 'link' | 'event', targets: string[], locations = targets) {
+  if (!isElementInViewport(element)) return false
   const rect = element.getBoundingClientRect()
   if (!rect.width || !rect.height) return false
   const overlay = document.createElement('div')
@@ -309,17 +357,6 @@ function addHotspot(layer: HTMLElement, element: Element, type: 'link' | 'event'
   return true
 }
 
-function hotspotCenter(element: Element) {
-  const rect = element.getBoundingClientRect()
-  const root = document.documentElement
-  const width = Math.max(1, root.clientWidth, window.innerWidth)
-  const height = Math.max(1, root.clientHeight, window.innerHeight)
-  return {
-    centerX: (rect.left + rect.width / 2) / width,
-    centerY: (rect.top + rect.height / 2) / height,
-  }
-}
-
 function isFormControlRegion(element: Element) {
   if (element.matches('input, textarea, select, option, [contenteditable="true"]')) return true
   if (element.matches('a[href], button, [role="link"], [role="button"], uni-button')) return false
@@ -339,7 +376,7 @@ function hasClickHandler(element: Element) {
   return (element as HTMLElement).onclick != null
 }
 
-function collectLinks(router: PageFlowRouterAdapter) {
+function collectLinks(router: PageFlowRouterAdapter, visibleOnly = false) {
   let layer = document.querySelector<HTMLElement>('[data-unplugin-pageflow-hotspot-layer]')
   if (!layer) {
     layer = document.createElement('div')
@@ -355,30 +392,29 @@ function collectLinks(router: PageFlowRouterAdapter) {
   }
   layer.replaceChildren()
 
-  const links: PageFlowRuntimeLink[] = [...programmaticLinks.values()]
-  document.querySelectorAll<HTMLAnchorElement>('a[href]').forEach(anchor => {
+  const links: PageFlowRuntimeLink[] = visibleOnly ? [] : [...programmaticLinks.values()]
+  internalLinks().forEach(({ element: anchor, target }) => {
     if (anchor.closest('[data-unplugin-pageflow-launcher]')) return
-    const target = new URL(anchor.href, window.location.href)
-    if (target.origin !== window.location.origin) return
-    const label = anchor.getAttribute('aria-label')?.trim()
-      || anchor.textContent?.trim()
-      || target.pathname
+    if (visibleOnly && !isElementInViewport(anchor)) return
+    const label = linkLabel(anchor, target.pathname)
     const navigation = router.resolveAnchor(target)
     if (!addHotspot(layer, anchor, 'link', [navigation.path], [navigation.location])) return
-    links.push({ label, to: navigation.path, location: navigation.location, hotspot: hotspotCenter(anchor) })
+    links.push({ label, to: navigation.path, location: navigation.location, kind: 'link', hotspot: hotspotCenter(anchor) })
   })
   document.querySelectorAll<HTMLElement>('[data-pageflow-to]').forEach(element => {
     if (element.closest('[data-unplugin-pageflow-launcher]')) return
+    if (visibleOnly && !isElementInViewport(element)) return
     const declaredTarget = element.dataset.pageflowTo
     const to = declaredTarget && router.resolve(declaredTarget)?.path
     if (!to || !addHotspot(layer!, element, 'link', [to], [declaredTarget!])) return
-    links.push({ label: element.getAttribute('aria-label')?.trim() || element.textContent?.trim() || to, to, location: declaredTarget, hotspot: hotspotCenter(element) })
+    links.push({ label: linkLabel(element, to), to, location: declaredTarget, kind: 'link', hotspot: hotspotCenter(element) })
   })
   document.body.querySelectorAll('*').forEach(element => {
     if (element.closest('[data-unplugin-pageflow-hotspot-layer], [data-unplugin-pageflow-launcher]') || !hasClickHandler(element)) return
     if (element.closest('a[href]')) return
     if (element.querySelector('a[href]')) return
     if (element.hasAttribute('data-pageflow-to')) return
+    if (visibleOnly && !isElementInViewport(element)) return
     const label = element.getAttribute('aria-label')?.trim() || element.textContent?.trim() || 'Navigation'
     const targets = router.renderedNavigationTargets?.(element) ?? []
     // A click handler alone is not a page relationship (checkboxes, inputs,
@@ -386,12 +422,16 @@ function collectLinks(router: PageFlowRouterAdapter) {
     // target has actually been resolved.
     if (!targets.length || !addHotspot(layer!, element, 'event', targets)) return
     const hotspot = hotspotCenter(element)
-    targets.forEach(to => links.push({ label, to, hotspot }))
+    targets.forEach(to => links.push({ label, to, kind: 'event', hotspot }))
   })
   programmaticElements.forEach((targetLocations, element) => {
     if (isFormControlRegion(element)) return
     if (element.closest('a[href], [data-pageflow-to]')) return
-    addHotspot(layer!, element, 'event', [...targetLocations.keys()], [...targetLocations.values()])
+    if (!addHotspot(layer!, element, 'event', [...targetLocations.keys()], [...targetLocations.values()])) return
+    if (visibleOnly) {
+      const hotspot = hotspotCenter(element)
+      targetLocations.forEach((location, to) => links.push({ label: linkLabel(element, to), to, location, kind: 'event', hotspot }))
+    }
   })
   const uniqueLinks = new Map<string, PageFlowRuntimeLink>()
   links.forEach(link => {
@@ -419,7 +459,7 @@ async function publishPage(router: PageFlowRouterAdapter, config: ResolvedPageFl
 
 async function scanRenderedPage(router: PageFlowRouterAdapter) {
   await new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve())))
-  return { path: router.currentPath(), title: document.title, links: collectLinks(router) }
+  return { path: router.currentPath(), title: document.title, links: collectLinks(router, true) }
 }
 
 function protectPreviewInteractions(router: PageFlowRouterAdapter, config: ResolvedPageFlowOptions) {
@@ -447,6 +487,7 @@ function protectPreviewInteractions(router: PageFlowRouterAdapter, config: Resol
           label,
           to: target,
           location: navigation.location,
+          kind: 'event',
           hotspot: element ? hotspotCenter(element) : undefined,
         })
         if (element) associateProgrammaticElement(element, target, navigation.location)
@@ -469,6 +510,7 @@ function protectPreviewInteractions(router: PageFlowRouterAdapter, config: Resol
           label,
           to: target,
           location,
+          kind: 'event',
           hotspot: element ? hotspotCenter(element) : undefined,
         })
         if (element) associateProgrammaticElement(element, target, location)
@@ -558,17 +600,12 @@ export async function startPageFlowRuntime(config: ResolvedPageFlowOptions) {
   }
   if (previewMode && !runtimeWindow.__UNPLUGIN_PAGEFLOW_SCROLL_SCAN_BOUND__) {
     runtimeWindow.__UNPLUGIN_PAGEFLOW_SCROLL_SCAN_BOUND__ = true
-    let scrollTimer: ReturnType<typeof setTimeout> | undefined
-    document.addEventListener('scroll', () => {
-      clearTimeout(scrollTimer)
-      scrollTimer = setTimeout(() => {
-        scrollTimer = undefined
-        void scanRenderedPage(router!).then(page => {
-          if (window.parent !== window)
-            window.parent.postMessage({ type: PAGEFLOW_SCAN_RESULT_MESSAGE, page }, window.location.origin)
-        })
-      }, 32)
-    }, true)
+    observePreviewScroll(() => {
+      void scanRenderedPage(router!).then(page => {
+        if (window.parent !== window)
+          window.parent.postMessage({ type: PAGEFLOW_SCAN_RESULT_MESSAGE, page }, window.location.origin)
+      })
+    })
   }
   observePage(router, config)
   router.onRouteChange(() => {

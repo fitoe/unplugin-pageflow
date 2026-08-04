@@ -36,6 +36,10 @@ export class ThumbnailResourceCache {
     return entry.source
   }
 
+  set(url: string, source: string) {
+    this.entries.set(url, { source, touched: ++this.clock })
+  }
+
   async load(url: string) {
     if (this.disposed) throw new Error('Thumbnail resource cache is disposed')
     const cached = this.get(url)

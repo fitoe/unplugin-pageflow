@@ -42,6 +42,8 @@ export interface PageFlowDiagnostic {
 
 export interface PageFlowPageSnapshot {
   url: string
+  routeKey?: string
+  discovered?: boolean
   title: string
   updatedAt: number
 }
@@ -51,6 +53,7 @@ export interface PageFlowNavigationEdge {
   from: string
   to: string
   occurrences: number
+  hotspot?: { centerX: number; centerY: number; width?: number; height?: number }
 }
 
 export type PageFlowBrowserRuntimeEvent =

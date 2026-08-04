@@ -15,7 +15,7 @@ function startFixtureServer() {
       return
     }
     response.writeHead(200, { 'content-type': 'text/html; charset=utf-8' })
-    response.end('<!doctype html><html><head><title>PageFlow fixture</title></head><body><main><button id="route">Route</button><img id="missing-alt"></main></body></html>')
+    response.end('<!doctype html><html><head><title>PageFlow fixture</title></head><body><main><button id="route">Route</button><a href="/about">About</a><a href="/products/1?ref=first">Product 1</a><a href="/products/2?ref=second">Product 2</a><a href="/articles/first">First article</a><a href="/articles/second">Second article</a><img id="missing-alt"></main></body></html>')
   })
   return new Promise(resolve => server.listen(0, '127.0.0.1', () => resolve(server)))
 }
@@ -48,10 +48,13 @@ function chromiumExecutable() {
 test('Chrome extension captures the PageFlow runtime loop', { timeout: 30_000 }, async () => {
   const server = await startFixtureServer()
   const userDataDir = await mkdtemp(path.join(os.tmpdir(), 'pageflow-chrome-e2e-'))
-  const extensionPath = path.resolve('packages/chrome-extension/.output/chrome-mv3')
+  const extensionPath = path.resolve(process.env.PAGEFLOW_E2E_EXTENSION_DIR ?? 'packages/chrome-extension/.output/chrome-mv3')
   const manifest = JSON.parse(readFileSync(path.join(extensionPath, 'manifest.json'), 'utf8'))
+  const enhanced = manifest.permissions.includes('debugger')
   assert.equal(manifest.devtools_page, undefined)
   assert.equal(manifest.action.default_title, '打开 PageFlow')
+  assert.equal(manifest.permissions.includes('debugger'), enhanced)
+  assert.equal(manifest.optional_permissions?.includes('debugger') ?? false, false)
   let context
   try {
     context = await chromium.launchPersistentContext(userDataDir, {
@@ -62,7 +65,10 @@ test('Chrome extension captures the PageFlow runtime loop', { timeout: 30_000 },
     const page = await context.newPage()
     const origin = `http://127.0.0.1:${portOf(server)}`
     await page.goto(origin)
+    await page.waitForTimeout(100)
     await page.evaluate(async () => {
+      history.pushState({}, '', '/products/2?ref=visited')
+      await new Promise(resolve => setTimeout(resolve))
       history.pushState({}, '', '/orders')
       await Promise.all([fetch('/api/orders?page=1'), fetch('/api/orders?page=2')])
     })
@@ -78,8 +84,8 @@ test('Chrome extension captures the PageFlow runtime loop', { timeout: 30_000 },
     const state = await worker.evaluate(async tabId => chrome.tabs.sendMessage(tabId, { type: 'pageflow:get-state' }), tab.id)
 
     assert.equal(await page.evaluate(() => Boolean(window.__PAGEFLOW_CHROME_RUNTIME__)), true)
-    assert.deepEqual(state.pages.map(item => new URL(item.url).pathname), ['/', '/orders'])
-    assert.deepEqual(state.edges.map(item => [new URL(item.from).pathname, new URL(item.to).pathname]), [['/', '/orders']])
+    assert.deepEqual(state.pages.map(item => new URL(item.url).pathname), ['/', '/about', '/products/2', '/articles/first', '/orders'])
+    assert.deepEqual(state.edges.map(item => [new URL(item.from).pathname, new URL(item.to).pathname]), [['/', '/about'], ['/', '/products/:id'], ['/', '/articles/:id'], ['/products/:id', '/orders'], ['/orders', '/about'], ['/orders', '/products/:id'], ['/orders', '/articles/:id']])
     assert.equal(state.requests.find(item => item.url.includes('/api/orders'))?.occurrences, 2)
     assert.equal(state.requests.find(item => item.url.includes('/api/orders'))?.body.orders[0].name, 'PageFlow')
     assert(state.diagnostics.some(item => item.ruleId === 'missing-alt'))
@@ -90,11 +96,41 @@ test('Chrome extension captures the PageFlow runtime loop', { timeout: 30_000 },
     const extensionId = new URL(worker.url()).host
     const dashboard = await context.newPage()
     await dashboard.goto(`chrome-extension://${extensionId}/panel.html?tabId=${tab.id}`)
-    await dashboard.getByText('独立画板').waitFor()
-    await page.waitForTimeout(1_800)
-    const persisted = await worker.evaluate(async origin => (await chrome.storage.local.get(`pageflow:canvas:${origin}`))[`pageflow:canvas:${origin}`], origin)
-    assert.equal(persisted.pages.length, 2, JSON.stringify(persisted.pages))
-    assert(Object.values(persisted.snapshots).some(value => value.startsWith('data:image/png;base64,')))
+    await dashboard.getByText('unplugin-pageflow').waitFor()
+    await dashboard.getByText('0 组 / 5 页').waitFor()
+    const themeIcon = dashboard.locator('button[aria-label^="切换到"] [data-slot="leadingIcon"]')
+    assert.equal(await themeIcon.count(), 1)
+    assert.notEqual(await themeIcon.evaluate(element => getComputedStyle(element).maskImage), 'none')
+    await dashboard.setViewportSize({ width: 1_440, height: 900 })
+    const canvasBounds = await dashboard.locator('.canvas').evaluate(element => {
+      const rect = element.getBoundingClientRect()
+      return { width: rect.width, height: rect.height }
+    })
+    assert.deepEqual(canvasBounds, { width: 1_440, height: 826 })
+
+    const viewportButtons = dashboard.locator('[aria-label="Preview viewport"] button')
+    assert.equal(await viewportButtons.count(), 3)
+    await viewportButtons.nth(0).click()
+    await viewportButtons.nth(2).click()
+    const initialDark = (await dashboard.locator('html').getAttribute('class'))?.includes('dark') ?? false
+    await dashboard.locator('button[aria-label^="切换到"]').click()
+    assert.notEqual((await dashboard.locator('html').getAttribute('class'))?.includes('dark') ?? false, initialDark)
+
+    const search = dashboard.getByPlaceholder('搜索页面…')
+    await search.fill('About')
+    await dashboard.getByRole('option', { name: /About/ }).click()
+    await dashboard.locator('iframe[src*="__unplugin-pageflow_preview=1"]').waitFor({ state: 'visible' })
+    const detailTabs = dashboard.locator('[aria-label="页面详情"] button')
+    await detailTabs.filter({ hasText: '诊断' }).click()
+    await dashboard.getByRole('button', { name: '重新扫描页面' }).click()
+    await detailTabs.filter({ hasText: '待办' }).click()
+    await dashboard.getByRole('textbox', { name: '添加待办' }).fill('Chrome smoke todo')
+    await dashboard.getByRole('button', { name: '添加' }).click()
+    await dashboard.getByText('Chrome smoke todo').waitFor()
+
+    const stored = await worker.evaluate(async () => chrome.storage.local.get(null))
+    const thumbnails = Object.values(stored).flatMap(value => Array.isArray(value?.thumbnails) ? value.thumbnails : [])
+    assert(thumbnails.length >= 1)
   } finally {
     await context?.close()
     await rm(userDataDir, { recursive: true, force: true })

@@ -5,8 +5,6 @@
   "type": "module",
   "exports": {
     "./json-tree": "./src/PageFlowJsonTree.vue",
-    "./workbench": "./src/PageFlowWorkbench.vue",
-    "./workbench.css": "./src/workbench.css",
     "./todo-list": "./src/PageFlowTodoList.vue",
     "./request-list": "./src/PageFlowRequestList.vue",
     "./diagnostic-list": "./src/PageFlowDiagnosticList.vue",

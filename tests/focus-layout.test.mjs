@@ -5,7 +5,7 @@ import { createServer } from 'vite'
 test('positions focused targets and connects hotspot centers to page edges', async () => {
   const server = await createServer({ configFile: false, server: { middlewareMode: true }, appType: 'custom', logLevel: 'silent' })
   try {
-    const { createFocusScene } = await server.ssrLoadModule('/src/client/focus-layout.ts')
+    const { createFocusScene, resolveFocusTargetPageIds } = await server.ssrLoadModule('/src/client/focus-layout.ts')
     const page = (id, path) => ({ id, path, title: id, accent: '#fff', links: [] })
     const pages = [page('source', '/source'), page('right', '/right')]
     const scene = createFocusScene({
@@ -42,6 +42,11 @@ test('positions focused targets and connects hotspot centers to page edges', asy
     })
     assert.equal(repeated.targets.length, 1)
     assert.equal(repeated.connections.length, 1)
+
+    assert.deepEqual(
+      resolveFocusTargetPageIds(pages, [{ label: 'By id', to: 'right' }], 'source'),
+      ['right'],
+    )
   } finally {
     await server.close()
   }

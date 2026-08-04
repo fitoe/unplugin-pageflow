@@ -11,4 +11,9 @@ export type ExtensionMessage =
   | { type: 'pageflow:scan' }
   | { type: 'pageflow:highlight'; selector: string }
   | { type: 'pageflow:capture'; tabId: number }
+  | { type: 'pageflow:capture-page'; tabId: number; url: string; viewport: { width: number; height: number } }
+  | { type: 'pageflow:start-session'; tabId: number }
+  | { type: 'pageflow:stop-session'; tabId: number }
+  | { type: 'pageflow:network-request'; request: PageFlowApiRequest }
+  | { type: 'pageflow:network-mode'; mode: 'cdp' | 'injected' }
   | { type: 'pageflow:runtime'; event: RuntimeEvent }
