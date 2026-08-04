@@ -5,10 +5,10 @@ import { createServer } from 'vite'
 test('lays out linked pages in layers and limits previews to the viewport', async () => {
   const server = await createServer({ configFile: false, server: { middlewareMode: true }, appType: 'custom', logLevel: 'silent' })
   try {
-    const { assignOrderedFocusSides, centerPageTransform, collapseRepeatedListLinks, createPageSpatialIndex, createRouteDeckView, fitFocusedPreviewTransform, getRenderablePages, getVisiblePageIds, layoutPageGrid, layoutPagesByRoute, promotedRouteGroupPath, queryPageSpatialIndex, routeDeckPathForPage } = await server.ssrLoadModule('/src/client/layout.ts')
+    const { assignOrderedFocusSides, centerPageTransform, collapseRepeatedListLinks, createPageSpatialIndex, createRouteDeckView, fitFocusedPreviewTransform, getRenderablePages, getVisiblePageIds, layoutPageGrid, layoutPagesByRoute, promotedRouteGroupPath, queryPageSpatialIndex, responsivePageGridColumns, routeDeckPathForPage } = await server.ssrLoadModule('/src/client/layout.ts')
     const { forwardWheelToCanvas, PAGEFLOW_CANVAS_CONFIG } = await server.ssrLoadModule('/src/client/canvas.ts')
     const { resolvePreviewUrl, touchPreviewCache } = await server.ssrLoadModule('/src/client/preview.ts')
-    const { fullThumbnailTiles, thumbnailRevision, thumbnailSlot, thumbnailTierForZoom, thumbnailUrl, visibleThumbnailTiles } = await server.ssrLoadModule('/src/client/thumbnails.ts')
+    const { fullThumbnailTiles, thumbnailPageKey, thumbnailRevision, thumbnailSlot, thumbnailTierForZoom, thumbnailUrl, visibleThumbnailTiles } = await server.ssrLoadModule('/src/client/thumbnails.ts')
     const { boundedPreviewDocumentHeight, isInfiniteListDocument, maskedIconBackground, materializeMaskedIcons, previewDocumentHeight } = await server.ssrLoadModule('/src/client/snapshot.ts')
     const { FocusedPageStateCache, preserveScannedFocusedLinks } = await server.ssrLoadModule('/src/client/focus-cache.ts')
     const pages = Array.from({ length: 30 }, (_, index) => ({
@@ -53,6 +53,8 @@ test('lays out linked pages in layers and limits previews to the viewport', asyn
       fitFocusedPreviewTransform([100, 200], 500, { width: 1000, height: 800 }, 1.03),
       { x: 178.75728155339806, y: -249.0873786407767, scaleX: 1.4601941747572815, scaleY: 1.4601941747572815 },
     )
+    const widthLimitedFocus = fitFocusedPreviewTransform([100, 200], 80, { width: 1000, height: 800 }, 1.03, 32, 16, 500)
+    assert(widthLimitedFocus.scaleX * 240 * 1.03 <= 500)
     assert.deepEqual(touchPreviewCache([], 'home'), ['home'])
     assert.deepEqual(touchPreviewCache(['home', 'about', 'contact'], 'home'), ['about', 'contact', 'home'])
     assert.equal(previewDocumentHeight({
@@ -88,8 +90,12 @@ test('lays out linked pages in layers and limits previews to the viewport', asyn
     )
     assert.match(iconBackground, /data:image\/svg\+xml/)
     assert.match(decodeURIComponent(iconBackground), /fill='rgb\(79, 167, 87\)'/)
-    assert.match(thumbnailRevision(pages[0]), /^17:/)
-    assert.equal(thumbnailRevision({ ...pages[0], revision: 'source-changed' }), thumbnailRevision(pages[0]))
+    assert.match(thumbnailRevision(pages[0]), /^20:/)
+    const routeBefore = { id: 'orders-old', path: '/old/orders', sourceFile: 'src/pages/orders.vue', revision: 'content-hash' }
+    const routeAfter = { ...routeBefore, id: 'orders-new', path: '/new/orders' }
+    assert.equal(thumbnailPageKey(routeBefore), thumbnailPageKey(routeAfter))
+    assert.equal(thumbnailRevision(routeBefore), thumbnailRevision(routeAfter))
+    assert.notEqual(thumbnailRevision({ ...pages[0], revision: 'source-changed' }), thumbnailRevision(pages[0]))
     const hotspotLayer = { removed: false, remove() { this.removed = true } }
     const singleLineText = {
       textContent: '热门服务',
@@ -115,13 +121,24 @@ test('lays out linked pages in layers and limits previews to the viewport', asyn
       { x: wheelCalls[0].x, y: wheelCalls[0].y, deltaX: wheelCalls[0].deltaX, deltaY: wheelCalls[0].deltaY, ctrlKey: wheelCalls[0].ctrlKey },
       { x: 100, y: 200, deltaX: 0, deltaY: -120, ctrlKey: true },
     )
-    assert.equal(thumbnailTierForZoom(49), 'compact')
-    assert.equal(thumbnailTierForZoom(50), 'full')
+    assert.equal(thumbnailTierForZoom(199), 'compact')
+    assert.equal(thumbnailTierForZoom(200), 'full')
     assert.notEqual(
       thumbnailUrl({ previewPath: '/preview/' }, { slot: 'home', revision: 'one', updatedAt: 1 }),
       thumbnailUrl({ previewPath: '/preview/' }, { slot: 'home', revision: 'one', updatedAt: 2 }),
     )
     const positions = layoutPageGrid(pages)
+    assert.equal(positions.get('page-5')[1] - positions.get('page-0')[1], 286)
+    assert.equal(responsivePageGridColumns(1_440, pages.length), 4)
+    assert.equal(responsivePageGridColumns(720, pages.length), 2)
+    const masonryPositions = layoutPageGrid(pages.slice(0, 5), new Map([
+      ['page-0', 500],
+      ['page-1', 200],
+      ['page-2', 300],
+    ]), 3)
+    assert.equal(masonryPositions.get('page-3')[0], masonryPositions.get('page-1')[0])
+    assert.equal(masonryPositions.get('page-3')[1], 294)
+    assert.equal(masonryPositions.get('page-4')[0], masonryPositions.get('page-2')[0])
 
     const groupedRoutePositions = layoutPagesByRoute([
       { id: 'machinery-root', path: '/machinery/index', links: [] },

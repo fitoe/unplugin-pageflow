@@ -15,7 +15,7 @@ function startFixtureServer() {
       return
     }
     response.writeHead(200, { 'content-type': 'text/html; charset=utf-8' })
-    response.end('<!doctype html><html><head><title>PageFlow fixture</title></head><body><main><button id="route">Route</button><a href="/about">About</a><a href="/products/1?ref=first">Product 1</a><a href="/products/2?ref=second">Product 2</a><a href="/articles/first">First article</a><a href="/articles/second">Second article</a><img id="missing-alt"></main></body></html>')
+    response.end('<!doctype html><html><head><title>PageFlow fixture</title></head><body style="min-height:2000px"><main><button id="route">Route</button><a href="/about" style="position:absolute;top:1200px;left:20px;width:120px;height:40px">About</a><a href="/products/1?ref=first">Product 1</a><a href="/products/2?ref=second">Product 2</a><a href="/articles/first">First article</a><a href="/articles/second">Second article</a><img id="missing-alt"></main></body></html>')
   })
   return new Promise(resolve => server.listen(0, '127.0.0.1', () => resolve(server)))
 }
@@ -45,7 +45,7 @@ function chromiumExecutable() {
   return fallback
 }
 
-test('Chrome extension captures the PageFlow runtime loop', { timeout: 30_000 }, async () => {
+test('Chrome extension captures the PageFlow runtime loop', { timeout: 90_000 }, async () => {
   const server = await startFixtureServer()
   const userDataDir = await mkdtemp(path.join(os.tmpdir(), 'pageflow-chrome-e2e-'))
   const extensionPath = path.resolve(process.env.PAGEFLOW_E2E_EXTENSION_DIR ?? 'packages/chrome-extension/.output/chrome-mv3')
@@ -80,7 +80,7 @@ test('Chrome extension captures the PageFlow runtime loop', { timeout: 30_000 },
       return { id: tab.id, windowId: tab.windowId }
     }, origin)
     await worker.evaluate(async tabId => chrome.tabs.sendMessage(tabId, { type: 'pageflow:scan' }), tab.id)
-    await page.waitForTimeout(150)
+    await page.waitForTimeout(500)
     const state = await worker.evaluate(async tabId => chrome.tabs.sendMessage(tabId, { type: 'pageflow:get-state' }), tab.id)
 
     assert.equal(await page.evaluate(() => Boolean(window.__PAGEFLOW_CHROME_RUNTIME__)), true)
@@ -89,19 +89,29 @@ test('Chrome extension captures the PageFlow runtime loop', { timeout: 30_000 },
     assert.equal(state.requests.find(item => item.url.includes('/api/orders'))?.occurrences, 2)
     assert.equal(state.requests.find(item => item.url.includes('/api/orders'))?.body.orders[0].name, 'PageFlow')
     assert(state.diagnostics.some(item => item.ruleId === 'missing-alt'))
+    const aboutEdge = state.edges.find(item => new URL(item.from).pathname === '/orders' && new URL(item.to).pathname === '/about')
+    assert.equal(aboutEdge.hotspot, undefined)
+    await page.evaluate(() => scrollTo(0, 1000))
+    await page.waitForTimeout(150)
+    const scrolledState = await worker.evaluate(async tabId => chrome.tabs.sendMessage(tabId, { type: 'pageflow:get-state' }), tab.id)
+    assert(scrolledState.edges.find(item => item.id === aboutEdge.id)?.hotspot)
+    await page.evaluate(() => scrollTo(0, 0))
+    await page.waitForTimeout(150)
+    const restoredState = await worker.evaluate(async tabId => chrome.tabs.sendMessage(tabId, { type: 'pageflow:get-state' }), tab.id)
+    assert.equal(restoredState.edges.find(item => item.id === aboutEdge.id)?.hotspot, undefined)
 
     await worker.evaluate(async tabId => chrome.tabs.sendMessage(tabId, { type: 'pageflow:highlight', selector: '#route' }), tab.id)
     await page.waitForSelector('[data-unplugin-pageflow-diagnostic-highlight]')
 
     const extensionId = new URL(worker.url()).host
     const dashboard = await context.newPage()
+    await dashboard.setViewportSize({ width: 1_440, height: 900 })
     await dashboard.goto(`chrome-extension://${extensionId}/panel.html?tabId=${tab.id}`)
     await dashboard.getByText('unplugin-pageflow').waitFor()
     await dashboard.getByText('0 组 / 5 页').waitFor()
     const themeIcon = dashboard.locator('button[aria-label^="切换到"] [data-slot="leadingIcon"]')
     assert.equal(await themeIcon.count(), 1)
     assert.notEqual(await themeIcon.evaluate(element => getComputedStyle(element).maskImage), 'none')
-    await dashboard.setViewportSize({ width: 1_440, height: 900 })
     const canvasBounds = await dashboard.locator('.canvas').evaluate(element => {
       const rect = element.getBoundingClientRect()
       return { width: rect.width, height: rect.height }
@@ -119,18 +129,30 @@ test('Chrome extension captures the PageFlow runtime loop', { timeout: 30_000 },
     const search = dashboard.getByPlaceholder('搜索页面…')
     await search.fill('About')
     await dashboard.getByRole('option', { name: /About/ }).click()
-    await dashboard.locator('iframe[src*="__unplugin-pageflow_preview=1"]').waitFor({ state: 'visible' })
+    await dashboard.locator('iframe[src*="__unplugin-pageflow_preview=1"]').waitFor({ state: 'attached' })
     const detailTabs = dashboard.locator('[aria-label="页面详情"] button')
     await detailTabs.filter({ hasText: '诊断' }).click()
     await dashboard.getByRole('button', { name: '重新扫描页面' }).click()
     await detailTabs.filter({ hasText: '待办' }).click()
-    await dashboard.getByRole('textbox', { name: '添加待办' }).fill('Chrome smoke todo')
+    await dashboard.getByRole('textbox', { name: '添加当前页面待办' }).fill('Chrome smoke todo')
     await dashboard.getByRole('button', { name: '添加' }).click()
     await dashboard.getByText('Chrome smoke todo').waitFor()
 
+    await dashboard.waitForFunction(async () => {
+      const stored = await browser.storage.local.get(null)
+      return Object.values(stored).flatMap(value => Array.isArray(value?.thumbnails) ? value.thumbnails : []).length >= 5
+    }, undefined, { timeout: 20_000 })
     const stored = await worker.evaluate(async () => chrome.storage.local.get(null))
     const thumbnails = Object.values(stored).flatMap(value => Array.isArray(value?.thumbnails) ? value.thumbnails : [])
-    assert(thumbnails.length >= 1)
+    const thumbnailTimes = new Map(thumbnails.map(item => [`${item.pageId}:${item.mode}`, item.updatedAt]))
+    await dashboard.reload()
+    await dashboard.getByText('unplugin-pageflow').waitFor()
+    await dashboard.waitForTimeout(1_000)
+    const restored = await worker.evaluate(async () => chrome.storage.local.get(null))
+    const restoredThumbnails = Object.values(restored).flatMap(value => Array.isArray(value?.thumbnails) ? value.thumbnails : [])
+    assert.equal(restoredThumbnails.length, thumbnails.length)
+    assert.deepEqual(restoredThumbnails.filter(item => thumbnailTimes.get(`${item.pageId}:${item.mode}`) !== item.updatedAt)
+      .map(item => ({ pageId: item.pageId, mode: item.mode, revision: item.revision })), [])
   } finally {
     await context?.close()
     await rm(userDataDir, { recursive: true, force: true })

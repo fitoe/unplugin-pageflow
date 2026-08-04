@@ -12,7 +12,10 @@ test('adapts Chrome host state without leaking host rendering rules into the Vit
         { url: 'https://example.com/list?page=2', routeKey: 'https://example.com/list', title: 'List', updatedAt: 1 },
         { url: 'https://example.com/detail/1', routeKey: 'https://example.com/detail/:id', title: 'Detail', updatedAt: 2 },
       ],
-      edges: [{ id: 'edge', from: 'https://example.com/list', to: 'https://example.com/detail/:id', occurrences: 1, hotspot: { centerX: 0.5, centerY: 0.25, width: 0.2, height: 0.1 } }],
+      edges: [
+        { id: 'edge', from: 'https://example.com/list', to: 'https://example.com/detail/:id', occurrences: 1, hotspot: { centerX: 0.5, centerY: 0.25, width: 0.2, height: 0.1 } },
+        { id: 'offscreen', from: 'https://example.com/list', to: 'https://example.com/list', occurrences: 1 },
+      ],
       requests: [],
       diagnostics: [],
     }
@@ -20,6 +23,7 @@ test('adapts Chrome host state without leaking host rendering rules into the Vit
     assert.equal(graph.currentPageId, 'https://example.com/list')
     assert.equal(graph.navigationLocations['/list'], '/list?page=2')
     assert.equal(graph.pages[0].links[0].to, '/detail/:id')
+    assert.equal(graph.pages[0].links.length, 1)
 
     const rects = hostHotspotRects([
       { label: 'Link', to: '/a', hotspot: { centerX: 0.5, centerY: 0.25, width: 0.2, height: 0.1 } },

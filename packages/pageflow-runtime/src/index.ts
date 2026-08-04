@@ -59,6 +59,9 @@ export function pageFlowHotspotBounds(element: Element) {
   const rect = element.getBoundingClientRect()
   const width = Math.max(1, root.clientWidth, view?.innerWidth ?? 0)
   const height = Math.max(1, root.clientHeight, view?.innerHeight ?? 0)
+  if (rect.width <= 0 || rect.height <= 0
+    || rect.right <= 0 || rect.bottom <= 0
+    || rect.left >= width || rect.top >= height) return
   return {
     centerX: (rect.left + rect.width / 2) / width,
     centerY: (rect.top + rect.height / 2) / height,

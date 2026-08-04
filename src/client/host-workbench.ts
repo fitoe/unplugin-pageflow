@@ -15,6 +15,7 @@ export function hostStateToGraph(state: PageFlowHostState, accents: readonly str
   const pagesByUrl = new Map(state.pages.map(page => [page.routeKey ?? page.url, page]))
   const linksByUrl = new Map<string, PageFlowLink[]>()
   state.edges.forEach((edge) => {
+    if (!edge.hotspot) return
     const links = linksByUrl.get(edge.from) ?? []
     const target = pagesByUrl.get(edge.to)
     links.push({ label: target?.title || new URL(edge.to).pathname, to: new URL(edge.to).pathname, hotspot: edge.hotspot })

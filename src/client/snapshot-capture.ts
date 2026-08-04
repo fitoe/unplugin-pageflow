@@ -11,6 +11,7 @@ import {
   thumbnailTileCount,
   type PageFlowPreviewMode,
   PAGEFLOW_MAX_SINGLE_THUMBNAIL_HEIGHT,
+  PAGEFLOW_FULL_THUMBNAIL_MAX_WIDTH,
   PAGEFLOW_THUMBNAIL_TILE_HEIGHT,
 } from './thumbnails'
 
@@ -164,6 +165,11 @@ export interface CapturePageThumbnailsOptions {
   highResolution: boolean
 }
 
+export function snapshotCaptureScale(viewportWidth: number, highResolution: boolean) {
+  const targetWidth = highResolution ? PAGEFLOW_FULL_THUMBNAIL_MAX_WIDTH : PAGE_CARD_WIDTH
+  return Math.min(highResolution ? 2 : 1, targetWidth / Math.max(1, viewportWidth))
+}
+
 export async function capturePageThumbnails(
   options: CapturePageThumbnailsOptions,
   dependencies: SnapshotCaptureDependencies = defaultDependencies,
@@ -179,7 +185,7 @@ export async function capturePageThumbnails(
       height: fullHeight,
       logging: false,
       onclone: materializeMaskedIcons,
-      scale: options.highResolution ? 2 : PAGE_CARD_WIDTH / options.mode.width,
+      scale: snapshotCaptureScale(options.mode.width, options.highResolution),
       scrollX: 0,
       scrollY: 0,
       useCORS: true,
@@ -198,7 +204,7 @@ export async function capturePageThumbnails(
   const records: PageFlowThumbnailRecord[] = []
   const displayScale = PAGE_CARD_WIDTH / snapshot.width
   const displayHeight = Math.round(snapshot.height * displayScale)
-  const compact = dependencies.resize(snapshot, 96)
+  const compact = dependencies.resize(snapshot, PAGE_CARD_WIDTH)
   try {
     records.push(await dependencies.save(options.config, {
       slot: thumbnailSlot(options.pageId, options.previewMode, 'compact'),

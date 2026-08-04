@@ -142,7 +142,7 @@ async function loadProjectOptions(root: string, options: PageFlowOptions = {}) {
     dynamicParams: options.dynamicParams ?? stored.dynamicParams,
     routes: options.routes ?? stored.routes,
     previewRoles: options.previewRoles ?? stored.previewRoles,
-    groupNames: options.groupNames ?? stored.groupNames,
+    groupNames: { ...(options.groupNames ?? {}), ...(stored.groupNames ?? {}) },
     pageTests: options.pageTests ?? stored.pageTests,
     testCommands: options.testCommands ?? stored.testCommands,
     diagnostics: {
@@ -985,6 +985,8 @@ const factory: UnpluginFactory<PageFlowOptions | undefined> = (options) => {
               stored.groupNames = groupNames
               await writeFile(configFile, `${JSON.stringify(stored, null, 2)}\n`)
               resolved.groupNames = groupNames
+              const configModule = server.moduleGraph.getModuleById(PAGEFLOW_CONFIG_RESOLVED_ID)
+              if (configModule) server.moduleGraph.invalidateModule(configModule)
               response.setHeader('Content-Type', 'application/json; charset=utf-8')
               response.end(JSON.stringify({ key, name }))
             } catch (error) {

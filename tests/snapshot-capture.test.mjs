@@ -8,14 +8,15 @@ test('captures the real page root and saves a single full image when it fits', a
   Object.assign(globalThis, { HTMLElement: window.HTMLElement })
   window.document.body.innerHTML = '<div class="wrapper"><main class="home-page pageflow-preview">Page</main></div><div class="teleported-dialog">Dialog</div>'
   const snapshot = { width: 786, height: 1704 }
-  const compact = { width: 96, height: 208 }
+  const compact = { width: 240, height: 520 }
   const tiles = [{ width: 786, height: 512 }, { width: 786, height: 512 }]
   const saved = []
   let renderTarget
   let renderOptions
   const server = await createServer({ configFile: false, server: { middlewareMode: true }, appType: 'custom', logLevel: 'silent' })
   try {
-    const { capturePageThumbnails } = await server.ssrLoadModule('/src/client/snapshot-capture.ts')
+    const { capturePageThumbnails, snapshotCaptureScale } = await server.ssrLoadModule('/src/client/snapshot-capture.ts')
+    assert.equal(snapshotCaptureScale(3840, true), 0.25)
     const records = await capturePageThumbnails({
       config: { enabled: true, previewPath: '/preview/', appUrl: '/', dynamicParams: {}, previewRoles: [], groupNames: {} },
       document: window.document,
@@ -32,7 +33,10 @@ test('captures the real page root and saves a single full image when it fits', a
         assert.match(window.document.getElementById('unplugin-pageflow-snapshot-scrollbars')?.textContent ?? '', /webkit-scrollbar/)
         return snapshot
       },
-      resize: () => compact,
+      resize: (_source, width) => {
+        assert.equal(width, 240)
+        return compact
+      },
       tileCount: () => 2,
       extractTile: (_source, index) => tiles[index],
       encode: async () => new Blob(['image'], { type: 'image/webp' }),
@@ -62,7 +66,7 @@ test('keeps full-image tiles for snapshots taller than the single-image limit', 
   const window = new Window()
   Object.assign(globalThis, { HTMLElement: window.HTMLElement })
   const snapshot = { width: 786, height: 5000 }
-  const compact = { width: 96, height: 611 }
+  const compact = { width: 240, height: 1527 }
   const tiles = [{ width: 786, height: 512 }, { width: 786, height: 512 }]
   const saved = []
   const server = await createServer({ configFile: false, server: { middlewareMode: true }, appType: 'custom', logLevel: 'silent' })
@@ -79,7 +83,10 @@ test('keeps full-image tiles for snapshots taller than the single-image limit', 
       highResolution: true,
     }, {
       render: async () => snapshot,
-      resize: () => compact,
+      resize: (_source, width) => {
+        assert.equal(width, 240)
+        return compact
+      },
       tileCount: () => 2,
       extractTile: (_source, index) => tiles[index],
       encode: async () => new Blob(['image'], { type: 'image/webp' }),

@@ -1,8 +1,45 @@
 import assert from 'node:assert/strict'
-import { readFile } from 'node:fs/promises'
+import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
+import os from 'node:os'
 import test from 'node:test'
 import { resolve } from 'node:path'
 import { createServer } from 'vite'
+
+test('persists edited group names and refreshes the virtual client config', async () => {
+  const root = await mkdtemp(resolve(os.tmpdir(), 'pageflow-group-names-'))
+  await writeFile(resolve(root, '.pageflow'), JSON.stringify({
+    enabled: true,
+    previewPath: '/__unplugin-pageflow/',
+    groupNames: {},
+  }))
+  const server = await createServer({
+    root,
+    configFile: resolve('vite.config.ts'),
+    logLevel: 'silent',
+    server: { host: '127.0.0.1', port: 0 },
+  })
+  try {
+    await server.listen()
+    const address = server.httpServer?.address()
+    assert(address && typeof address === 'object')
+    const origin = `http://127.0.0.1:${address.port}`
+    const configUrl = `${origin}/@id/virtual:unplugin-pageflow/config`
+    assert.doesNotMatch(await (await fetch(configUrl)).text(), /业务流程/)
+    const save = await fetch(`${origin}/__unplugin-pageflow/api/group-name`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ key: 'business', name: '业务流程' }),
+    })
+    const refreshedConfig = await (await fetch(configUrl)).text()
+    const stored = JSON.parse(await readFile(resolve(root, '.pageflow'), 'utf8'))
+    assert.equal(save.status, 200)
+    assert.match(refreshedConfig, /业务流程/)
+    assert.equal(stored.groupNames.business, '业务流程')
+  } finally {
+    await server.close()
+    await rm(root, { recursive: true, force: true })
+  }
+})
 
 test('serves the unplugin-pageflow client from the configured development route', async () => {
   const server = await createServer({

@@ -5,6 +5,9 @@ export const PAGE_CARD_HEIGHT = 256
 export const PAGE_CARD_META_HEIGHT = 68
 export const PAGE_PREVIEW_INSET = 0
 export const PAGEFLOW_AUTO_PREVIEW_SCALE = 1.25
+const PAGE_GRID_GAP_X = 88
+const PAGE_GRID_GAP_Y = 30
+const PAGE_GRID_INSET = 64
 
 export interface CanvasTransform {
   x: number
@@ -46,9 +49,13 @@ export function fitFocusedPreviewTransform(
   selectedScale = 1,
   topPadding = 32,
   bottomPadding = 16,
+  maxPreviewWidth = viewport.width,
 ): CanvasTransform {
   const availableHeight = Math.max(1, viewport.height - topPadding - bottomPadding)
-  const scale = availableHeight / Math.max(1, previewHeight * selectedScale)
+  const heightScale = availableHeight / Math.max(1, previewHeight * selectedScale)
+  const availableWidth = Math.max(1, Math.min(maxPreviewWidth, viewport.width - 32))
+  const widthScale = availableWidth / Math.max(1, PAGE_CARD_WIDTH * selectedScale)
+  const scale = Math.min(heightScale, widthScale)
   return {
     x: viewport.width / 2 - (position[0] + PAGE_CARD_WIDTH / 2) * scale,
     y: topPadding + availableHeight / 2 - (position[1] + previewHeight / 2) * scale,
@@ -135,17 +142,23 @@ export function getRenderablePages(
   return pages.filter(page => selectedIds.has(page.id))
 }
 
+export function responsivePageGridColumns(viewportWidth: number, itemCount: number) {
+  const availableWidth = Math.max(PAGE_CARD_WIDTH, viewportWidth - PAGE_GRID_INSET * 2)
+  const columns = Math.max(1, Math.floor((availableWidth + PAGE_GRID_GAP_X) / (PAGE_CARD_WIDTH + PAGE_GRID_GAP_X)))
+  return Math.min(Math.max(1, itemCount), columns)
+}
+
 export function layoutPageGrid(items: PageFlowPage[], cardHeights = new Map<string, number>(), columns = 5) {
-  const gapX = 88
-  const gapY = 96
-  const rowTops: number[] = [64]
-  const rowHeights: number[] = []
-  return new Map(items.map((page, index) => {
-    const row = Math.floor(index / columns)
-    const column = index % columns
-    if (rowTops[row] == null) rowTops[row] = rowTops[row - 1] + (rowHeights[row - 1] ?? PAGE_CARD_HEIGHT) + gapY
-    rowHeights[row] = Math.max(rowHeights[row] ?? 0, cardHeights.get(page.id) ?? PAGE_CARD_HEIGHT)
-    return [page.id, [64 + column * (PAGE_CARD_WIDTH + gapX), rowTops[row]] as [number, number]]
+  const columnCount = Math.max(1, Math.min(columns, Math.max(1, items.length)))
+  const columnBottoms = Array.from({ length: columnCount }, () => PAGE_GRID_INSET)
+  return new Map(items.map(page => {
+    const column = columnBottoms.reduce((shortest, bottom, index) => bottom < columnBottoms[shortest] ? index : shortest, 0)
+    const position: [number, number] = [
+      PAGE_GRID_INSET + column * (PAGE_CARD_WIDTH + PAGE_GRID_GAP_X),
+      columnBottoms[column],
+    ]
+    columnBottoms[column] += (cardHeights.get(page.id) ?? PAGE_CARD_HEIGHT) + PAGE_GRID_GAP_Y
+    return [page.id, position]
   }))
 }
 

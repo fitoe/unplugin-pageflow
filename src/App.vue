@@ -56,12 +56,8 @@ import { runWithConcurrency } from './client/test-concurrency'
 import { isLocalBusinessApiResponse } from './runtime/api-filter'
 import { addPageFlowTodo, parsePageFlowTodos, removePageFlowTodo, togglePageFlowTodo, type PageFlowTodo } from '../packages/pageflow-core/src/todos'
 import { PAGEFLOW_TODOS_STORAGE_KEY } from '../packages/pageflow-core/src/storage'
-import { loadPageFlowTodos, savePageFlowTodos } from '../packages/pageflow-core/src/host-storage'
+import { loadPageFlowTodos, savePageFlowCanvas, savePageFlowTodos } from '../packages/pageflow-core/src/host-storage'
 import type { PageFlowHost, PageFlowHostState } from '../packages/pageflow-core/src/host'
-import PageFlowTodoList from '../packages/pageflow-ui/src/PageFlowTodoList.vue'
-import PageFlowRequestList from '../packages/pageflow-ui/src/PageFlowRequestList.vue'
-import PageFlowDiagnosticList from '../packages/pageflow-ui/src/PageFlowDiagnosticList.vue'
-import PageFlowTabs from '../packages/pageflow-ui/src/PageFlowTabs.vue'
 import { initialPreviewMode } from './client/preview-mode'
 import { UnpluginPageFlowHost } from './client/unplugin-host'
 import { hostHotspotRects, hostStateToGraph } from './client/host-workbench'
@@ -72,6 +68,7 @@ import {
   fetchThumbnailManifest,
   fullThumbnailTiles,
   thumbnailRevision,
+  thumbnailPageKey,
   thumbnailSlot,
   thumbnailTierForZoom,
   thumbnailUrl,
@@ -87,6 +84,7 @@ import {
   getRenderablePages,
   getVisiblePageIds,
   layoutPageGrid,
+  responsivePageGridColumns,
   promotedRouteGroupPath,
   routeDeckPathForPage,
   PAGE_CARD_META_HEIGHT,
@@ -153,7 +151,7 @@ const initialSceneReady = ref(props.config.previewPath === '/')
 const initialLayoutSettled = ref(props.config.previewPath === '/')
 const initialResourcesSettled = ref(props.config.previewPath === '/')
 const previewMode = ref<PageFlowPreviewMode>(storedPreviewMode())
-const thumbnailTier = ref<PageFlowThumbnailTier>('full')
+const thumbnailTier = ref<PageFlowThumbnailTier>(thumbnailTierForZoom(zoomPercent.value))
 const thumbnailResources = ref<Record<string, string>>({})
 const navigationLocations = ref<Record<string, string>>({})
 const users = ref(visibleSessionUsers(initialUserSessions.users, props.config.previewRoles, cachedPreviewUsers()))
@@ -168,6 +166,7 @@ const focusedPageId = ref<string>()
 const focusedLinks = ref<PageFlowLink[]>([])
 const apiResultsByPage = ref<Record<string, PageFlowApiResult[]>>({})
 const expandedApiResults = ref(new Set<string>())
+const openApiResultId = ref<string>()
 const openApiIssueResultId = ref<string>()
 const panelTab = ref<'api' | 'tests' | 'diagnostics' | 'todos'>('api')
 const panelCollapsed = ref(false)
@@ -416,7 +415,11 @@ function deckLayerPages(pageId: string) {
 function visibleDeckLayerPages(pageId: string) {
   return deckLayerPages(pageId).slice(0, MAX_DECK_LAYERS)
 }
-const positions = ref(layoutPageGrid(canvasPages.value, cardHeights.value))
+const positions = ref(layoutPageGrid(
+  canvasPages.value,
+  cardHeights.value,
+  responsivePageGridColumns(window.innerWidth, canvasPages.value.length),
+))
 const spatialIndex = computed(() => createPageSpatialIndex(canvasPages.value, positions.value, cardHeights.value))
 const focusedTargetPageIds = computed(() => {
   return resolveFocusTargetPageIds(pages.value, focusedLinks.value, focusedPageId.value)
@@ -654,6 +657,9 @@ function locateFocusedPage() {
     pagePreviewHeight(pageId),
     { width: canvas.value.clientWidth, height: canvas.value.clientHeight },
     SELECTED_PAGE_SCALE,
+    32,
+    16,
+    currentPreviewMode.value.width,
   ))
 }
 
@@ -764,10 +770,6 @@ function apiFieldTreeByResultId(id: string) {
   return result ? visibleApiFieldTree(result) : []
 }
 
-function asApiResult(result: unknown) {
-  return result as PageFlowApiResult
-}
-
 function unusedApiFieldCount(id: string) {
   return apiResultById(id)?.fields.filter(field => !field.used).length ?? 0
 }
@@ -784,6 +786,24 @@ function apiRoute(url: string) {
     // Keep the path extracted from malformed or non-standard request URLs.
   }
   return pathname.replace(/^\/(?:api|(?:prod|dev|test|stage)-api)(?=\/|$)/, '') || '/'
+}
+
+const apiAccordionItems = computed(() => focusedApiResults.value.map(result => ({
+  ...result,
+  value: result.id,
+  label: apiRoute(result.url),
+})))
+
+const apiMethodColors = {
+  GET: 'success',
+  POST: 'info',
+  PUT: 'warning',
+  PATCH: 'secondary',
+  DELETE: 'error',
+} as const
+
+function apiMethodColor(method: string) {
+  return apiMethodColors[method.toUpperCase() as keyof typeof apiMethodColors] ?? 'neutral'
 }
 
 function apiIssueColor(status: PageFlowApiIssue['status']) {
@@ -835,11 +855,13 @@ function setHoveredHotspot(
 }
 
 function compactThumbnailRecord(pageId: string) {
-  return thumbnailManifest.value[thumbnailSlot(pageId, previewMode.value, 'compact')]
+  const page = pages.value.find(page => page.id === pageId)
+  return thumbnailManifest.value[thumbnailSlot(page ? thumbnailPageKey(page, pages.value) : pageId, previewMode.value, 'compact')]
 }
 
 function fullThumbnailRecords(pageId: string) {
-  return fullThumbnailTiles(thumbnailManifest.value, pageId, previewMode.value)
+  const page = pages.value.find(page => page.id === pageId)
+  return fullThumbnailTiles(thumbnailManifest.value, page ? thumbnailPageKey(page, pages.value) : pageId, previewMode.value)
 }
 
 function thumbnailIsCurrent(page: PageFlowPage) {
@@ -880,7 +902,7 @@ async function captureHostThumbnail(page: PageFlowPage, capturedSource?: string)
   const revision = pageThumbnailRevision(page)
   const { source, height: thumbnailHeight } = encoded
   const records = (['compact', 'full'] as const).map(tier => ({
-    slot: thumbnailSlot(page.id, previewMode.value, tier),
+    slot: thumbnailSlot(thumbnailPageKey(page, pages.value), previewMode.value, tier),
     revision,
     width: PAGE_CARD_WIDTH,
     height: thumbnailHeight,
@@ -903,7 +925,7 @@ async function captureHostThumbnail(page: PageFlowPage, capturedSource?: string)
   failedHostThumbnailIds.delete(page.id)
   draw()
   const stored: StoredHostThumbnail = {
-    pageId: page.id,
+    pageId: thumbnailPageKey(page, pages.value),
     mode: previewMode.value,
     revision,
     source,
@@ -924,7 +946,7 @@ async function captureHostThumbnail(page: PageFlowPage, capturedSource?: string)
 function restoreHostThumbnails(value: unknown) {
   storedHostThumbnails = parseStoredHostThumbnails(value)
   storedHostThumbnails.forEach((item) => {
-    const page = pages.value.find(page => page.id === item.pageId)
+    const page = pages.value.find(page => thumbnailPageKey(page, pages.value) === item.pageId)
     if (!page || item.revision !== pageThumbnailRevision(page, item.mode)) return
     const records = storedHostThumbnailRecords(item)
     Object.assign(thumbnailManifest.value, Object.fromEntries(records.map(record => [record.slot, record])))
@@ -1007,7 +1029,11 @@ function centerLayoutHorizontally(source: Map<string, [number, number]>, layoutP
 
 function layoutRouteGroup(path: string[]) {
   const layoutPagesList = canvasPagesFor(pages.value, path)
-  const layoutPositions = layoutPageGrid(layoutPagesList, new Map(layoutPagesList.map(page => [page.id, pageCardHeight(page.id)])))
+  const layoutPositions = layoutPageGrid(
+    layoutPagesList,
+    new Map(layoutPagesList.map(page => [page.id, pageCardHeight(page.id)])),
+    responsivePageGridColumns(canvas.value?.clientWidth ?? window.innerWidth, layoutPagesList.length),
+  )
   return {
     pages: layoutPagesList,
     positions: centerLayoutHorizontally(layoutPositions, layoutPagesList),
@@ -1052,7 +1078,11 @@ function requestLayout(nextPages = pages.value, _animate = false) {
   ++layoutRequestId
   const layoutPagesList = canvasPagesFor(nextPages)
   const heights = new Map(layoutPagesList.map(page => [page.id, pageCardHeight(page.id)]))
-  positions.value = centerLayoutHorizontally(layoutPageGrid(layoutPagesList, heights), layoutPagesList)
+  positions.value = centerLayoutHorizontally(layoutPageGrid(
+    layoutPagesList,
+    heights,
+    responsivePageGridColumns(canvas.value?.clientWidth ?? window.innerWidth, layoutPagesList.length),
+  ), layoutPagesList)
   draw()
   initialLayoutSettled.value = true
   scheduleInitialSceneReveal()
@@ -1347,8 +1377,7 @@ function editUserNote(user: string) {
 }
 
 function pageThumbnailRevision(page: PageFlowPage, mode = previewMode.value) {
-  const location = navigationLocations.value[page.path]
-  const revision = location ? `${thumbnailRevision(page)}:${location}` : thumbnailRevision(page)
+  const revision = thumbnailRevision(page)
   return mode === 'pc'
     ? `${revision}:${currentPreviewMode.value.width}x${currentPreviewMode.value.height}`
     : revision
@@ -1574,6 +1603,9 @@ function centerFocusedPage(pageId: string) {
     pagePreviewHeight(pageId),
     { width: canvas.value.clientWidth, height: canvas.value.clientHeight },
     SELECTED_PAGE_SCALE,
+    32,
+    16,
+    currentPreviewMode.value.width,
   )
   leafer.zoomLayer.set(transform)
   syncOverlay(false)
@@ -1630,6 +1662,9 @@ function highlightDiagnostic(item: PageFlowDiagnostic) {
     pagePreviewHeight(pageId),
     { width: canvas.value.clientWidth, height: canvas.value.clientHeight },
     SELECTED_PAGE_SCALE,
+    32,
+    16,
+    currentPreviewMode.value.width,
   )
   const transform = item.bounds
     ? centerDiagnosticTransform(
@@ -1775,16 +1810,22 @@ async function editGroupName(key: string, fallback: string) {
   const input = window.prompt('编辑分组名称（留空恢复路由名称）', current)
   if (input == null) return
   const name = input.trim()
+  const next = { ...groupNames.value }
+  if (name) next[key] = name
+  else delete next[key]
   try {
-    const response = await fetch(`${props.config.previewPath}api/group-name`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ key, name }),
-    })
-    if (!response.ok) throw new Error('保存失败')
-    const next = { ...groupNames.value }
-    if (name) next[key] = name
-    else delete next[key]
+    if (props.host) {
+      if (!hostCanvasOrigin) throw new Error('画板存储尚未就绪')
+      hostCanvasStorage = { ...hostCanvasStorage, groupNames: next, updatedAt: Date.now() }
+      await savePageFlowCanvas(props.host, hostCanvasOrigin, hostCanvasStorage)
+    } else {
+      const response = await fetch(`${props.config.previewPath}api/group-name`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ key, name }),
+      })
+      if (!response.ok) throw new Error('保存失败')
+    }
     groupNames.value = next
     scheduleCanvasRender()
   } catch {
@@ -2081,7 +2122,7 @@ async function capturePreview(pageId: string, frame: HTMLIFrameElement, ready = 
       config: props.config,
       document: frame.contentDocument!,
       body,
-      pageId,
+      pageId: thumbnailPageKey(page, pages.value),
       previewMode: previewMode.value,
       mode: currentPreviewMode.value,
       revision: pageThumbnailRevision(page),
@@ -2145,19 +2186,22 @@ function setPreviewMode(mode: PageFlowPreviewMode) {
 function handlePcViewportResize() {
   window.clearTimeout(pcViewportResizeTimer)
   pcViewportResizeTimer = window.setTimeout(() => {
+    const nextCanvas = { width: canvas.value?.clientWidth ?? 0, height: canvas.value?.clientHeight ?? 0 }
+    const layoutWidthChanged = nextCanvas.width !== canvasViewport.width
     if (props.host) {
-      const next = { width: canvas.value?.clientWidth ?? 0, height: canvas.value?.clientHeight ?? 0 }
       if (leafer && canvasViewport.width && canvasViewport.height) {
         const layer = leafer.zoomLayer
         layer.set({
-          x: (layer.x ?? 0) + (next.width - canvasViewport.width) / 2,
-          y: (layer.y ?? 0) + (next.height - canvasViewport.height) / 2,
+          x: (layer.x ?? 0) + (nextCanvas.width - canvasViewport.width) / 2,
+          y: (layer.y ?? 0) + (nextCanvas.height - canvasViewport.height) / 2,
         })
       }
-      canvasViewport = next
-      draw()
+      canvasViewport = nextCanvas
+      if (layoutWidthChanged) requestLayout()
+      else draw()
       return
     }
+    if (layoutWidthChanged) requestLayout()
     if (pcDesignSizeDetected) return
     const next = { width: window.innerWidth, height: window.innerHeight }
     if (next.width === pcPreviewSize.value.width && next.height === pcPreviewSize.value.height) return
@@ -2229,7 +2273,7 @@ function flyToPage(
       const currentPosition = positions.value.get(pageId)
       if (!finalTransform && currentPosition)
         target = focusedPageId.value === pageId
-          ? fitFocusedPreviewTransform(currentPosition, pagePreviewHeight(pageId), viewport, SELECTED_PAGE_SCALE)
+          ? fitFocusedPreviewTransform(currentPosition, pagePreviewHeight(pageId), viewport, SELECTED_PAGE_SCALE, 32, 16, currentPreviewMode.value.width)
           : centerPageTransform(currentPosition, pageCardHeight(pageId), viewport, targetScale ?? start.scaleX)
     }
     const transform = progress < 0.5
@@ -2852,6 +2896,13 @@ onMounted(async () => {
       applyHostState(session.state)
       hostCanvasOrigin = session.origin
       hostCanvasStorage = session.storage
+      const storedGroupNames = hostCanvasStorage.groupNames
+      if (storedGroupNames && typeof storedGroupNames === 'object' && !Array.isArray(storedGroupNames)) {
+        groupNames.value = {
+          ...groupNames.value,
+          ...Object.fromEntries(Object.entries(storedGroupNames).filter((entry): entry is [string, string] => typeof entry[1] === 'string')),
+        }
+      }
       restoreHostThumbnails(hostCanvasStorage.thumbnails)
       const currentPage = pages.value.find(page => page.id === active.value)
       if (currentPage && !thumbnailIsCurrent(currentPage)) await captureHostThumbnail(currentPage)
@@ -3048,7 +3099,6 @@ onUnmounted(() => {
                 <svg viewBox="0 0 12 12" aria-hidden="true"><path d="m3 4.5 3 3 3-3" /></svg>
               </button>
             </UDropdownMenu>
-            <span v-else-if="page.id === focusedPageId" class="page-user-label">{{ userNotes[users[0]] || users[0] }}</span>
             <iframe
               :ref="element => setPreviewFrame(page.id, element as Element | null)"
               :key="`${previewMode}:${currentPreviewMode.width}x${currentPreviewMode.height}:${page.id}:${pageUsers[page.id] ?? activeUser}`"
@@ -3095,7 +3145,7 @@ onUnmounted(() => {
         </svg>
       </button>
       <div v-show="!panelCollapsed" class="api-panel-content">
-      <PageFlowTabs v-model="panelTab" class="api-panel-tabs" :items="panelTabs" aria-label="页面详情">
+      <UTabs v-model="panelTab" class="api-panel-tabs" :items="panelTabs" variant="link" aria-label="页面详情">
         <template #api>
           <div v-if="focusedApiResults.length" class="api-panel-list">
             <div v-if="focusedApiIssues.length" class="border-b border-default py-3">
@@ -3133,26 +3183,40 @@ onUnmounted(() => {
                 </div>
               </div>
             </div>
-            <PageFlowRequestList :requests="focusedApiResults" :label="request => apiRoute(request.url)" empty-text="等待页面接口响应…">
-              <template #body="{ request: result }">
+            <UAccordion v-model="openApiResultId" :items="apiAccordionItems">
+              <template #leading="{ item: result }">
+                <UBadge :label="result.method" :color="apiMethodColor(result.method)" variant="soft" size="sm" />
+              </template>
+              <template #default="{ item: result }">
+                <span class="min-w-0">
+                  <span class="flex min-w-0 items-center gap-1.5">
+                    <span class="min-w-0 flex-1 truncate">{{ result.label }}</span>
+                    <UBadge v-if="(result.occurrences ?? 1) > 1" :label="`×${result.occurrences}`" color="warning" variant="soft" size="sm" />
+                  </span>
+                  <span class="block text-xs text-muted">
+                    {{ result.status }} · {{ result.duration }}ms<span v-if="result.lastIntervalMs != null"> · 最近间隔 {{ result.lastIntervalMs }}ms</span>
+                  </span>
+                </span>
+              </template>
+              <template #body="{ item: result }">
                 <div>
-                  <div v-if="visibleApiFields(asApiResult(result)).length" class="api-fields">
-                    <ApiFieldTree :nodes="visibleApiFieldTree(asApiResult(result))" />
+                  <div v-if="visibleApiFields(result).length" class="api-fields">
+                    <ApiFieldTree :nodes="visibleApiFieldTree(result)" />
                   </div>
                   <div v-else class="api-empty">页面暂未展示返回字段</div>
                   <UButton
-                    v-if="asApiResult(result).fields.some(field => !field.used)"
+                    v-if="result.fields.some(field => !field.used)"
                     color="neutral"
                     variant="link"
                     size="xs"
                     :trailing-icon="expandedApiResults.has(result.id) ? 'i-lucide-chevron-up' : 'i-lucide-chevron-down'"
                     @click="toggleApiResult(result.id)"
                   >
-                    {{ expandedApiResults.has(result.id) ? '隐藏未使用字段' : `显示未使用字段（${asApiResult(result).fields.filter(field => !field.used).length}）` }}
+                    {{ expandedApiResults.has(result.id) ? '隐藏未使用字段' : `显示未使用字段（${result.fields.filter(field => !field.used).length}）` }}
                   </UButton>
                 </div>
               </template>
-            </PageFlowRequestList>
+            </UAccordion>
           </div>
           <div v-else class="api-panel-waiting">等待页面接口响应…</div>
         </template>
@@ -3355,8 +3419,18 @@ onUnmounted(() => {
               <template #body="{ item: group }">
                 <div>
                   <p class="text-xs leading-5 text-muted">{{ group.description }}</p>
-                  <PageFlowDiagnosticList v-if="group.items.some(item => item.selector || diagnosticMeasurement(item))" class="mt-2 divide-y divide-default" :items="group.items" compact @select="highlightDiagnostic">
-                    <template #evidence="{ item }">
+                  <div v-if="group.items.some(item => item.selector || diagnosticMeasurement(item))" class="mt-2 divide-y divide-default">
+                    <div
+                      v-for="(item, index) in group.items"
+                      :key="item.id"
+                      class="py-2"
+                      :class="item.selector ? 'cursor-pointer' : undefined"
+                      :role="item.selector ? 'button' : undefined"
+                      :tabindex="item.selector ? 0 : undefined"
+                      @click="item.selector && highlightDiagnostic(item)"
+                      @keydown.enter="item.selector && highlightDiagnostic(item)"
+                      @keydown.space.prevent="item.selector && highlightDiagnostic(item)"
+                    >
                       <div
                         v-if="focusedDiagnosticEvidence.get(item.id)"
                         class="relative mb-2 overflow-hidden rounded-lg border border-default bg-muted"
@@ -3383,14 +3457,12 @@ onUnmounted(() => {
                           }"
                         />
                       </div>
-                    </template>
-                    <template #meta="{ item, index }">
                       <div class="min-w-0">
                         <div class="text-xs text-muted">{{ item.targetLabel || `问题 ${index + 1}` }}</div>
                         <div v-if="diagnosticMeasurement(item)" class="mt-0.5 text-xs text-dimmed">{{ diagnosticMeasurement(item) }}</div>
                       </div>
-                    </template>
-                  </PageFlowDiagnosticList>
+                    </div>
+                  </div>
                 </div>
               </template>
             </UAccordion>
@@ -3399,10 +3471,21 @@ onUnmounted(() => {
         </template>
         <template #todos>
           <div class="todo-panel">
-            <PageFlowTodoList v-model:draft="newTodoText" :todos="focusedTodos" placeholder="添加当前页面待办…" empty-text="当前页面暂无待办" @add="addPageTodo" @toggle="togglePageTodo" @remove="removePageTodo" />
+            <form class="todo-entry" @submit.prevent="addPageTodo">
+              <input v-model="newTodoText" type="text" maxlength="240" placeholder="添加当前页面待办…" aria-label="添加当前页面待办">
+              <UButton type="submit" size="sm" color="neutral" :disabled="!newTodoText.trim()">添加</UButton>
+            </form>
+            <div v-if="focusedTodos.length" class="todo-list">
+              <div v-for="todo in focusedTodos" :key="todo.id" class="todo-item">
+                <input :id="`todo-${todo.id}`" type="checkbox" :checked="todo.done" @change="togglePageTodo(todo.id)">
+                <label :for="`todo-${todo.id}`" :class="{ done: todo.done }">{{ todo.text }}</label>
+                <button type="button" aria-label="删除待办" title="删除待办" @click="removePageTodo(todo.id)">×</button>
+              </div>
+            </div>
+            <div v-else class="api-panel-waiting">当前页面暂无待办</div>
           </div>
         </template>
-      </PageFlowTabs>
+      </UTabs>
       <footer class="api-panel-statusbar">
         <span class="inline-flex" :title="editorButtonHint">
           <UButton

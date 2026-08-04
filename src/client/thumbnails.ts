@@ -10,10 +10,11 @@ export type PageFlowPreviewMode = 'mobile' | 'tablet' | 'pc'
 export type PageFlowThumbnailTier = 'compact' | 'full'
 export const PAGEFLOW_THUMBNAIL_TILE_HEIGHT = 512
 export const PAGEFLOW_MAX_SINGLE_THUMBNAIL_HEIGHT = 4096
-const PAGEFLOW_THUMBNAIL_CAPTURE_VERSION = 17
+const PAGEFLOW_THUMBNAIL_CAPTURE_VERSION = 20
+export const PAGEFLOW_FULL_THUMBNAIL_MAX_WIDTH = 960
 
 export function thumbnailTierForZoom(zoomPercent: number): PageFlowThumbnailTier {
-  return zoomPercent < 50 ? 'compact' : 'full'
+  return zoomPercent < 200 ? 'compact' : 'full'
 }
 
 export function thumbnailSlot(
@@ -26,7 +27,15 @@ export function thumbnailSlot(
 }
 
 export function thumbnailRevision(page: PageFlowPage) {
-  return `${PAGEFLOW_THUMBNAIL_CAPTURE_VERSION}:${page.path}`
+  const contentRevision = page.revision && page.revision !== page.path ? page.revision : undefined
+  return `${PAGEFLOW_THUMBNAIL_CAPTURE_VERSION}:${contentRevision ?? page.sourceFile ?? page.id}`
+}
+
+export function thumbnailPageKey(page: PageFlowPage, pages: PageFlowPage[] = []) {
+  if (!page.sourceFile) return page.id
+  const sourceFile = page.sourceFile.replaceAll('\\', '/')
+  const sharedSource = pages.some(item => item.id !== page.id && item.sourceFile?.replaceAll('\\', '/') === sourceFile)
+  return sharedSource ? `source:${sourceFile}:${page.id}` : `source:${sourceFile}`
 }
 
 export async function fetchThumbnailManifest(config: ResolvedPageFlowOptions) {

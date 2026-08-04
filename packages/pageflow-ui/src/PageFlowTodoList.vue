@@ -40,12 +40,12 @@ const emit = defineEmits<{
 .pageflow-todos { height: 100%; overflow: auto; }
 .pageflow-todo-entry { display: flex; gap: 8px; padding-bottom: 12px; border-bottom: 1px solid var(--pageflow-border, #2b3039); }
 .pageflow-todo-entry input { min-width: 0; flex: 1; height: 32px; padding: 0 10px; border: 1px solid var(--pageflow-border, #343a45); border-radius: 6px; color: var(--pageflow-text, inherit); background: var(--pageflow-surface-muted, #181b21); font: inherit; outline: none; }
-.pageflow-todo-entry button { border: 1px solid var(--pageflow-border, #303640); border-radius: 7px; padding: 5px 10px; color: inherit; background: var(--pageflow-surface-muted, #242933); cursor: pointer; }
+.pageflow-todo-entry button { border: 1px solid var(--pageflow-border, #303640); border-radius: 7px; padding: 5px 10px; color: inherit; background: var(--pageflow-surface-muted, #242933); font-size: 12px; cursor: pointer; }
 .pageflow-todo-entry button:disabled { cursor: default; opacity: .45; }
 .pageflow-todo-list { display: grid; gap: 2px; padding-top: 10px; }
 .pageflow-todo-item { display: grid; grid-template-columns: 16px minmax(0, 1fr) 24px; gap: 8px; align-items: start; padding: 9px 6px; border-radius: 6px; }
 .pageflow-todo-item:hover { background: var(--pageflow-surface-muted, #191c22); }
-.pageflow-todo-item input { margin: 2px 0 0; accent-color: #645af0; }
+.pageflow-todo-item input { margin: 2px 0 0; accent-color: #3b82f6; }
 .pageflow-todo-item label { color: var(--pageflow-text, inherit); font-size: 12px; line-height: 18px; overflow-wrap: anywhere; cursor: pointer; }
 .pageflow-todo-item label.done { color: var(--pageflow-muted, #747d8c); text-decoration: line-through; }
 .pageflow-todo-item button { padding: 0; border: 0; color: var(--pageflow-muted, #747d8c); background: transparent; font-size: 17px; line-height: 18px; cursor: pointer; }

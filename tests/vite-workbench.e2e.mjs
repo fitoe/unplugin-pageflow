@@ -10,6 +10,10 @@ test('Vite workbench smoke covers navigation, focus, viewport, theme, hotspots, 
     server: { host: '127.0.0.1', port: 0 },
     logLevel: 'silent',
   })
+  server.middlewares.stack.unshift({ route: '/api/smoke', handle: (_request, response) => {
+    response.setHeader('Content-Type', 'application/json')
+    response.end(JSON.stringify({ ok: true, item: { id: 1, name: 'PageFlow' } }))
+  } })
   let browser
   try {
     await server.listen()
@@ -26,7 +30,8 @@ test('Vite workbench smoke covers navigation, focus, viewport, theme, hotspots, 
     await search.fill('Checkout')
     const result = page.getByRole('option', { name: /Checkout/ })
     await result.waitFor()
-    await result.click()
+    await search.press('Enter')
+    assert.equal(await page.locator('.page-user-label').count(), 0)
 
     await page.getByRole('button', { name: '切换到暗黑模式' }).click()
     assert.equal((await page.locator('html').getAttribute('class'))?.includes('dark'), true)
@@ -37,7 +42,7 @@ test('Vite workbench smoke covers navigation, focus, viewport, theme, hotspots, 
     await viewportButtons.nth(0).click()
     await viewportButtons.nth(2).click()
 
-    await page.locator('iframe[src*="__unplugin-pageflow_preview=1"]').waitFor({ state: 'visible' })
+    await page.locator('iframe[src*="__unplugin-pageflow_preview=1"]').waitFor({ state: 'attached' })
     const frame = page.frames().find(item => item.url().includes('__unplugin-pageflow_preview=1'))
     assert(frame)
     await frame.waitForSelector('[data-unplugin-pageflow-hotspot]')
@@ -56,11 +61,19 @@ test('Vite workbench smoke covers navigation, focus, viewport, theme, hotspots, 
     await page.waitForTimeout(250)
     assert.equal(await frame.locator('[data-unplugin-pageflow-hotspot]').evaluateAll(items => items.some(item => Number.parseFloat(item.style.top) >= 100)), true)
 
+    await frame.evaluate(() => fetch('/api/smoke').then(response => response.json()))
     const detailTabs = page.locator('[aria-label="页面详情"] button')
+    await detailTabs.filter({ hasText: '接口' }).click()
+    const requestItem = page.getByRole('button', { name: /GET.*\/smoke.*200.*ms/ })
+    await requestItem.waitFor()
+    await requestItem.click()
+    await page.getByRole('button', { name: /显示未使用字段/ }).click()
+    await page.locator('.api-fields').waitFor()
+
     await detailTabs.filter({ hasText: '诊断' }).click()
     await page.getByRole('button', { name: '重新扫描页面' }).click()
     await detailTabs.filter({ hasText: '待办' }).click()
-    await page.getByRole('textbox', { name: '添加待办' }).fill('Smoke todo')
+    await page.getByRole('textbox', { name: '添加当前页面待办' }).fill('Smoke todo')
     await page.getByRole('button', { name: '添加' }).click()
     await page.getByText('Smoke todo').waitFor()
     assert.deepEqual(errors, [])
