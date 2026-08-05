@@ -97,6 +97,11 @@ test('Chrome extension smoke covers runtime, capture, diagnostics, workbench, an
     await page.waitForTimeout(300)
 
     const worker = await extensionWorker(context)
+    const pageTabId = await worker.evaluate(async url => (await chrome.tabs.query({ url }))[0].id, `${origin}/orders`)
+    await page.evaluate(() => { document.title = 'Orders asynchronously rendered' })
+    const titledState = await waitForExtensionState(worker, pageTabId, value =>
+      value.pages.some(item => new URL(item.url).pathname === '/orders' && item.title === 'Orders asynchronously rendered'))
+    assert(titledState.pages.some(item => new URL(item.url).pathname === '/orders' && item.title === 'Orders asynchronously rendered'))
     const screen = await context.newPage()
     await screen.goto(`${origin}/screen`)
     const screenTabId = await worker.evaluate(async url => (await chrome.tabs.query({ url }))[0].id, `${origin}/screen`)

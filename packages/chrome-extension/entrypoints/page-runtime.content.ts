@@ -97,11 +97,21 @@ export default defineContentScript({
       }
       currentUrl = nextUrl
     }
+    const observePageTitle = () => {
+      let reportedTitle = document.title
+      const observer = new MutationObserver(() => {
+        if (document.title === reportedTitle) return
+        reportedTitle = document.title
+        reportPage()
+      })
+      observer.observe(document.head, { childList: true, characterData: true, subtree: true })
+    }
     instrumentPageFlowHistory(window, () => queueMicrotask(reportPage))
     addEventListener('popstate', reportPage)
     addEventListener('hashchange', reportPage)
     addEventListener('DOMContentLoaded', () => {
       reportPage()
+      observePageTitle()
       reportLinkedPages()
       void reportRouterPages()
     }, { once: true })

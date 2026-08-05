@@ -172,7 +172,7 @@ test('serves the unplugin-pageflow client from the configured development route'
     assert.match(appHtml, /html-proxy&index=0\.js/)
     assert(appHtml.indexOf('html-proxy&index=0.js') < appHtml.indexOf('/src/main.ts'))
     assert.match(runtimeProxyCode, /virtual:unplugin-pageflow\/runtime/)
-    assert.match(appHtml, /rel="pageflow-config" href="\/.well-known\/pageflow.json"/)
+    assert.doesNotMatch(appHtml, /pageflow-config/)
     assert.equal(pageflow.status, 200)
     assert.match(html, /<title>unplugin-pageflow<\/title>/)
     assert.match(clientPath, /^\/@id\/virtual:unplugin-pageflow\/client\?v=\d+(?:\.\d+)?$/)

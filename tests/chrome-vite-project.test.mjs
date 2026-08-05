@@ -55,3 +55,23 @@ test('loads a declared public PageFlow config before fallback locations', async 
     await server.close()
   }
 })
+
+test('loads the conventional public PageFlow config without a page declaration', async () => {
+  const server = await createTestServer()
+  const originalFetch = globalThis.fetch
+  try {
+    const { loadVitePageFlowProject } = await server.ssrLoadModule('/packages/chrome-extension/utils/vite-project.ts')
+    const requested = []
+    globalThis.fetch = async (url) => {
+      requested.push(String(url))
+      if (String(url) !== 'https://example.com/.well-known/pageflow.json') return new Response('', { status: 404 })
+      return Response.json({ graph: { pages: [{ id: 'home', title: 'Home', path: '/' }] } })
+    }
+    const project = await loadVitePageFlowProject('https://example.com')
+    assert.deepEqual(requested, ['https://example.com/.well-known/pageflow.json'])
+    assert.equal(project.pages[0].title, 'Home')
+  } finally {
+    globalThis.fetch = originalFetch
+    await server.close()
+  }
+})

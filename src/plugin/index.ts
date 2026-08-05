@@ -708,10 +708,6 @@ const factory: UnpluginFactory<PageFlowOptions | undefined> = (options) => {
         handler(_html, context) {
           if (!resolved.enabled || resolved.framework === 'nuxt' || resolved.framework === 'qwik-city' || context.path?.startsWith(resolved.previewPath)) return
           return [{
-            tag: 'link',
-            attrs: { rel: 'pageflow-config', href: '/.well-known/pageflow.json' },
-            injectTo: 'head-prepend',
-          }, {
             tag: 'script',
             attrs: { type: 'module' },
             children: `import '${PAGEFLOW_RUNTIME_ID}'`,
