@@ -31,7 +31,14 @@ test('Vue 热更新直接推送对应页面', async () => {
 
     const plugin = server.config.plugins.find(item => item.name === 'unplugin-pageflow')
     await plugin.handleHotUpdate({ file: resolve('tests/fixtures/Programmatic.vue') })
-    const update = decoder.decode((await reader.read()).value)
+    let update = ''
+    const timeout = AbortSignal.timeout(5_000)
+    const deadline = new Promise((_, reject) => timeout.addEventListener('abort', () => reject(timeout.reason), { once: true }))
+    while (!update.includes('event: unplugin-pageflow:page-update')) {
+      const chunk = await Promise.race([reader.read(), deadline])
+      assert.equal(chunk.done, false)
+      update += decoder.decode(chunk.value, { stream: true })
+    }
     assert.match(update, /event: unplugin-pageflow:page-update/)
     assert.match(update, /"path":"\/hot"/)
   } finally {

@@ -49,7 +49,9 @@ jobs:
           pnpm build:chrome
           google-chrome --pack-extension="$GITHUB_WORKSPACE/packages/chrome-extension/.output/chrome-mv3" --pack-extension-key="$RUNNER_TEMP/pageflow.pem"
           mkdir -p docs/public/chrome
-          mv packages/chrome-extension/.output/chrome-mv3.crx docs/public/chrome/pageflow.crx
+          version="$(node -p "require('./packages/chrome-extension/.output/chrome-mv3/manifest.json').version")"
+          mv packages/chrome-extension/.output/chrome-mv3.crx "docs/public/chrome/pageflow-v${version}.crx"
+          cp "docs/public/chrome/pageflow-v${version}.crx" docs/public/chrome/pageflow.crx
           node scripts/generate-chrome-update.mjs "$RUNNER_TEMP/pageflow.pem" packages/chrome-extension/.output/chrome-mv3/manifest.json docs/public/chrome/updates.xml
       - run: pnpm docs:build
       - uses: actions/upload-pages-artifact@v4

@@ -2,8 +2,17 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 import { createServer } from 'vite'
 
+function createTestServer() {
+  return createServer({
+    configFile: false,
+    server: { middlewareMode: true },
+    appType: 'custom',
+    logLevel: 'silent',
+  })
+}
+
 test('translates Vite canvas page ids to Chrome runtime urls', async () => {
-  const server = await createServer({ configFile: false, server: { middlewareMode: true }, appType: 'custom', logLevel: 'silent' })
+  const server = await createTestServer()
   try {
     const { translateViteCanvasLayouts } = await server.ssrLoadModule('/packages/chrome-extension/utils/vite-project.ts')
     const layouts = translateViteCanvasLayouts({
@@ -23,7 +32,7 @@ test('translates Vite canvas page ids to Chrome runtime urls', async () => {
 })
 
 test('loads a declared public PageFlow config before fallback locations', async () => {
-  const server = await createServer({ configFile: false, server: { middlewareMode: true }, appType: 'custom', logLevel: 'silent' })
+  const server = await createTestServer()
   const originalFetch = globalThis.fetch
   try {
     const { loadVitePageFlowProject } = await server.ssrLoadModule('/packages/chrome-extension/utils/vite-project.ts')

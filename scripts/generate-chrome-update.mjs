@@ -15,10 +15,11 @@ const extensionId = [...createHash('sha256').update(publicKey).digest().subarray
   .map(byte => `${String.fromCharCode(97 + (byte >> 4))}${String.fromCharCode(97 + (byte & 15))}`)
   .join('')
 const { version } = JSON.parse(readFileSync(resolve(manifestPath), 'utf8'))
+const packageFile = `pageflow-v${version}.crx`
 const xml = `<?xml version="1.0" encoding="UTF-8"?>
 <gupdate xmlns="http://www.google.com/update2/response" protocol="2.0">
   <app appid="${extensionId}">
-    <updatecheck codebase="https://fitoe.github.io/unplugin-pageflow/chrome/pageflow.crx" version="${version}" />
+    <updatecheck codebase="https://fitoe.github.io/unplugin-pageflow/chrome/${packageFile}" version="${version}" />
   </app>
 </gupdate>
 `

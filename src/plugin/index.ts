@@ -248,6 +248,7 @@ function createGraph(
   routes = expandDynamicRoutes(routes, dynamicParams)
   const projectSourceFile = (file: string | undefined) => {
     if (!file) return undefined
+    if (/^[A-Za-z]:[\\/]/.test(file) && !/^[A-Za-z]:[\\/]/.test(projectRoot)) return undefined
     const relativeFile = normalizeFile(relative(projectRoot, resolve(projectRoot, file)))
     return relativeFile === '..' || relativeFile.startsWith('../') || isAbsolute(relativeFile) ? undefined : relativeFile
   }

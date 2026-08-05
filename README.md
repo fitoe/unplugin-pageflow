@@ -237,10 +237,16 @@ pnpm test
 pnpm build
 ```
 
-完整检查：
+日常快速检查（类型检查与核心测试）：
 
 ```bash
 pnpm check
+```
+
+发布前完整检查（包含构建、全量测试、Chrome E2E 与打包验证）：
+
+```bash
+pnpm check:full
 ```
 
 要求 Node.js `>=20.19`、npm `>=10`。

@@ -34,7 +34,7 @@ jobs:
       - run: pnpm install --frozen-lockfile
 
       - name: Verify package
-        run: pnpm run check
+        run: pnpm run check:full
 
       - name: Install release tooling
         run: npm install --prefix "$RUNNER_TEMP/semantic-release" --no-package-lock --no-save semantic-release@25.0.8 @semantic-release/npm@13.1.5

@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { readFile, writeFile } from 'node:fs/promises'
+import { readFile, rm, writeFile } from 'node:fs/promises'
 import test from 'node:test'
 import { fileURLToPath } from 'node:url'
 import { chromium } from '@playwright/test'
@@ -7,7 +7,8 @@ import { createServer } from 'vite'
 
 test('Vite workbench smoke covers navigation, focus, viewport, theme, hotspots, diagnostics, and todos', { timeout: 60_000 }, async () => {
   const canvasConfigFile = fileURLToPath(new URL('../playground/basic/.pageflow', import.meta.url))
-  const originalCanvasConfig = await readFile(canvasConfigFile, 'utf8')
+  const originalCanvasConfig = await readFile(canvasConfigFile, 'utf8').catch(() => undefined)
+  if (originalCanvasConfig == null) await writeFile(canvasConfigFile, '{}\n')
   const server = await createServer({
     configFile: fileURLToPath(new URL('../playground/basic/vite.config.ts', import.meta.url)),
     server: { host: '127.0.0.1', port: 0 },
@@ -150,6 +151,7 @@ test('Vite workbench smoke covers navigation, focus, viewport, theme, hotspots, 
   } finally {
     await browser?.close()
     await server.close()
-    await writeFile(canvasConfigFile, originalCanvasConfig)
+    if (originalCanvasConfig == null) await rm(canvasConfigFile, { force: true })
+    else await writeFile(canvasConfigFile, originalCanvasConfig)
   }
 })

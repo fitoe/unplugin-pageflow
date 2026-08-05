@@ -99,7 +99,7 @@ test('serves the unplugin-pageflow client from the configured development route'
       { id: 'source-check', name: 'source-check', path: '/source-check', title: 'Source check', componentFile: 'C:/project/src/source-check.vue' },
       { id: 'redirect-home', path: '/redirect-home', title: 'Redirect home', componentFile: redirectComponentFile },
       { id: 'standard-redirect', path: '/start', title: 'Start', redirect: '/about' },
-      { id: '/[...all]', path: '/:all(.*)', title: 'Not found' },
+      { id: '/[...all]', path: '/:all(.*)', title: 'Not found', catchAll: true },
     ]
 
     const routeUpdate = await fetch(`${origin}/__unplugin-pageflow/api/routes`, {
