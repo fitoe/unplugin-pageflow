@@ -35,6 +35,7 @@ const config: ResolvedPageFlowOptions = {
   testCommands: {},
   diagnostics: resolvePageFlowDiagnosticOptions(),
   apiDiagnostics: resolvePageFlowApiDiagnosticOptions(),
+  configFile: { loaded: project.loaded, source: project.source },
 }
 
 mountPageFlow(target, config, host)

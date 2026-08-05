@@ -26,7 +26,7 @@ import type {
   PageFlowThumbnailRecord,
   ResolvedPageFlowOptions,
 } from './shared/types'
-import { cancelPageFlowTest, fetchPageFlowEditor, fetchPageFlowGraph, fetchPageFlowTests, openPageFlowEditor, publishPageFlowAIContext, reportPageTitle, runPageFlowLighthouse, runPageFlowTest, startRouteDiscovery, subscribeToPageFlowUpdates, type PageFlowEditorInfo } from './client/graph'
+import { cancelPageFlowTest, fetchPageFlowEditor, fetchPageFlowGraph, fetchPageFlowTests, openPageFlowEditor, publishPageFlowAIContext, refreshPageFlowConfig, reportPageTitle, runPageFlowLighthouse, runPageFlowTest, startRouteDiscovery, subscribeToPageFlowUpdates, type PageFlowEditorInfo } from './client/graph'
 import { planGraphUpdate } from './client/graph-update'
 import { resolvePreviewUrl, touchPreviewCache } from './client/preview'
 import { PAGEFLOW_SCAN_MESSAGE } from './shared/protocol'
@@ -160,6 +160,12 @@ const status = ref(props.config.previewPath === '/' ? 'Demo data' : 'Discovering
 const groupNames = ref({ ...props.config.groupNames })
 const pageNames = ref({ ...props.config.pageNames })
 const canvasLayouts = ref({ ...props.config.canvasLayouts })
+const configPopoverOpen = ref(false)
+const configRefreshing = ref(false)
+const configFileStatus = ref(props.config.configFile ?? {
+  loaded: props.config.previewPath !== '/',
+  source: props.config.previewPath === '/' ? undefined : '.pageflow',
+})
 const zoomPercent = ref(90)
 const visiblePageIds = ref(new Set<string>())
 const viewportInteracting = ref(false)
@@ -1257,6 +1263,35 @@ function requestLayout(nextPages = pages.value, _animate = false) {
   fitInitialCanvas()
   initialLayoutSettled.value = true
   scheduleInitialSceneReveal()
+}
+
+async function refreshProjectConfig() {
+  if (configRefreshing.value) return
+  configRefreshing.value = true
+  try {
+    const refreshed = props.host?.refreshProjectConfig
+      ? await props.host.refreshProjectConfig()
+      : await refreshPageFlowConfig(props.config)
+    groupNames.value = { ...refreshed.groupNames }
+    pageNames.value = { ...refreshed.pageNames }
+    canvasLayouts.value = { ...refreshed.canvasLayouts }
+    configFileStatus.value = { loaded: refreshed.loaded, source: refreshed.source }
+    if (props.host) applyHostState(await props.host.loadState())
+    else {
+      const graph = await fetchPageFlowGraph(props.config)
+      applyGraph(graph.pages, graph.routeMode)
+    }
+    initialCanvasFitted = false
+    requestLayout()
+  } catch (error) {
+    configFileStatus.value = {
+      loaded: false,
+      source: configFileStatus.value.source,
+      error: error instanceof Error ? error.message : String(error),
+    }
+  } finally {
+    configRefreshing.value = false
+  }
 }
 
 function animateDeckExpansion(path: string[], sourcePageId: string, next: ReturnType<typeof layoutRouteGroup>, done?: () => void) {
@@ -3992,6 +4027,21 @@ onUnmounted(() => {
       </aside>
     </section>
     <div class="zoom"><button type="button" @click="zoomCanvas('in')">+</button><span>{{ zoomPercent }}%</span><button type="button" @click="zoomCanvas('out')">−</button></div>
-    <footer><span><i></i> {{ status }}</span><span>{{ routeDeckView.decks.length }} 组 / {{ pages.length }} 页 · v{{ pageFlowVersion }}</span></footer>
+    <div v-if="configPopoverOpen" class="config-popover" role="dialog" aria-label="PageFlow 配置状态">
+      <div class="config-popover-status">
+        <i :class="{ loaded: configFileStatus.loaded, failed: configFileStatus.error }"></i>
+        <strong>{{ configFileStatus.error ? '配置文件读取失败' : configFileStatus.loaded ? '配置文件已读取' : '未读取到配置文件' }}</strong>
+      </div>
+      <div v-if="configFileStatus.source" class="config-popover-source" :title="configFileStatus.source">{{ configFileStatus.source }}</div>
+      <div v-if="configFileStatus.error" class="config-popover-error">{{ configFileStatus.error }}</div>
+      <button type="button" class="config-refresh" :disabled="configRefreshing" @click="refreshProjectConfig">
+        <span class="i-lucide-refresh-cw" :class="{ spinning: configRefreshing }"></span>
+        {{ configRefreshing ? '正在刷新…' : '刷新并重建布局' }}
+      </button>
+    </div>
+    <footer>
+      <button type="button" class="route-sync-status" :aria-expanded="configPopoverOpen" @click="configPopoverOpen = !configPopoverOpen"><i></i> {{ status }}</button>
+      <span>{{ routeDeckView.decks.length }} 组 / {{ pages.length }} 页 · v{{ pageFlowVersion }}</span>
+    </footer>
   </main>
 </template>

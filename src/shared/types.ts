@@ -72,6 +72,19 @@ export interface ResolvedPageFlowOptions {
   testCommands: Partial<Record<PageFlowTestKind, PageFlowTestCommand>>
   diagnostics: ResolvedPageFlowDiagnosticOptions
   apiDiagnostics: ResolvedPageFlowApiDiagnosticOptions
+  configFile?: PageFlowConfigFileStatus
+}
+
+export interface PageFlowConfigFileStatus {
+  loaded: boolean
+  source?: string
+  error?: string
+}
+
+export interface PageFlowProjectConfig extends PageFlowConfigFileStatus {
+  groupNames: Record<string, string>
+  pageNames: Record<string, string>
+  canvasLayouts: Record<string, Record<string, [number, number]>>
 }
 
 export interface PageFlowRuntimeRoute {

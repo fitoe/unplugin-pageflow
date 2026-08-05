@@ -48,8 +48,26 @@ test('loads a declared public PageFlow config before fallback locations', async 
     }
     const project = await loadVitePageFlowProject('https://example.com', 'https://cdn.example.com/pageflow.json')
     assert.deepEqual(requested, ['https://cdn.example.com/pageflow.json'])
+    assert.equal(project.loaded, true)
+    assert.equal(project.source, 'https://cdn.example.com/pageflow.json')
     assert.equal(project.pages[0].url, 'https://example.com/home')
     assert.deepEqual(project.canvasLayouts, { '/': { 'https://example.com/home': [12, 34] } })
+  } finally {
+    globalThis.fetch = originalFetch
+    await server.close()
+  }
+})
+
+test('reports when no PageFlow project config can be loaded', async () => {
+  const server = await createTestServer()
+  const originalFetch = globalThis.fetch
+  try {
+    const { loadVitePageFlowProject } = await server.ssrLoadModule('/packages/chrome-extension/utils/vite-project.ts')
+    globalThis.fetch = async () => new Response('', { status: 404 })
+    const project = await loadVitePageFlowProject('https://example.com')
+    assert.equal(project.loaded, false)
+    assert.equal(project.source, undefined)
+    assert.deepEqual(project.pages, [])
   } finally {
     globalThis.fetch = originalFetch
     await server.close()

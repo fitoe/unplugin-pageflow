@@ -1,7 +1,7 @@
-import type { PageFlowGraph, ResolvedPageFlowOptions } from '../../../src/shared/types'
+import type { PageFlowGraph, PageFlowProjectConfig, ResolvedPageFlowOptions } from '../../../src/shared/types'
 import type { PageFlowHostState } from '@pageflow/core/host'
 
-type ProjectCanvasOptions = Pick<ResolvedPageFlowOptions, 'groupNames' | 'pageNames' | 'canvasLayouts'> & {
+export type LoadedPageFlowProject = PageFlowProjectConfig & {
   pages: PageFlowHostState['pages']
 }
 
@@ -33,8 +33,10 @@ export function translateViteCanvasLayouts(
   ]))
 }
 
-function resolveProject(config: PublicPageFlowProject, graph: PublicGraph, origin: string): Partial<ProjectCanvasOptions> {
+function resolveProject(config: PublicPageFlowProject, graph: PublicGraph, origin: string, source: string): LoadedPageFlowProject {
   return {
+    loaded: true,
+    source,
     groupNames: config.groupNames ?? {},
     pageNames: config.pageNames ?? {},
     canvasLayouts: translateViteCanvasLayouts(config.canvasLayouts, graph, origin),
@@ -48,7 +50,7 @@ function resolveProject(config: PublicPageFlowProject, graph: PublicGraph, origi
   }
 }
 
-export async function loadVitePageFlowProject(origin: string, declaredUrl?: string): Promise<Partial<ProjectCanvasOptions>> {
+export async function loadVitePageFlowProject(origin: string, declaredUrl?: string): Promise<LoadedPageFlowProject> {
   const publicUrls = [
     declaredUrl,
     new URL('/.well-known/pageflow.json', origin).href,
@@ -60,7 +62,7 @@ export async function loadVitePageFlowProject(origin: string, declaredUrl?: stri
       if (!response.ok) continue
       const config = await response.json() as PublicPageFlowProject
       const graph = config.graph ?? (config.pages ? { pages: config.pages.map(page => ({ id: page.routeKey ?? page.url, path: new URL(page.url).pathname, title: page.title })) } : undefined)
-      if (graph) return resolveProject(config, graph, origin)
+      if (graph) return resolveProject(config, graph, origin, url)
     } catch {}
   }
   try {
@@ -68,12 +70,12 @@ export async function loadVitePageFlowProject(origin: string, declaredUrl?: stri
       fetch(new URL('/@id/__x00__virtual:unplugin-pageflow/config', origin)),
       fetch(new URL('/__unplugin-pageflow/api/graph', origin)),
     ])
-    if (!configResponse.ok || !graphResponse.ok) return {}
+    if (!configResponse.ok || !graphResponse.ok) return { loaded: false, groupNames: {}, pageNames: {}, canvasLayouts: {}, pages: [] }
     const config = parseVitePageFlowConfig(await configResponse.text())
-    if (!config) return {}
+    if (!config) return { loaded: false, groupNames: {}, pageNames: {}, canvasLayouts: {}, pages: [] }
     const graph = await graphResponse.json() as PageFlowGraph
-    return resolveProject(config, graph, origin)
+    return resolveProject(config, graph, origin, '.pageflow')
   } catch {
-    return {}
+    return { loaded: false, groupNames: {}, pageNames: {}, canvasLayouts: {}, pages: [] }
   }
 }

@@ -227,3 +227,59 @@ footer i {
   border-radius: 50%;
   background: var(--pageflow-text);
 }
+.route-sync-status {
+  display: flex;
+  align-items: center;
+  padding: 4px 0;
+  border: 0;
+  color: inherit;
+  background: transparent;
+  font: inherit;
+  cursor: pointer;
+}
+.route-sync-status:hover { color: var(--pageflow-text); }
+.config-popover {
+  position: absolute;
+  z-index: 40;
+  bottom: 36px;
+  left: 12px;
+  width: 260px;
+  padding: 12px;
+  border: 1px solid var(--pageflow-border);
+  border-radius: 6px;
+  color: var(--pageflow-text);
+  background: var(--pageflow-surface);
+  box-shadow: 0 10px 30px var(--pageflow-shadow);
+  font: 11px 'DM Mono';
+}
+.config-popover-status { display: flex; align-items: center; gap: 8px; }
+.config-popover-status i { width: 7px; height: 7px; border-radius: 50%; background: #e7ad43; }
+.config-popover-status i.loaded { background: #26b99a; }
+.config-popover-status i.failed { background: #ef4444; }
+.config-popover-source,
+.config-popover-error {
+  margin-top: 8px;
+  overflow: hidden;
+  color: var(--pageflow-muted);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.config-popover-error { color: #ef4444; white-space: normal; }
+.config-refresh {
+  display: flex;
+  width: 100%;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  margin-top: 12px;
+  padding: 7px 10px;
+  border: 1px solid var(--pageflow-border);
+  border-radius: 4px;
+  color: var(--pageflow-text);
+  background: var(--pageflow-surface-muted);
+  font: inherit;
+  cursor: pointer;
+}
+.config-refresh:disabled { cursor: default; opacity: 0.65; }
+.config-refresh .spinning { animation: config-refresh-spin 0.8s linear infinite; }
+@keyframes config-refresh-spin { to { transform: rotate(360deg); } }

@@ -51,6 +51,19 @@ test('persists edited group and page names and refreshes the virtual client conf
     assert.equal(stored.groupNames.business, '业务流程')
     assert.equal(stored.pageNames['/screen/legacy/yuye'], '渔业演示')
     assert.deepEqual(stored.canvasLayouts['/business'].overview, [120, 240])
+    await writeFile(resolve(root, '.pageflow'), JSON.stringify({
+      enabled: true,
+      previewPath: '/__unplugin-pageflow/',
+      groupNames: { refreshed: '重新读取' },
+      canvasLayouts: { '/': { home: [320, 180] } },
+    }))
+    const refreshResponse = await fetch(`${origin}/__unplugin-pageflow/api/config`, { method: 'POST' })
+    const refreshed = await refreshResponse.json()
+    assert.equal(refreshResponse.status, 200)
+    assert.equal(refreshed.loaded, true)
+    assert.equal(refreshed.source, resolve(root, '.pageflow'))
+    assert.equal(refreshed.groupNames.refreshed, '重新读取')
+    assert.deepEqual(refreshed.canvasLayouts['/'].home, [320, 180])
   } finally {
     await server.close()
     await rm(root, { recursive: true, force: true })

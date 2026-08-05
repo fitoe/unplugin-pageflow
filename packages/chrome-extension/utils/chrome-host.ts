@@ -1,5 +1,6 @@
 import type { PageFlowHost, PageFlowHostCapture, PageFlowHostState } from '@pageflow/core/host'
 import type { ExtensionMessage } from './shared'
+import { loadVitePageFlowProject } from './vite-project'
 
 export class ChromePageFlowHost implements PageFlowHost {
   readonly sourceId: string
@@ -17,6 +18,13 @@ export class ChromePageFlowHost implements PageFlowHost {
 
   configUrl() {
     return browser.tabs.sendMessage(this.tabId, { type: 'pageflow:get-config-url' } satisfies ExtensionMessage) as Promise<string | undefined>
+  }
+
+  async refreshProjectConfig() {
+    const state = await this.loadState()
+    const project = await loadVitePageFlowProject(new URL(state.currentUrl).origin, await this.configUrl())
+    this.setSupplementalPages(project.pages)
+    return project
   }
 
   async loadState() {

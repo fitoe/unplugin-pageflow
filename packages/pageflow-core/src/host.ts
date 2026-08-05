@@ -1,5 +1,14 @@
 import type { PageFlowApiField, PageFlowApiRequest, PageFlowBrowserRuntimeEvent } from './types'
 
+export interface PageFlowHostProjectConfig {
+  loaded: boolean
+  source?: string
+  error?: string
+  groupNames: Record<string, string>
+  pageNames: Record<string, string>
+  canvasLayouts: Record<string, Record<string, [number, number]>>
+}
+
 export interface PageFlowHostState {
   currentUrl: string
   pages: Array<{ url: string; routeKey?: string; discovered?: boolean; title: string; updatedAt: number }>
@@ -23,6 +32,7 @@ export interface PageFlowHost {
   capture(): Promise<string | PageFlowHostCapture>
   previewSize?(): Promise<{ width: number; height: number }>
   capturePage?(url: string, viewport: { width: number; height: number }): Promise<string | PageFlowHostCapture>
+  refreshProjectConfig?(): Promise<PageFlowHostProjectConfig>
   loadStorage<T>(key: string): Promise<T | undefined>
   saveStorage(key: string, value: unknown): Promise<void>
   removeStorage(key: string): Promise<void>

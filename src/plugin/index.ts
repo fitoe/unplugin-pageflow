@@ -139,24 +139,27 @@ async function loadProjectOptions(root: string, options: PageFlowOptions = {}) {
     if (code !== 'ENOENT') throw error
     await writeFile(file, `${JSON.stringify(resolveOptions(options), null, 2)}\n`, { flag: 'wx' })
   }
-  return resolveOptions({
-    ...stored,
-    ...options,
-    dynamicParams: options.dynamicParams ?? stored.dynamicParams,
-    routes: options.routes ?? stored.routes,
-    previewRoles: options.previewRoles ?? stored.previewRoles,
-    groupNames: { ...(options.groupNames ?? {}), ...(stored.groupNames ?? {}) },
-    pageNames: { ...(options.pageNames ?? {}), ...(stored.pageNames ?? {}) },
-    canvasLayouts: { ...(options.canvasLayouts ?? {}), ...(stored.canvasLayouts ?? {}) },
-    pageTests: options.pageTests ?? stored.pageTests,
-    testCommands: options.testCommands ?? stored.testCommands,
-    diagnostics: {
-      ...stored.diagnostics,
-      ...options.diagnostics,
-      rules: { ...stored.diagnostics?.rules, ...options.diagnostics?.rules },
-    },
-    apiDiagnostics: { ...stored.apiDiagnostics, ...options.apiDiagnostics },
-  })
+  return {
+    ...resolveOptions({
+      ...stored,
+      ...options,
+      dynamicParams: options.dynamicParams ?? stored.dynamicParams,
+      routes: options.routes ?? stored.routes,
+      previewRoles: options.previewRoles ?? stored.previewRoles,
+      groupNames: { ...(options.groupNames ?? {}), ...(stored.groupNames ?? {}) },
+      pageNames: { ...(options.pageNames ?? {}), ...(stored.pageNames ?? {}) },
+      canvasLayouts: { ...(options.canvasLayouts ?? {}), ...(stored.canvasLayouts ?? {}) },
+      pageTests: options.pageTests ?? stored.pageTests,
+      testCommands: options.testCommands ?? stored.testCommands,
+      diagnostics: {
+        ...stored.diagnostics,
+        ...options.diagnostics,
+        rules: { ...stored.diagnostics?.rules, ...options.diagnostics?.rules },
+      },
+      apiDiagnostics: { ...stored.apiDiagnostics, ...options.apiDiagnostics },
+    }),
+    configFile: { loaded: true, source: file },
+  }
 }
 
 function stripJsonComments(source: string) {
@@ -721,7 +724,9 @@ const factory: UnpluginFactory<PageFlowOptions | undefined> = (options) => {
           try {
             Object.assign(resolved, await loadProjectOptions(projectRoot, options))
           } catch (error) {
-            server.config.logger.warn(`unplugin-pageflow could not read .pageflow: ${error instanceof Error ? error.message : error}`)
+            const message = error instanceof Error ? error.message : String(error)
+            resolved.configFile = { loaded: false, source: resolve(projectRoot, '.pageflow'), error: message }
+            server.config.logger.warn(`unplugin-pageflow could not read .pageflow: ${message}`)
           }
         }
         resolved.testCommands = inferTestCommands(projectRoot, resolved.testCommands)
@@ -760,6 +765,7 @@ const factory: UnpluginFactory<PageFlowOptions | undefined> = (options) => {
           const requestUrl = new URL(request.url ?? '/', 'http://unplugin-pageflow.local')
           const pathname = requestUrl.pathname
           const graphPath = `${resolved.previewPath}api/graph`
+          const configPath = `${resolved.previewPath}api/config`
           const publicConfigPath = '/.well-known/pageflow.json'
           const eventsPath = `${resolved.previewPath}api/events`
           const routesPath = `${resolved.previewPath}api/routes`
@@ -786,6 +792,28 @@ const factory: UnpluginFactory<PageFlowOptions | undefined> = (options) => {
               pageNames: resolved.pageNames,
               canvasLayouts: resolved.canvasLayouts,
             }))
+            return
+          }
+
+          if (pathname === configPath && request.method === 'POST') {
+            try {
+              Object.assign(resolved, await loadProjectOptions(projectRoot, options))
+              resolved.testCommands = inferTestCommands(projectRoot, resolved.testCommands)
+              rebuildGraph()
+              const module = server.moduleGraph.getModuleById(PAGEFLOW_CONFIG_RESOLVED_ID)
+              if (module) server.moduleGraph.invalidateModule(module)
+              response.setHeader('Content-Type', 'application/json; charset=utf-8')
+              response.setHeader('Cache-Control', 'no-store')
+              response.end(JSON.stringify({
+                ...resolved.configFile,
+                groupNames: resolved.groupNames,
+                pageNames: resolved.pageNames,
+                canvasLayouts: resolved.canvasLayouts,
+              }))
+            } catch (error) {
+              response.statusCode = 500
+              response.end(error instanceof Error ? error.message : String(error))
+            }
             return
           }
 

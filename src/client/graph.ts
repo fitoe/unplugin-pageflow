@@ -1,4 +1,4 @@
-import type { PageFlowGraph, PageFlowLighthouseReport, PageFlowLighthouseSession, PageFlowPage, PageFlowPageTest, ResolvedPageFlowOptions } from '../shared/types'
+import type { PageFlowGraph, PageFlowLighthouseReport, PageFlowLighthouseSession, PageFlowPage, PageFlowPageTest, PageFlowProjectConfig, ResolvedPageFlowOptions } from '../shared/types'
 import type { PageFlowAIContext } from './ai-context'
 import { PAGEFLOW_GRAPH_EVENT, PAGEFLOW_PAGE_EVENT, PAGEFLOW_TEST_EVENT } from '../shared/protocol'
 
@@ -11,6 +11,12 @@ export async function fetchPageFlowGraph(config: ResolvedPageFlowOptions) {
   const response = await fetch(`${config.previewPath}api/graph`)
   if (!response.ok) throw new Error(`Failed to load unplugin-pageflow graph: ${response.status}`)
   return response.json() as Promise<PageFlowGraph>
+}
+
+export async function refreshPageFlowConfig(config: ResolvedPageFlowOptions) {
+  const response = await fetch(`${config.previewPath}api/config`, { method: 'POST' })
+  if (!response.ok) throw new Error(await response.text() || `Failed to reload .pageflow: ${response.status}`)
+  return response.json() as Promise<PageFlowProjectConfig>
 }
 
 export async function reportPageTitle(config: ResolvedPageFlowOptions, path: string, title: string) {
