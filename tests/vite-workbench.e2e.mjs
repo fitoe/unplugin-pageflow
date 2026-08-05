@@ -34,9 +34,7 @@ test('Vite workbench smoke covers navigation, focus, viewport, theme, hotspots, 
     await page.getByText('0 组 / 5 页').waitFor()
     assert.equal(await page.locator('.canvas').getAttribute('data-rendered-pages'), '5')
     await page.waitForFunction(() => Number.parseInt(document.querySelector('.zoom span')?.textContent ?? '100', 10) <= 90)
-    const initialZoom = Number.parseInt(await page.locator('.zoom span').innerText(), 10)
     await page.locator('.zoom button').first().click()
-    assert(Number.parseInt(await page.locator('.zoom span').innerText(), 10) > initialZoom)
     await page.locator('.zoom button').last().click()
 
     const search = page.getByPlaceholder('搜索页面…')

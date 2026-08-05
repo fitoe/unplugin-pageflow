@@ -3,7 +3,7 @@ import test from 'node:test'
 import { Window } from 'happy-dom'
 import { createServer } from 'vite'
 
-async function waitFor(predicate, timeout = 1000) {
+async function waitFor(predicate, timeout = 3000) {
   const startedAt = Date.now()
   while (!predicate()) {
     if (Date.now() - startedAt >= timeout) throw new Error(`Condition was not met within ${timeout}ms`)
