@@ -18,6 +18,90 @@ export interface PageFlowDocumentLink {
   target: URL
 }
 
+export interface PageFlowPreviewSize {
+  width: number
+  height: number
+}
+
+export function detectPageFlowPreviewSize(document: Document, viewport: PageFlowPreviewSize): PageFlowPreviewSize {
+  let detected = viewport
+  let detectedArea = viewport.width * viewport.height
+  for (const element of document.body.querySelectorAll<HTMLElement>('*')) {
+    const width = element.clientWidth
+    const height = element.clientHeight
+    if (!width || !height || (width <= viewport.width && height <= viewport.height)) continue
+    const transform = document.defaultView?.getComputedStyle(element).transform
+    if (!transform || transform === 'none') continue
+    const rect = element.getBoundingClientRect()
+    if (rect.width > viewport.width + 2 || rect.height > viewport.height + 2) continue
+    const scaleX = rect.width / width
+    const scaleY = rect.height / height
+    if (scaleX >= 0.99 || scaleY >= 0.99 || Math.abs(scaleX - scaleY) > 0.02) continue
+    const area = width * height
+    if (area > detectedArea) {
+      detected = { width, height }
+      detectedArea = area
+    }
+  }
+  return detected
+}
+
+export function pageFlowDocumentHeight(document: Document, minimumHeight: number) {
+  const body = document.body
+  const root = document.documentElement
+  return Math.ceil(Math.max(
+    minimumHeight,
+    body?.scrollHeight ?? 0,
+    body?.offsetHeight ?? 0,
+    body?.clientHeight ?? 0,
+    body?.getBoundingClientRect().height ?? 0,
+    root?.scrollHeight ?? 0,
+    root?.offsetHeight ?? 0,
+    root?.clientHeight ?? 0,
+    root?.getBoundingClientRect().height ?? 0,
+  ))
+}
+
+export function pageFlowContentHeight(document: Document, minimumHeight: number) {
+  const offset = document.defaultView?.scrollY ?? 0
+  const bottoms = [...(document.body?.querySelectorAll?.('*') ?? [])].flatMap(element => {
+    if (element.children.length && !['IMG', 'CANVAS', 'SVG'].includes(element.tagName)) return []
+    const rect = element.getBoundingClientRect()
+    return rect.width && rect.height ? [rect.bottom + offset] : []
+  })
+  if (!bottoms.length) return pageFlowDocumentHeight(document, minimumHeight)
+  return Math.ceil(Math.max(minimumHeight, ...bottoms) + 24)
+}
+
+export function isPageFlowInfiniteListDocument(document: Document) {
+  const marker = document.querySelector?.([
+    '[data-pageflow-infinite]',
+    '[class*="load-more"]',
+    '[class*="load_more"]',
+    '[class*="loadmore"]',
+    '[class*="load-state"]',
+    'uni-scroll-view[scroll-y="true"]',
+    'scroll-view[scroll-y]',
+  ].join(','))
+  if (marker) return true
+  const repeatedList = [...(document.querySelectorAll?.([
+    '[class$="-list"]',
+    '[class*="-list "]',
+    '[class$="-grid"]',
+    '[class*="-grid "]',
+  ].join(',')) ?? [])].some(element => element.children.length >= 6)
+  if (repeatedList) return true
+  return /(?:加载更多|没有更多|已加载全部|上拉加载)/.test(document.body?.innerText ?? '')
+}
+
+export function boundedPageFlowDocumentHeight(document: Document, viewportHeight: number, maximumViewports = 4) {
+  if (isPageFlowInfiniteListDocument(document)) return viewportHeight
+  const documentHeight = pageFlowDocumentHeight(document, viewportHeight)
+  const contentHeight = pageFlowContentHeight(document, viewportHeight)
+  const height = documentHeight - contentHeight > viewportHeight / 2 ? contentHeight : documentHeight
+  return Math.min(height, viewportHeight * maximumViewports)
+}
+
 export function pageFlowInternalLinks(document: Document, limit = 1_000): PageFlowDocumentLink[] {
   const location = document.defaultView?.location
   if (!location) return []
@@ -43,10 +127,14 @@ export function pageFlowLinkLabel(element: Element, fallback: string) {
     || fallback
 }
 
-export function pageFlowHotspotCenter(element: Element) {
-  const view = element.ownerDocument.defaultView
-  const root = element.ownerDocument.documentElement
-  const rect = element.getBoundingClientRect()
+export function pageFlowHotspotCenter(
+  element: Element,
+  bounds?: Pick<DOMRect, 'left' | 'top' | 'width' | 'height'>,
+  viewportDocument = element.ownerDocument,
+) {
+  const view = viewportDocument.defaultView
+  const root = viewportDocument.documentElement
+  const rect = bounds ?? element.getBoundingClientRect()
   return {
     centerX: (rect.left + rect.width / 2) / Math.max(1, root.clientWidth, view?.innerWidth ?? 0),
     centerY: (rect.top + rect.height / 2) / Math.max(1, root.clientHeight, view?.innerHeight ?? 0),

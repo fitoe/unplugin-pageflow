@@ -14,6 +14,11 @@ function startFixtureServer() {
       response.end(JSON.stringify({ orders: [{ id: 1, name: 'PageFlow' }] }))
       return
     }
+    if (request.url?.startsWith('/screen')) {
+      response.writeHead(200, { 'content-type': 'text/html; charset=utf-8' })
+      response.end('<!doctype html><html><head><title>Screen fixture</title></head><body style="margin:0"><main id="screen" style="width:3840px;height:1080px;transform:scale(.25);transform-origin:top left">Screen</main></body></html>')
+      return
+    }
     response.writeHead(200, { 'content-type': 'text/html; charset=utf-8' })
     response.end('<!doctype html><html><head><title>PageFlow fixture</title></head><body style="min-height:2000px"><main><button id="route">Route</button><a href="/about" style="position:absolute;top:1200px;left:20px;width:120px;height:40px">About</a><a href="/products/1?ref=first">Product 1</a><a href="/products/2?ref=second">Product 2</a><a href="/articles/first">First article</a><a href="/articles/second">Second article</a><img id="missing-alt"></main></body></html>')
   })
@@ -28,6 +33,16 @@ function portOf(server) {
 
 async function extensionWorker(context) {
   return context.serviceWorkers()[0] ?? context.waitForEvent('serviceworker')
+}
+
+async function waitForExtensionState(worker, tabId, predicate, timeout = 10_000) {
+  const startedAt = Date.now()
+  while (Date.now() - startedAt < timeout) {
+    const state = await worker.evaluate(async id => chrome.tabs.sendMessage(id, { type: 'pageflow:get-state' }), tabId)
+    if (predicate(state)) return state
+    await new Promise(resolve => setTimeout(resolve, 100))
+  }
+  throw new Error('Timed out waiting for PageFlow extension state')
 }
 
 function chromiumExecutable() {
@@ -45,7 +60,7 @@ function chromiumExecutable() {
   return fallback
 }
 
-test('Chrome extension captures the PageFlow runtime loop', { timeout: 90_000 }, async () => {
+test('Chrome extension smoke covers runtime, capture, diagnostics, workbench, and persistence', { timeout: 90_000 }, async () => {
   const server = await startFixtureServer()
   const userDataDir = await mkdtemp(path.join(os.tmpdir(), 'pageflow-chrome-e2e-'))
   const extensionPath = path.resolve(process.env.PAGEFLOW_E2E_EXTENSION_DIR ?? 'packages/chrome-extension/.output/chrome-mv3')
@@ -75,13 +90,42 @@ test('Chrome extension captures the PageFlow runtime loop', { timeout: 90_000 },
     await page.waitForTimeout(300)
 
     const worker = await extensionWorker(context)
+    const screen = await context.newPage()
+    await screen.goto(`${origin}/screen`)
+    const screenTabId = await worker.evaluate(async url => (await chrome.tabs.query({ url }))[0].id, `${origin}/screen`)
+    const screenMetrics = await worker.evaluate(async tabId => chrome.tabs.sendMessage(tabId, { type: 'pageflow:get-metrics' }), screenTabId)
+    assert.deepEqual([screenMetrics.previewWidth, screenMetrics.previewHeight], [3_840, 1_080])
+    await screen.close()
     const tab = await worker.evaluate(async origin => {
       const [tab] = await chrome.tabs.query({ url: `${origin}/*` })
       return { id: tab.id, windowId: tab.windowId }
     }, origin)
+    const extensionId = new URL(worker.url()).host
+    const dashboard = await context.newPage()
+    await dashboard.setViewportSize({ width: 1_440, height: 900 })
+    await dashboard.goto(`chrome-extension://${extensionId}/panel.html?tabId=${tab.id}`)
+    await dashboard.getByText('unplugin-pageflow').waitFor()
+    const session = await dashboard.evaluate(async tabId => chrome.runtime.sendMessage({ type: 'pageflow:start-session', tabId }), tab.id)
+    assert.equal(session.ok, enhanced)
+    const visibleCapture = await dashboard.evaluate(async tabId => chrome.runtime.sendMessage({ type: 'pageflow:capture', tabId }), tab.id)
+    assert.match(visibleCapture.source, /^data:image\/png;base64,/)
+    assert(visibleCapture.pageWidth > 0)
+    assert(visibleCapture.pageHeight >= 2_000)
+    const backgroundCapture = await dashboard.evaluate(async ({ tabId, url }) => chrome.runtime.sendMessage({
+      type: 'pageflow:capture-page',
+      tabId,
+      url,
+      viewport: { width: 800, height: 600 },
+    }), { tabId: tab.id, url: `${origin}/about` })
+    assert.equal(backgroundCapture.ok, enhanced)
+    if (enhanced) {
+      assert.match(backgroundCapture.value.source, /^data:image\/png;base64,/)
+      assert.equal(backgroundCapture.value.pageWidth, 800)
+      assert(backgroundCapture.value.pageHeight >= 1_200 && backgroundCapture.value.pageHeight < 2_000)
+    }
+    else assert.match(backgroundCapture.error, /enhanced build/i)
     await worker.evaluate(async tabId => chrome.tabs.sendMessage(tabId, { type: 'pageflow:scan' }), tab.id)
-    await page.waitForTimeout(500)
-    const state = await worker.evaluate(async tabId => chrome.tabs.sendMessage(tabId, { type: 'pageflow:get-state' }), tab.id)
+    const state = await waitForExtensionState(worker, tab.id, value => value.diagnostics.some(item => item.ruleId === 'missing-alt'))
 
     assert.equal(await page.evaluate(() => Boolean(window.__PAGEFLOW_CHROME_RUNTIME__)), true)
     assert.deepEqual(state.pages.map(item => new URL(item.url).pathname), ['/', '/about', '/products/2', '/articles/first', '/orders'])
@@ -103,11 +147,6 @@ test('Chrome extension captures the PageFlow runtime loop', { timeout: 90_000 },
     await worker.evaluate(async tabId => chrome.tabs.sendMessage(tabId, { type: 'pageflow:highlight', selector: '#route' }), tab.id)
     await page.waitForSelector('[data-unplugin-pageflow-diagnostic-highlight]')
 
-    const extensionId = new URL(worker.url()).host
-    const dashboard = await context.newPage()
-    await dashboard.setViewportSize({ width: 1_440, height: 900 })
-    await dashboard.goto(`chrome-extension://${extensionId}/panel.html?tabId=${tab.id}`)
-    await dashboard.getByText('unplugin-pageflow').waitFor()
     await dashboard.getByText('0 组 / 5 页').waitFor()
     const themeIcon = dashboard.locator('button[aria-label^="切换到"] [data-slot="leadingIcon"]')
     assert.equal(await themeIcon.count(), 1)
@@ -117,6 +156,11 @@ test('Chrome extension captures the PageFlow runtime loop', { timeout: 90_000 },
       return { width: rect.width, height: rect.height }
     })
     assert.deepEqual(canvasBounds, { width: 1_440, height: 826 })
+    await dashboard.waitForTimeout(1_000)
+    const initialZoom = Number.parseInt(await dashboard.locator('.zoom span').innerText(), 10)
+    await dashboard.locator('.zoom button').first().click()
+    await dashboard.waitForFunction(value => Number.parseInt(document.querySelector('.zoom span')?.textContent ?? '0', 10) > value, initialZoom)
+    await dashboard.locator('.zoom button').last().click()
 
     const viewportButtons = dashboard.locator('[aria-label="Preview viewport"] button')
     assert.equal(await viewportButtons.count(), 3)
@@ -127,18 +171,45 @@ test('Chrome extension captures the PageFlow runtime loop', { timeout: 90_000 },
     assert.notEqual((await dashboard.locator('html').getAttribute('class'))?.includes('dark') ?? false, initialDark)
 
     const search = dashboard.getByPlaceholder('搜索页面…')
-    await search.fill('About')
-    await dashboard.getByRole('option', { name: /About/ }).click()
+    await search.fill('/orders')
+    await dashboard.getByRole('option').filter({ hasText: '/orders' }).click()
     await dashboard.locator('iframe[src*="__unplugin-pageflow_preview=1"]').waitFor({ state: 'attached' })
     const detailTabs = dashboard.locator('[aria-label="页面详情"] button')
+    await dashboard.getByRole('button', { name: '收起右侧面板' }).click()
+    await dashboard.getByRole('button', { name: '展开右侧面板' }).click()
+    await detailTabs.filter({ hasText: '测试' }).click()
+    await dashboard.getByText('页面检查').waitFor()
+    await page.evaluate(() => fetch('/api/orders?page=focused').then(response => response.json()))
+    await detailTabs.filter({ hasText: '接口' }).click()
+    await dashboard.waitForTimeout(1_000)
+    const apiPanelText = await dashboard.locator('.api-panel-content').innerText()
+    assert.match(apiPanelText, /\/orders/, apiPanelText)
+    const focusedRequest = dashboard.getByText('/orders', { exact: true })
+    await focusedRequest.waitFor()
+    await focusedRequest.click()
+    await dashboard.locator('.api-field-tree').waitFor()
+    await dashboard.keyboard.press('Escape')
+    await dashboard.waitForFunction(() => [...document.querySelectorAll('.page-preview')].every(element => getComputedStyle(element).pointerEvents === 'none'))
+    await search.fill('About')
+    await dashboard.getByRole('option', { name: /About/ }).click()
+    await dashboard.locator('iframe[title="About preview"]').waitFor({ state: 'attached' })
     await detailTabs.filter({ hasText: '诊断' }).click()
     await dashboard.getByRole('button', { name: '重新扫描页面' }).click()
     await detailTabs.filter({ hasText: '待办' }).click()
     await dashboard.getByRole('textbox', { name: '添加当前页面待办' }).fill('Chrome smoke todo')
     await dashboard.getByRole('button', { name: '添加' }).click()
     await dashboard.getByText('Chrome smoke todo').waitFor()
+    const smokeTodo = dashboard.locator('.todo-item', { hasText: 'Chrome smoke todo' })
+    await smokeTodo.locator('input[type="checkbox"]').check()
+    assert.equal(await smokeTodo.locator('input[type="checkbox"]').isChecked(), true)
+    await dashboard.getByRole('textbox', { name: '添加当前页面待办' }).fill('Delete Chrome smoke todo')
+    await dashboard.getByRole('button', { name: '添加' }).click()
+    const deletedTodo = dashboard.locator('.todo-item', { hasText: 'Delete Chrome smoke todo' })
+    await deletedTodo.getByRole('button', { name: '删除待办' }).click()
+    assert.equal(await deletedTodo.count(), 0)
     await dashboard.keyboard.press('Escape')
-    await dashboard.waitForTimeout(800)
+    await dashboard.waitForFunction(() => [...document.querySelectorAll('.page-preview')].every(element => getComputedStyle(element).pointerEvents === 'none'))
+    await dashboard.waitForTimeout(1_000)
     const aboutPreview = dashboard.locator('.page-preview:has(iframe[title="About preview"])')
     const aboutBefore = await aboutPreview.boundingBox()
     assert(aboutBefore)
@@ -150,6 +221,12 @@ test('Chrome extension captures the PageFlow runtime loop', { timeout: 90_000 },
     const aboutWorldPosition = await aboutPreview.evaluate(element => [Number.parseFloat(element.style.left), Number.parseFloat(element.style.top)])
     const movedAbout = await aboutPreview.boundingBox()
     assert(movedAbout)
+    const openedPagePromise = context.waitForEvent('page')
+    await dashboard.mouse.click(movedAbout.x + movedAbout.width - 10, movedAbout.y + movedAbout.height + 18)
+    const openedPage = await openedPagePromise
+    await openedPage.waitForLoadState('domcontentloaded')
+    assert.equal(new URL(openedPage.url()).pathname, '/about')
+    await openedPage.close()
     dashboard.once('dialog', dialog => dialog.accept('关于页面自定义名'))
     await dashboard.mouse.click(movedAbout.x + movedAbout.width / 2, movedAbout.y + movedAbout.height + 18)
 

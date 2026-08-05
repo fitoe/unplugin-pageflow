@@ -9,6 +9,7 @@ export interface StoredHostThumbnail {
   source: string
   width: number
   height: number
+  pageHeight: number
   updatedAt: number
 }
 
@@ -21,6 +22,7 @@ export function parseStoredHostThumbnails(value: unknown): StoredHostThumbnail[]
     && typeof item.source === 'string'
     && typeof item.width === 'number'
     && typeof item.height === 'number'
+    && typeof item.pageHeight === 'number'
     && typeof item.updatedAt === 'number')
 }
 
@@ -34,7 +36,7 @@ export function storedHostThumbnailRecords(item: StoredHostThumbnail): PageFlowT
     revision: item.revision,
     width: item.width,
     height: item.height,
-    pageHeight: item.height,
+    pageHeight: item.pageHeight,
     mimeType: 'image/webp',
     file: '',
     updatedAt: item.updatedAt,

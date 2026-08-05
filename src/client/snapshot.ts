@@ -1,63 +1,29 @@
 import { PAGEFLOW_NETWORK_EVENT, PAGEFLOW_READY_EVENT } from '../shared/protocol'
+import {
+  boundedPageFlowDocumentHeight,
+  isPageFlowInfiniteListDocument,
+  pageFlowContentHeight,
+  pageFlowDocumentHeight,
+} from '../../packages/pageflow-runtime/src'
 
 interface PageFlowWindow extends Window {
   __UNPLUGIN_PAGEFLOW_PENDING_REQUESTS__?: () => number
 }
 
 export function previewDocumentHeight(document: Document, minimumHeight: number) {
-  const body = document.body
-  const root = document.documentElement
-  return Math.ceil(Math.max(
-    minimumHeight,
-    body?.scrollHeight ?? 0,
-    body?.offsetHeight ?? 0,
-    body?.clientHeight ?? 0,
-    body?.getBoundingClientRect().height ?? 0,
-    root?.scrollHeight ?? 0,
-    root?.offsetHeight ?? 0,
-    root?.clientHeight ?? 0,
-    root?.getBoundingClientRect().height ?? 0,
-  ))
+  return pageFlowDocumentHeight(document, minimumHeight)
 }
 
 export function boundedPreviewDocumentHeight(document: Document, viewportHeight: number, maximumViewports = 4) {
-  if (isInfiniteListDocument(document)) return viewportHeight
-  const documentHeight = previewDocumentHeight(document, viewportHeight)
-  const contentHeight = previewContentHeight(document, viewportHeight)
-  const height = documentHeight - contentHeight > viewportHeight / 2 ? contentHeight : documentHeight
-  return Math.min(height, viewportHeight * maximumViewports)
+  return boundedPageFlowDocumentHeight(document, viewportHeight, maximumViewports)
 }
 
 export function previewContentHeight(document: Document, minimumHeight: number) {
-  const offset = document.defaultView?.scrollY ?? 0
-  const bottoms = [...(document.body?.querySelectorAll?.('*') ?? [])].flatMap(element => {
-    if (element.children.length && !['IMG', 'CANVAS', 'SVG'].includes(element.tagName)) return []
-    const rect = element.getBoundingClientRect()
-    return rect.width && rect.height ? [rect.bottom + offset] : []
-  })
-  if (!bottoms.length) return previewDocumentHeight(document, minimumHeight)
-  return Math.ceil(Math.max(minimumHeight, ...bottoms) + 24)
+  return pageFlowContentHeight(document, minimumHeight)
 }
 
 export function isInfiniteListDocument(document: Document) {
-  const marker = document.querySelector?.([
-    '[data-pageflow-infinite]',
-    '[class*="load-more"]',
-    '[class*="load_more"]',
-    '[class*="loadmore"]',
-    '[class*="load-state"]',
-    'uni-scroll-view[scroll-y="true"]',
-    'scroll-view[scroll-y]',
-  ].join(','))
-  if (marker) return true
-  const repeatedList = [...(document.querySelectorAll?.([
-    '[class$="-list"]',
-    '[class*="-list "]',
-    '[class$="-grid"]',
-    '[class*="-grid "]',
-  ].join(',')) ?? [])].some(element => element.children.length >= 6)
-  if (repeatedList) return true
-  return /(?:加载更多|没有更多|已加载全部|上拉加载)/.test(document.body?.innerText ?? '')
+  return isPageFlowInfiniteListDocument(document)
 }
 
 export function maskedIconBackground(maskImage: string, color: string) {

@@ -12,7 +12,7 @@ import { findBrowserHistoryAdapter } from './adapters/browser-history'
 import { mountPageFlowLauncher } from './launcher'
 import { isLocalBusinessApiResponse } from './api-filter'
 import { collectApiFields } from './api-fields'
-import { instrumentPageFlowNetwork } from '../../packages/pageflow-runtime/src'
+import { instrumentPageFlowNetwork, observePageFlowScroll, pageFlowHotspotCenter, pageFlowInternalLinks, pageFlowLinkLabel } from '../../packages/pageflow-runtime/src'
 
 const apiInspectionEnabled = new URLSearchParams(window.location.search).has('__unplugin_pageflow_inspect')
 let renderedValuesCache = { expiresAt: 0, value: '' }
@@ -278,44 +278,8 @@ function isElementInViewport(element: Element) {
   return isRectInViewport(element.getBoundingClientRect())
 }
 
-function internalLinks() {
-  const links: Array<{ element: HTMLAnchorElement | HTMLAreaElement, target: URL }> = []
-  for (const element of document.links) {
-    let target: URL
-    try {
-      target = new URL(element.href, window.location.href)
-    } catch {
-      continue
-    }
-    if (!['http:', 'https:'].includes(target.protocol) || target.origin !== window.location.origin) continue
-    target.hash = ''
-    links.push({ element, target })
-  }
-  return links
-}
-
-function linkLabel(element: Element, fallback: string) {
-  return element.getAttribute('aria-label')?.trim()
-    || element.textContent?.replace(/\s+/g, ' ').trim()
-    || fallback
-}
-
 function hotspotCenter(element: Element, hotspotRect?: HotspotRect) {
-  const rect = hotspotRect ?? element.getBoundingClientRect()
-  const root = document.documentElement
-  return {
-    centerX: (rect.left + rect.width / 2) / Math.max(1, root.clientWidth, window.innerWidth),
-    centerY: (rect.top + rect.height / 2) / Math.max(1, root.clientHeight, window.innerHeight),
-  }
-}
-
-function observePreviewScroll(callback: () => void, delay = 32) {
-  let timer: ReturnType<typeof setTimeout> | undefined
-  const onScroll = () => {
-    clearTimeout(timer)
-    timer = setTimeout(callback, delay)
-  }
-  document.addEventListener('scroll', onScroll, true)
+  return pageFlowHotspotCenter(element, hotspotRect, document)
 }
 
 function addHotspot(layer: HTMLElement, element: Element, type: 'link' | 'event', targets: string[], locations = targets, hotspotRect?: HotspotRect) {
@@ -450,17 +414,17 @@ function collectLinks(router: PageFlowRouterAdapter, visibleOnly = false) {
   layer.replaceChildren()
 
   const links: PageFlowRuntimeLink[] = visibleOnly ? [] : [...programmaticLinks.values()]
-  internalLinks().forEach(({ element: anchor, target }) => {
+  pageFlowInternalLinks(document).forEach(({ element: anchor, target }) => {
     if (anchor.closest('[data-unplugin-pageflow-launcher]')) return
     if (visibleOnly && !isElementInViewport(anchor)) return
-    const label = linkLabel(anchor, target.pathname)
+    const label = pageFlowLinkLabel(anchor, target.pathname)
     const navigation = router.resolveAnchor(target)
     if (!addHotspot(layer, anchor, 'link', [navigation.path], [navigation.location])) return
     links.push({ label, to: navigation.path, location: navigation.location, kind: 'link', hotspot: hotspotCenter(anchor) })
   })
   nestedFrameLinks().forEach(({ element: anchor, target, rect }) => {
     if (visibleOnly && !isRectInViewport(rect)) return
-    const label = linkLabel(anchor, target.pathname)
+    const label = pageFlowLinkLabel(anchor, target.pathname)
     const navigation = router.resolveAnchor(target)
     if (!addHotspot(layer!, anchor, 'link', [navigation.path], [navigation.location], rect)) return
     links.push({ label, to: navigation.path, location: navigation.location, kind: 'link', hotspot: hotspotCenter(anchor, rect) })
@@ -471,7 +435,7 @@ function collectLinks(router: PageFlowRouterAdapter, visibleOnly = false) {
     const declaredTarget = element.dataset.pageflowTo
     const to = declaredTarget && router.resolve(declaredTarget)?.path
     if (!to || !addHotspot(layer!, element, 'link', [to], [declaredTarget!])) return
-    links.push({ label: linkLabel(element, to), to, location: declaredTarget, kind: 'link', hotspot: hotspotCenter(element) })
+    links.push({ label: pageFlowLinkLabel(element, to), to, location: declaredTarget, kind: 'link', hotspot: hotspotCenter(element) })
   })
   document.body.querySelectorAll('*').forEach(element => {
     if (element.closest('[data-unplugin-pageflow-hotspot-layer], [data-unplugin-pageflow-launcher]')) return
@@ -492,7 +456,7 @@ function collectLinks(router: PageFlowRouterAdapter, visibleOnly = false) {
     if (!addHotspot(layer!, element, 'event', [...targetLocations.keys()], [...targetLocations.values()])) return
     if (visibleOnly) {
       const hotspot = hotspotCenter(element)
-      targetLocations.forEach((location, to) => links.push({ label: linkLabel(element, to), to, location, kind: 'event', hotspot }))
+      targetLocations.forEach((location, to) => links.push({ label: pageFlowLinkLabel(element, to), to, location, kind: 'event', hotspot }))
     }
   })
   const uniqueLinks = new Map<string, PageFlowRuntimeLink>()
@@ -719,7 +683,7 @@ export async function startPageFlowRuntime(config: ResolvedPageFlowOptions) {
   }
   if (previewMode && window.parent !== window && !runtimeWindow.__UNPLUGIN_PAGEFLOW_SCROLL_SCAN_BOUND__) {
     runtimeWindow.__UNPLUGIN_PAGEFLOW_SCROLL_SCAN_BOUND__ = true
-    observePreviewScroll(() => {
+    observePageFlowScroll(document, () => {
       void scanRenderedPage(router!).then(page => {
         if (window.parent !== window)
           window.parent.postMessage({ type: PAGEFLOW_SCAN_RESULT_MESSAGE, page }, window.location.origin)

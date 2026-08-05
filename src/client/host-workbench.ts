@@ -1,5 +1,5 @@
 import type { PageFlowHostState } from '../../packages/pageflow-core/src/host'
-import type { PageFlowApiRequest } from '../../packages/pageflow-core/src/types'
+import type { PageFlowApiResult } from '../../packages/pageflow-core/src/types'
 import type { PageFlowLink, PageFlowPage } from '../shared/types'
 
 export interface PageFlowHostGraph {
@@ -7,7 +7,7 @@ export interface PageFlowHostGraph {
   pageUrls: Map<string, string>
   navigationLocations: Record<string, string>
   currentPageId?: string
-  requests: PageFlowApiRequest[]
+  requests: PageFlowApiResult[]
 }
 
 export function hostStateToGraph(state: PageFlowHostState, accents: readonly string[]): PageFlowHostGraph {
@@ -39,7 +39,7 @@ export function hostStateToGraph(state: PageFlowHostState, accents: readonly str
       return [new URL(page.routeKey ?? page.url).pathname, `${location.pathname}${location.search}`]
     })),
     currentPageId: currentSnapshot?.routeKey ?? currentSnapshot?.url ?? pages.at(-1)?.id,
-    requests: state.requests,
+    requests: state.requests.map(request => ({ ...request, fields: request.fields ?? [] })),
   }
 }
 

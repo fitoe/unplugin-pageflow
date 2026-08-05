@@ -167,13 +167,24 @@ async function captureBackgroundPage(sourceTabId: number, url: string, viewport:
       mobile: false,
     })
     await new Promise(resolve => setTimeout(resolve, 500))
+    const contentSize = await browser.tabs.sendMessage(captureTab.id, {
+      type: 'pageflow:get-capture-size',
+      viewport,
+    } satisfies ExtensionMessage) as { pageWidth: number; pageHeight: number }
+    const captureWidth = contentSize.pageWidth
+    const captureHeight = Math.min(16_384, contentSize.pageHeight)
     const result = await browser.debugger.sendCommand(target, 'Page.captureScreenshot', {
       format: 'png',
       fromSurface: true,
-      captureBeyondViewport: false,
+      captureBeyondViewport: true,
+      clip: { x: 0, y: 0, width: captureWidth, height: captureHeight, scale: 1 },
     }) as { data?: string }
     if (!result.data) throw new Error('PageFlow did not receive screenshot data')
-    return `data:image/png;base64,${result.data}`
+    return {
+      source: `data:image/png;base64,${result.data}`,
+      pageWidth: contentSize.pageWidth,
+      pageHeight: contentSize.pageHeight,
+    }
   } finally {
     if (attached) await browser.debugger.detach(target).catch(() => undefined)
     await browser.tabs.remove(captureTab.id).catch(() => undefined)
@@ -188,7 +199,11 @@ async function captureSourceTab(sourceTabId: number, dashboardTabId?: number) {
     await new Promise(resolve => setTimeout(resolve, 100))
     await browser.tabs.sendMessage(source.id, { type: 'pageflow:scan' } satisfies ExtensionMessage).catch(() => undefined)
     await new Promise(resolve => setTimeout(resolve, 50))
-    return await browser.tabs.captureVisibleTab(source.windowId, { format: 'png' })
+    const [sourceData, metrics] = await Promise.all([
+      browser.tabs.captureVisibleTab(source.windowId, { format: 'png' }),
+      browser.tabs.sendMessage(source.id, { type: 'pageflow:get-metrics' } satisfies ExtensionMessage) as Promise<{ pageWidth: number; pageHeight: number }>,
+    ])
+    return { source: sourceData, ...metrics }
   } finally {
     if (dashboardTabId != null) await browser.tabs.update(dashboardTabId, { active: true }).catch(() => undefined)
   }

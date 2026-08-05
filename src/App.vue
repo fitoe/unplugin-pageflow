@@ -57,7 +57,7 @@ import { isLocalBusinessApiResponse } from './runtime/api-filter'
 import { addPageFlowTodo, parsePageFlowTodos, removePageFlowTodo, togglePageFlowTodo, type PageFlowTodo } from '../packages/pageflow-core/src/todos'
 import { PAGEFLOW_TODOS_STORAGE_KEY } from '../packages/pageflow-core/src/storage'
 import { loadPageFlowTodos, savePageFlowCanvas, savePageFlowTodos } from '../packages/pageflow-core/src/host-storage'
-import type { PageFlowHost, PageFlowHostState } from '../packages/pageflow-core/src/host'
+import type { PageFlowHost, PageFlowHostCapture, PageFlowHostState } from '../packages/pageflow-core/src/host'
 import { initialPreviewMode } from './client/preview-mode'
 import { UnpluginPageFlowHost } from './client/unplugin-host'
 import { hostHotspotRects, hostStateToGraph } from './client/host-workbench'
@@ -125,6 +125,7 @@ const viewportTabs: Array<Record<string, unknown>> = [
   { value: 'pc', label: 'PC', icon: 'i-lucide-monitor', ui: { label: 'sr-only' } },
 ]
 const PREVIEW_MODE_STORAGE_KEY = 'unplugin-pageflow:preview-mode'
+const PANEL_COLLAPSED_STORAGE_KEY = 'unplugin-pageflow:panel-collapsed'
 const initialUserSessions = loadUserSessions()
 
 function storedPreviewMode(): PageFlowPreviewMode {
@@ -132,6 +133,14 @@ function storedPreviewMode(): PageFlowPreviewMode {
     return initialPreviewMode(localStorage.getItem(PREVIEW_MODE_STORAGE_KEY), props.config.framework)
   } catch {
     return initialPreviewMode(null, props.config.framework)
+  }
+}
+
+function storedPanelCollapsed() {
+  try {
+    return localStorage.getItem(PANEL_COLLAPSED_STORAGE_KEY) === 'true'
+  } catch {
+    return false
   }
 }
 
@@ -178,7 +187,7 @@ const expandedApiResults = ref(new Set<string>())
 const openApiResultId = ref<string>()
 const openApiIssueResultId = ref<string>()
 const panelTab = ref<'api' | 'tests' | 'diagnostics' | 'todos'>('api')
-const panelCollapsed = ref(false)
+const panelCollapsed = ref(storedPanelCollapsed())
 const editorInfo = ref<PageFlowEditorInfo>({ id: 'system', name: '默认编辑器' })
 const editorOpening = ref(false)
 const editorOpenError = ref('')
@@ -215,6 +224,7 @@ const searchRoot = ref<HTMLDivElement>()
 const canvas = ref<HTMLDivElement>()
 const connectionCanvas = ref<HTMLDivElement>()
 const overlayWorld = ref<HTMLDivElement>()
+const apiResponseOrigin = ref(window.location.origin)
 const focusedPageChecks = computed(() => {
   const page = pages.value.find(item => item.id === focusedPageId.value)
   if (!page) return []
@@ -509,7 +519,7 @@ const focusScene = computed(() => createFocusScene({
 }))
 const connectionPaths = computed(() => focusScene.value?.connections ?? [])
 const focusedApiResults = computed(() => focusedPageId.value
-  ? (apiResultsByPage.value[focusedPageId.value] ?? []).filter(result => isLocalBusinessApiResponse(result.url, window.location.origin, result.contentType))
+  ? (apiResultsByPage.value[focusedPageId.value] ?? []).filter(result => isLocalBusinessApiResponse(result.url, apiResponseOrigin.value, result.contentType))
   : [])
 const pageFlowHost: PageFlowHost = props.host ?? new UnpluginPageFlowHost({
   config: props.config,
@@ -926,12 +936,12 @@ function pageHasStoredThumbnail(page: PageFlowPage) {
   return Boolean(compactThumbnailRecord(page.id) || fullThumbnailRecords(page.id).length)
 }
 
-function thumbnailIsCurrent(page: PageFlowPage) {
+function thumbnailIsCurrent(page: PageFlowPage, allowStale = true) {
   if (forcedThumbnailRefreshIds.has(page.id)) return false
   const revision = pageThumbnailRevision(page)
   const compact = compactThumbnailRecord(page.id)
   const full = fullThumbnailRecords(page.id)
-  return thumbnailRecordsAreCurrent(revision, compact, full, deferredThumbnailRefreshIds.has(page.id))
+  return thumbnailRecordsAreCurrent(revision, compact, full, allowStale && deferredThumbnailRefreshIds.has(page.id))
 }
 
 function pageThumbnailTiles(page: PageFlowPage) {
@@ -980,22 +990,26 @@ function renderablePageThumbnailTiles(page: PageFlowPage) {
   )
 }
 
-async function captureHostThumbnail(page: PageFlowPage, capturedSource?: string) {
+async function captureHostThumbnail(page: PageFlowPage, capturedSource?: string | PageFlowHostCapture) {
   if (!props.host) return
   const viewport = { width: currentPreviewMode.value.width, height: currentPreviewMode.value.height }
   const pageUrl = hostPageUrls.get(page.id)
   const captured = capturedSource
     ?? (props.host.capturePage && pageUrl ? await props.host.capturePage(pageUrl, viewport) : await props.host.capture())
+  const capture = typeof captured === 'string' ? { source: captured } : captured
   const { encodeHostThumbnail } = await import('./client/host-thumbnail-capture')
-  const encoded = await encodeHostThumbnail(captured, PAGE_CARD_WIDTH)
+  const encoded = await encodeHostThumbnail(capture.source, PAGE_CARD_WIDTH)
   const revision = pageThumbnailRevision(page)
   const { source, height: thumbnailHeight } = encoded
+  const thumbnailPageHeight = capture.pageWidth && capture.pageHeight
+    ? Math.max(1, Math.round(capture.pageHeight * PAGE_CARD_WIDTH / capture.pageWidth))
+    : thumbnailHeight
   const records = (['compact', 'full'] as const).map(tier => ({
     slot: thumbnailSlot(thumbnailPageKey(page, pages.value), previewMode.value, tier),
     revision,
     width: PAGE_CARD_WIDTH,
     height: thumbnailHeight,
-    pageHeight: thumbnailHeight,
+    pageHeight: thumbnailPageHeight,
     mimeType: 'image/webp',
     file: '',
     updatedAt: Date.now(),
@@ -1021,6 +1035,7 @@ async function captureHostThumbnail(page: PageFlowPage, capturedSource?: string)
     source,
     width: PAGE_CARD_WIDTH,
     height: thumbnailHeight,
+    pageHeight: thumbnailPageHeight,
     updatedAt: records[0].updatedAt,
   }
   storedHostThumbnails = upsertStoredHostThumbnail(storedHostThumbnails, stored)
@@ -1064,7 +1079,7 @@ async function captureMissingHostThumbnails() {
         attemptedIds,
         failedIds: failedHostThumbnailIds,
         pageUrls: hostPageUrls,
-        isCurrent: thumbnailIsCurrent,
+        isCurrent: page => thumbnailIsCurrent(page, false),
       })
       if (!page) break
       attemptedIds.add(page.id)
@@ -1740,8 +1755,10 @@ function activatePreview(pageId: string, animate = true) {
       parkedPageProgress.value = {}
     }
     active.value = pageId
-    pendingApiResultsByPage.delete(pageId)
-    apiResultsByPage.value = { ...apiResultsByPage.value, [pageId]: [] }
+    if (!props.host) {
+      pendingApiResultsByPage.delete(pageId)
+      apiResultsByPage.value = { ...apiResultsByPage.value, [pageId]: [] }
+    }
     focusedPageId.value = pageId
     focusedLinksScannedPageId = cachedLinks ? pageId : undefined
     focusAnimation.cancel()
@@ -2020,6 +2037,14 @@ async function copyPagePath(path: string) {
 }
 
 function openPage(path: string) {
+  if (props.host) {
+    const page = pages.value.find(item => item.path === path)
+    const url = page && hostPageUrls.get(page.id)
+    if (url) {
+      window.open(url, '_blank', 'noopener,noreferrer')
+      return
+    }
+  }
   window.open(previewUrl(path), '_blank', 'noopener,noreferrer')
 }
 
@@ -2683,7 +2708,7 @@ function handlePreviewMessage(event: MessageEvent) {
     if (sourcePageId && sourcePageId === focusedPageId.value) {
       requestAnimationFrame(() => requestFocusedPageScan(sourcePageId))
       const page = pages.value.find(item => item.id === sourcePageId)
-      if (!cachedPageDiagnostics(page)) requestAnimationFrame(requestFocusedDiagnostics)
+      if (!cachedPageDiagnostics(page)) requestAnimationFrame(() => requestFocusedDiagnostics())
     }
     return
   }
@@ -3179,6 +3204,11 @@ watch(requiredThumbnailRecords, records => {
 }, { immediate: true })
 
 watch([active, copiedPath], scheduleCanvasRender)
+watch(panelCollapsed, (collapsed) => {
+  try {
+    localStorage.setItem(PANEL_COLLAPSED_STORAGE_KEY, String(collapsed))
+  } catch {}
+})
 watch(capturePreviewId, (pageId) => {
   cancelAnimationFrame(capturePulseFrame)
   capturePulseFrame = 0
@@ -3217,7 +3247,7 @@ watch(focusedPageId, () => {
   lighthouseError.value = ''
   previewFrames.forEach((_frame, pageId) => syncPreviewHotspots(pageId))
   void refreshFocusedTests()
-  if (!cachedDiagnostics) requestAnimationFrame(requestFocusedDiagnostics)
+  if (!cachedDiagnostics) requestAnimationFrame(() => requestFocusedDiagnostics())
 })
 
 function applyHostState(state: PageFlowHostState) {
@@ -3231,7 +3261,7 @@ function applyHostState(state: PageFlowHostState) {
     active.value = currentPage.id
     apiResultsByPage.value = {
       ...apiResultsByPage.value,
-      [currentPage.id]: graph.requests.map(request => ({ ...request, fields: [] })),
+      [currentPage.id]: graph.requests,
     }
   }
 }
@@ -3287,6 +3317,13 @@ onMounted(async () => {
   if (props.host) {
     thumbnailManifestLoaded.value = true
     try {
+      if (props.host.previewSize) {
+        const detectedSize = await props.host.previewSize()
+        if (detectedSize.width !== pcPreviewSize.value.width || detectedSize.height !== pcPreviewSize.value.height) {
+          pcDesignSizeDetected = true
+          pcPreviewSize.value = detectedSize
+        }
+      }
       const session = await startPageFlowHostSession(props.host, {
         onState: (state) => {
           applyHostState(state)
@@ -3295,12 +3332,13 @@ onMounted(async () => {
         onRequest: (request) => {
           const pageId = focusedPageId.value ?? active.value
           const current = apiResultsByPage.value[pageId] ?? []
-          apiResultsByPage.value = { ...apiResultsByPage.value, [pageId]: mergeApiResult(current, { ...request, fields: [] }) }
+          apiResultsByPage.value = { ...apiResultsByPage.value, [pageId]: mergeApiResult(current, { ...request, fields: request.fields ?? [] }) }
         },
         onDiagnostics: diagnostics => { focusedDiagnostics.value = diagnostics },
       })
       applyHostState(session.state)
       hostCanvasOrigin = session.origin
+      apiResponseOrigin.value = session.origin
       hostCanvasStorage = session.storage
       canvasLayouts.value = {
         ...canvasLayouts.value,
@@ -3330,7 +3368,7 @@ onMounted(async () => {
       }
       restoreHostThumbnails(hostCanvasStorage.thumbnails)
       const currentPage = pages.value.find(page => page.id === active.value)
-      if (currentPage && !thumbnailIsCurrent(currentPage)) await captureHostThumbnail(currentPage)
+      if (currentPage && !thumbnailIsCurrent(currentPage, false)) await captureHostThumbnail(currentPage)
       void captureMissingHostThumbnails()
       stopPageFlowUpdates = session.stop
     } catch {

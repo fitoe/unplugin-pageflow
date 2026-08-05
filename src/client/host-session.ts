@@ -1,10 +1,10 @@
 import type { PageFlowHost, PageFlowHostState } from '../../packages/pageflow-core/src/host'
 import { loadPageFlowCanvas } from '../../packages/pageflow-core/src/host-storage'
-import type { PageFlowApiRequest, PageFlowBrowserRuntimeEvent } from '../../packages/pageflow-core/src/types'
+import type { PageFlowApiField, PageFlowApiRequest, PageFlowBrowserRuntimeEvent } from '../../packages/pageflow-core/src/types'
 
 export interface PageFlowHostSessionCallbacks {
   onState(state: PageFlowHostState): void
-  onRequest(request: PageFlowApiRequest): void
+  onRequest(request: PageFlowApiRequest & { fields?: PageFlowApiField[] }): void
   onDiagnostics(diagnostics: PageFlowHostState['diagnostics']): void
 }
 
