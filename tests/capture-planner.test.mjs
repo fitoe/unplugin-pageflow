@@ -15,6 +15,7 @@ test('plans stale, priority, route-order, and manual capture work', async () => 
       priorityIds: new Set(['visible']),
       failedIds: new Set(['failed']),
       isCurrent: item => item.id === 'current',
+      canCaptureAutomatically: () => true,
     }
 
     const background = planNextCapture(options)
@@ -32,6 +33,24 @@ test('plans stale, priority, route-order, and manual capture work', async () => 
     assert.deepEqual([...manual.batchIds], ['visible', 'first'])
     assert.equal(manual.pageId, 'first')
     assert.equal(manual.manual, true)
+
+    const staleWithStoredThumbnail = planNextCapture({
+      ...options,
+      batchIds: ['visible'],
+      canCaptureAutomatically: () => false,
+    })
+    assert.deepEqual([...staleWithStoredThumbnail.batchIds], [])
+    assert.equal(staleWithStoredThumbnail.pageId, undefined)
+
+    const manualStoredThumbnail = planNextCapture({
+      ...options,
+      batchIds: [],
+      manualIds: ['first'],
+      canCaptureAutomatically: () => false,
+    })
+    assert.deepEqual([...manualStoredThumbnail.batchIds], ['first'])
+    assert.equal(manualStoredThumbnail.pageId, 'first')
+    assert.equal(manualStoredThumbnail.manual, true)
   } finally {
     await server.close()
   }

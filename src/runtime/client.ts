@@ -639,6 +639,10 @@ function protectPreviewInteractions(router: PageFlowRouterAdapter, config: Resol
 
 function observePage(router: PageFlowRouterAdapter, config: ResolvedPageFlowOptions) {
   if (!new URLSearchParams(window.location.search).has(PAGEFLOW_PREVIEW_PARAM)) return
+  // Preview URLs can also be opened as normal top-level tabs. There is no
+  // PageFlow parent to consume scan results there, so observing large animated
+  // pages (for example Cesium) only creates repeated full-DOM scans.
+  if (window.parent === window) return
   let timer: ReturnType<typeof setTimeout> | undefined
   const update = () => {
     clearTimeout(timer)
@@ -713,7 +717,7 @@ export async function startPageFlowRuntime(config: ResolvedPageFlowOptions) {
         highlightDiagnosticElement(event.data.selector)
     })
   }
-  if (previewMode && !runtimeWindow.__UNPLUGIN_PAGEFLOW_SCROLL_SCAN_BOUND__) {
+  if (previewMode && window.parent !== window && !runtimeWindow.__UNPLUGIN_PAGEFLOW_SCROLL_SCAN_BOUND__) {
     runtimeWindow.__UNPLUGIN_PAGEFLOW_SCROLL_SCAN_BOUND__ = true
     observePreviewScroll(() => {
       void scanRenderedPage(router!).then(page => {

@@ -922,6 +922,10 @@ function fullThumbnailRecords(pageId: string) {
     : fullThumbnailTiles(thumbnailManifest.value, pageId, previewMode.value)
 }
 
+function pageHasStoredThumbnail(page: PageFlowPage) {
+  return Boolean(compactThumbnailRecord(page.id) || fullThumbnailRecords(page.id).length)
+}
+
 function thumbnailIsCurrent(page: PageFlowPage) {
   if (forcedThumbnailRefreshIds.has(page.id)) return false
   const revision = pageThumbnailRevision(page)
@@ -1632,6 +1636,7 @@ function scheduleNextCapture() {
     manualIds: manualCaptureIds,
     priorityIds: new Set([livePreviewId.value, focusedPageId.value, ...visiblePageIds.value].filter(Boolean) as string[]),
     failedIds: failedPreviewIds,
+    canCaptureAutomatically: page => !pageHasStoredThumbnail(page),
     isCurrent: thumbnailIsCurrent,
   })
   captureBatchIds = plan.batchIds
@@ -1650,6 +1655,7 @@ function startNextCapture() {
     manualIds: manualCaptureIds,
     priorityIds: new Set([livePreviewId.value, focusedPageId.value, ...visiblePageIds.value].filter(Boolean) as string[]),
     failedIds: failedPreviewIds,
+    canCaptureAutomatically: page => !pageHasStoredThumbnail(page),
     isCurrent: thumbnailIsCurrent,
   })
   captureBatchIds = plan.batchIds

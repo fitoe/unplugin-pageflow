@@ -7,6 +7,7 @@ interface CapturePlanOptions {
   priorityIds: ReadonlySet<string>
   failedIds: ReadonlySet<string>
   isCurrent: (page: PageFlowPage) => boolean
+  canCaptureAutomatically: (page: PageFlowPage) => boolean
 }
 
 export interface CapturePlan {
@@ -17,9 +18,13 @@ export interface CapturePlan {
 }
 
 export function planNextCapture(options: CapturePlanOptions): CapturePlan {
-  const pageIds = new Set(options.pages.map(page => page.id))
+  const pagesById = new Map(options.pages.map(page => [page.id, page]))
+  const pageIds = new Set(pagesById.keys())
   const manualIds = [...options.manualIds].filter(id => pageIds.has(id))
-  const automaticIds = new Set([...options.priorityIds].filter(id => pageIds.has(id)))
+  const automaticIds = new Set([...options.priorityIds].filter((id) => {
+    const page = pagesById.get(id)
+    return page && options.canCaptureAutomatically(page)
+  }))
   let batchIds = new Set([...options.batchIds].filter(id => automaticIds.has(id) || manualIds.includes(id)))
   if (!batchIds.size) {
     batchIds = new Set(options.pages

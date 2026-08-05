@@ -667,9 +667,13 @@ const factory: UnpluginFactory<PageFlowOptions | undefined> = (options) => {
       apply: 'serve',
       config(config) {
         const ignored = config.server?.watch?.ignored
+        const allowed = config.server?.fs?.allow
         const normalizedPluginDist = normalizeFile(pluginDist)
         return {
           server: {
+            fs: {
+              allow: [...(allowed ?? [resolve(config.root ?? process.cwd())]), resolve(pluginRoot, 'dist')],
+            },
             watch: {
               ignored: [
                 ...(ignored == null ? [] : Array.isArray(ignored) ? ignored : [ignored]),
