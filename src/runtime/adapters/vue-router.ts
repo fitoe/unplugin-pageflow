@@ -81,7 +81,9 @@ export class VueRouterAdapter implements PageFlowRouterAdapter {
   resolve(to: unknown): PageFlowResolvedNavigation | undefined {
     const resolved = this.router.resolve?.(to)
     const matched = resolved?.matched
-    const path = matched?.[matched.length - 1]?.path ?? resolved?.path
+    const matchedPath = matched?.[matched.length - 1]?.path
+    if (matched && (!matchedPath || /:[^/]+\(\.\*\)/.test(matchedPath))) return undefined
+    const path = matchedPath ?? resolved?.path
     return path ? { path, location: resolved?.fullPath ?? resolved?.path ?? path } : undefined
   }
 

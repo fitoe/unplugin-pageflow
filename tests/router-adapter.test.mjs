@@ -9,6 +9,7 @@ test('adapts Vue Router discovery, routes, locations, and intercepted navigation
   const routes = [
     { name: 'home', path: '/home', meta: { title: 'Home' }, components: { default: { __file: 'src/pages/home.vue' } } },
     { name: 'detail', path: '/detail/:id', components: { default: () => import('../src/App.vue') } },
+    { name: 'not-found', path: '/:pathMatch(.*)*' },
   ]
   const router = {
     options: { history: { base: '/app', createHref: path => path } },
@@ -17,7 +18,8 @@ test('adapts Vue Router discovery, routes, locations, and intercepted navigation
     resolve: to => {
       const location = typeof to === 'string' ? to : to.path
       const path = location.split('?', 1)[0].replace(/\/\d+$/, '/:id')
-      return { path, fullPath: location, matched: routes.filter(route => route.path === path) }
+      const matched = routes.filter(route => route.path === path)
+      return { path, fullPath: location, matched: matched.length ? matched : [routes[2]] }
     },
     push: () => Promise.resolve(),
     replace: () => Promise.resolve(),
@@ -34,9 +36,10 @@ test('adapts Vue Router discovery, routes, locations, and intercepted navigation
     const adapter = findVueRouterAdapter()
     assert(adapter)
     assert.equal(adapter.name, 'vue-router')
-    assert.deepEqual(adapter.routes().map(route => [route.path, route.title]), [['/home', 'Home'], ['/detail/:id', 'detail']])
+    assert.deepEqual(adapter.routes().map(route => [route.path, route.title]), [['/home', 'Home'], ['/detail/:id', 'detail'], ['/:pathMatch(.*)*', 'not-found']])
     assert.equal(adapter.currentPath(), '/home')
     assert.deepEqual(adapter.resolve('/detail/7?from=home'), { path: '/detail/:id', location: '/detail/7?from=home' })
+    assert.equal(adapter.resolve('/.well_known'), undefined)
     assert.deepEqual(adapter.resolveAnchor(new URL('http://localhost/app/detail/8?q=1')), { path: '/detail/:id', location: '/detail/8?q=1' })
 
     const navigations = []

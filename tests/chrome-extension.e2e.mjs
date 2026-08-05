@@ -24,8 +24,13 @@ function startFixtureServer({ performancePages = 0 } = {}) {
       response.end('<!doctype html><html><head><title>Screen fixture</title></head><body style="margin:0"><main id="screen" style="width:3840px;height:1080px;transform:scale(.25);transform-origin:top left">Screen</main></body></html>')
       return
     }
+    if (request.url?.startsWith('/capture-pattern')) {
+      response.writeHead(200, { 'content-type': 'text/html; charset=utf-8' })
+      response.end('<!doctype html><html><body style="margin:0;width:800px;height:600px;background:linear-gradient(90deg,#f00 0 50%,#00f 50%)"><canvas id="gl" width="200" height="200" style="position:absolute;left:300px;top:200px"></canvas><script>const gl=document.querySelector("#gl").getContext("webgl");gl.clearColor(0,1,0,1);gl.clear(gl.COLOR_BUFFER_BIT)</script></body></html>')
+      return
+    }
     response.writeHead(200, { 'content-type': 'text/html; charset=utf-8' })
-    response.end(`<!doctype html><html><head><title>PageFlow fixture</title></head><body style="min-height:2000px"><main id="app"><button id="route">Route</button><a href="/about" style="position:absolute;top:1200px;left:20px;width:120px;height:40px">About</a><a href="/products/1?ref=first">Product 1</a><a href="/products/2?ref=second">Product 2</a><a href="/articles/first">First article</a><a href="/articles/second">Second article</a><a href="/redirect">Redirect</a>${performanceLinks}<img id="missing-alt"></main><script>document.querySelector("#app").__vue_app__={config:{globalProperties:{$router:{getRoutes:()=>[{path:"/",meta:{title:"Home"}},{path:"/router-only",meta:{title:"Router only"}},{path:"/redirect",redirect:"/about"}],currentRoute:{value:{path:location.pathname}},options:{history:{createHref:path=>path}}}}}}</script></body></html>`)
+    response.end(`<!doctype html><html><head><title>PageFlow fixture</title></head><body style="min-height:2000px"><main id="app"><button id="route">Route</button><a href="/about" style="position:absolute;top:1200px;left:20px;width:120px;height:40px">About</a><a href="/products/1?ref=first">Product 1</a><a href="/products/2?ref=second">Product 2</a><a href="/articles/first">First article</a><a href="/articles/second">Second article</a><a href="/redirect">Redirect</a>${performanceLinks}<img id="missing-alt"></main><script>const routes=[{path:"/",meta:{title:"Home"}},{path:"/router-only",meta:{title:"Router only"}},{path:"/redirect",redirect:"/about"},{path:"/:pathMatch(.*)*"}];document.querySelector("#app").__vue_app__={config:{globalProperties:{$router:{getRoutes:()=>routes,resolve:to=>{const path=new URL(typeof to==="string"?to:to.href,location.origin).pathname;const declared=routes.find(route=>route.path===path);const matched=declared?[declared]:path==="/.well_known"?[routes.at(-1)]:[{path}];return{path,fullPath:path,matched}},currentRoute:{value:{path:location.pathname}},options:{history:{createHref:path=>path}}}}}}</script></body></html>`)
   })
   return new Promise(resolve => server.listen(0, '127.0.0.1', () => resolve(server)))
 }
@@ -128,18 +133,38 @@ test('Chrome extension smoke covers runtime, capture, diagnostics, workbench, an
       tabId,
       url,
       viewport: { width: 800, height: 600 },
-    }), { tabId: tab.id, url: `${origin}/about` })
+    }), { tabId: tab.id, url: `${origin}/capture-pattern` })
     assert.equal(backgroundCapture.ok, true)
     assert.match(backgroundCapture.value.source, /^data:image\/png;base64,/)
     assert.equal(backgroundCapture.value.pageWidth, 800)
-    assert(backgroundCapture.value.pageHeight >= 1_200 && backgroundCapture.value.pageHeight < 2_000)
+    assert.equal(backgroundCapture.value.pageHeight, 600)
+    const capturePixels = await dashboard.evaluate(async (source) => {
+      const image = new Image()
+      image.src = source
+      await image.decode()
+      const canvas = document.createElement('canvas')
+      canvas.width = image.naturalWidth
+      canvas.height = image.naturalHeight
+      const context = canvas.getContext('2d')
+      context.drawImage(image, 0, 0)
+      return {
+        size: [image.naturalWidth, image.naturalHeight],
+        left: [...context.getImageData(100, 300, 1, 1).data],
+        center: [...context.getImageData(400, 300, 1, 1).data],
+        right: [...context.getImageData(700, 300, 1, 1).data],
+      }
+    }, backgroundCapture.value.source)
+    assert.deepEqual(capturePixels.size, [800, 600])
+    assert(capturePixels.left[0] > 200 && capturePixels.left[2] < 50)
+    assert(capturePixels.center[1] > 200 && capturePixels.center[0] < 50)
+    assert(capturePixels.right[2] > 200 && capturePixels.right[0] < 50)
     await worker.evaluate(async tabId => chrome.tabs.sendMessage(tabId, { type: 'pageflow:scan' }), tab.id)
     const state = await waitForExtensionState(worker, tab.id, value => value.diagnostics.some(item => item.ruleId === 'missing-alt')
       && value.pages.some(item => new URL(item.url).pathname === '/router-only')
       && !value.pages.some(item => new URL(item.url).pathname === '/redirect'))
 
     assert.equal(await page.evaluate(() => Boolean(window.__PAGEFLOW_CHROME_RUNTIME__)), true)
-    assert.deepEqual(state.pages.map(item => new URL(item.url).pathname), ['/', '/about', '/products/1', '/products/2', '/articles/first', '/articles/second', '/router-only', '/orders'])
+    assert.deepEqual(state.pages.map(item => new URL(item.url).pathname).sort(), ['/', '/about', '/products/1', '/products/2', '/articles/first', '/articles/second', '/router-only', '/orders'].sort())
     assert.deepEqual(state.edges.map(item => [new URL(item.from).pathname, new URL(item.to).pathname]), [['/', '/about'], ['/', '/products/1'], ['/', '/products/2'], ['/', '/articles/first'], ['/', '/articles/second'], ['/products/2', '/orders'], ['/orders', '/about'], ['/orders', '/products/1'], ['/orders', '/products/2'], ['/orders', '/articles/first'], ['/orders', '/articles/second']])
     assert.equal(state.requests.find(item => item.url.includes('/api/orders'))?.occurrences, 2)
     assert.equal(state.requests.find(item => item.url.includes('/api/orders'))?.body.orders[0].name, 'PageFlow')
@@ -269,6 +294,11 @@ test('Chrome extension smoke covers runtime, capture, diagnostics, workbench, an
     assert.equal(restoredThumbnails.length, thumbnails.length)
     assert.deepEqual(restoredThumbnails.filter(item => thumbnailTimes.get(`${item.pageId}:${item.mode}`) !== item.updatedAt)
       .map(item => ({ pageId: item.pageId, mode: item.mode, revision: item.revision })), [])
+    await page.goto(`${origin}/.well_known`)
+    const unknownRouteState = await waitForExtensionState(worker, pageTabId, value =>
+      new URL(value.currentUrl).pathname === '/.well_known'
+      && !value.pages.some(item => new URL(item.url).pathname === '/.well_known'))
+    assert.equal(unknownRouteState.pages.some(item => new URL(item.url).pathname === '/.well_known'), false)
   } finally {
     await context?.close()
     await rm(userDataDir, { recursive: true, force: true })

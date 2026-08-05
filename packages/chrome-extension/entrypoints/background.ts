@@ -146,6 +146,20 @@ async function waitForTabComplete(tabId: number) {
   })
 }
 
+async function waitForCaptureFrame(target: { tabId: number }) {
+  await browser.debugger.sendCommand(target, 'Runtime.evaluate', {
+    expression: `(async () => {
+      await document.fonts?.ready;
+      await Promise.race([
+        Promise.all([...document.images].filter(image => !image.complete).map(image => image.decode().catch(() => undefined))),
+        new Promise(resolve => setTimeout(resolve, 1500)),
+      ]);
+      await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+    })()`,
+    awaitPromise: true,
+  })
+}
+
 async function captureBackgroundPage(sourceTabId: number, url: string, viewport: { width: number; height: number }) {
   const sourceTab = await browser.tabs.get(sourceTabId)
   const captureTab = await browser.tabs.create({ url, active: false, windowId: sourceTab.windowId })
@@ -162,7 +176,10 @@ async function captureBackgroundPage(sourceTabId: number, url: string, viewport:
       deviceScaleFactor: 1,
       mobile: false,
     })
-    await new Promise(resolve => setTimeout(resolve, 500))
+    await browser.debugger.sendCommand(target, 'Emulation.setFocusEmulationEnabled', { enabled: true })
+    await browser.debugger.sendCommand(target, 'Page.setWebLifecycleState', { state: 'active' })
+    await new Promise(resolve => setTimeout(resolve, 1_000))
+    await waitForCaptureFrame(target)
     const contentSize = await browser.tabs.sendMessage(captureTab.id, {
       type: 'pageflow:get-capture-size',
       viewport,
@@ -190,17 +207,26 @@ async function captureBackgroundPage(sourceTabId: number, url: string, viewport:
 async function captureSourceTab(sourceTabId: number, dashboardTabId?: number) {
   const source = await browser.tabs.get(sourceTabId)
   if (source.id == null) throw new Error('PageFlow source tab is unavailable')
+  const target = { tabId: source.id }
+  let attachedForCapture = false
   try {
     await browser.tabs.update(source.id, { active: true })
-    await new Promise(resolve => setTimeout(resolve, 100))
+    if (!networkSessions.has(source.id)) {
+      await browser.debugger.attach(target, '1.3')
+      attachedForCapture = true
+    }
+    await browser.debugger.sendCommand(target, 'Page.bringToFront')
+    await waitForCaptureFrame(target)
     await browser.tabs.sendMessage(source.id, { type: 'pageflow:scan' } satisfies ExtensionMessage).catch(() => undefined)
     await new Promise(resolve => setTimeout(resolve, 50))
-    const [sourceData, metrics] = await Promise.all([
-      browser.tabs.captureVisibleTab(source.windowId, { format: 'png' }),
+    const [screenshot, metrics] = await Promise.all([
+      browser.debugger.sendCommand(target, 'Page.captureScreenshot', { format: 'png', fromSurface: true }) as Promise<{ data?: string }>,
       browser.tabs.sendMessage(source.id, { type: 'pageflow:get-metrics' } satisfies ExtensionMessage) as Promise<{ pageWidth: number; pageHeight: number }>,
     ])
-    return { source: sourceData, ...metrics }
+    if (!screenshot.data) throw new Error('PageFlow did not receive screenshot data')
+    return { source: `data:image/png;base64,${screenshot.data}`, ...metrics }
   } finally {
+    if (attachedForCapture) await browser.debugger.detach(target).catch(() => undefined)
     if (dashboardTabId != null) await browser.tabs.update(dashboardTabId, { active: true }).catch(() => undefined)
   }
 }

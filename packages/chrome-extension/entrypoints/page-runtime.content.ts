@@ -39,6 +39,13 @@ export default defineContentScript({
         if (!router) await new Promise(resolve => setTimeout(resolve, 100))
       }
       if (!router) return
+      if (!router.resolve(`${location.pathname}${location.search}${location.hash}`)) {
+        const url = new URL(location.href)
+        url.hash = ''
+        url.search = ''
+        excludedPageUrls.add(url.href)
+        emit({ kind: 'page-remove', url: url.href })
+      }
       for (const route of router.routes()) {
         if (route.redirect || route.aliasOf || route.catchAll) {
           if (!route.path.includes(':')) {
@@ -89,6 +96,14 @@ export default defineContentScript({
     }
     const reportPage = () => {
       const nextUrl = location.href
+      if (router && !router.resolve(`${location.pathname}${location.search}${location.hash}`)) {
+        const url = new URL(nextUrl)
+        url.hash = ''
+        url.search = ''
+        emit({ kind: 'page-remove', url: url.href })
+        currentUrl = nextUrl
+        return
+      }
       const nextRouteKey = routeKeyFor(nextUrl)
       emit({ kind: 'page', page: { url: nextUrl, routeKey: nextRouteKey, title: document.title, updatedAt: Date.now() } })
       if (currentUrl !== nextUrl) {
