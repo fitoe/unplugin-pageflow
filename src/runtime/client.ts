@@ -4,7 +4,7 @@ import type {
 } from '../shared/types'
 import { PAGEFLOW_PREVIEW_PARAM } from './index'
 import { startPageFlowDomStatePersistence } from './state'
-import { PAGEFLOW_API_RESULT_MESSAGE, PAGEFLOW_DIAGNOSTIC_HIGHLIGHT_MESSAGE, PAGEFLOW_DIAGNOSTICS_RESULT_MESSAGE, PAGEFLOW_DIAGNOSTICS_SCAN_MESSAGE, PAGEFLOW_HOTSPOT_HOVER_MESSAGE, PAGEFLOW_NAVIGATE_MESSAGE, PAGEFLOW_NETWORK_EVENT, PAGEFLOW_PAGE_REPORTED_MESSAGE, PAGEFLOW_READY_EVENT, PAGEFLOW_SCAN_MESSAGE, PAGEFLOW_SCAN_RESULT_MESSAGE } from '../shared/protocol'
+import { PAGEFLOW_API_RESULT_MESSAGE, PAGEFLOW_DIAGNOSTIC_HIGHLIGHT_MESSAGE, PAGEFLOW_DIAGNOSTICS_RESULT_MESSAGE, PAGEFLOW_DIAGNOSTICS_SCAN_MESSAGE, PAGEFLOW_HOTSPOT_HOVER_MESSAGE, PAGEFLOW_NAVIGATE_MESSAGE, PAGEFLOW_NETWORK_EVENT, PAGEFLOW_PAGE_REPORTED_MESSAGE, PAGEFLOW_READY_EVENT, PAGEFLOW_SCAN_MESSAGE, PAGEFLOW_SCAN_RESULT_MESSAGE, PAGEFLOW_WEBGL_CANVAS_ATTRIBUTE } from '../shared/protocol'
 import { highlightDiagnosticElement, scanPageDiagnostics } from './diagnostics'
 import type { PageFlowRouterAdapter } from './adapters/types'
 import { findVueRouterAdapter } from './adapters/vue-router'
@@ -15,13 +15,17 @@ import { collectApiFields } from './api-fields'
 import { instrumentPageFlowNetwork } from '../../packages/pageflow-runtime/src'
 
 const apiInspectionEnabled = new URLSearchParams(window.location.search).has('__unplugin_pageflow_inspect')
+let renderedValuesCache = { expiresAt: 0, value: '' }
 function renderedPageValues() {
+  const now = performance.now()
+  if (now < renderedValuesCache.expiresAt) return renderedValuesCache.value
   const values = [document.body?.innerText ?? '']
   document.querySelectorAll<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>('input, textarea, select')
     .forEach(element => values.push(element.value))
   document.querySelectorAll<HTMLElement>('[aria-label], [title], img[alt]')
     .forEach(element => values.push(element.getAttribute('aria-label') ?? '', element.getAttribute('title') ?? '', element.getAttribute('alt') ?? ''))
-  return values.join('\n')
+  renderedValuesCache = { expiresAt: now + 250, value: values.join('\n') }
+  return renderedValuesCache.value
 }
 
 function yieldApiInspection() {
@@ -33,7 +37,12 @@ function yieldApiInspection() {
 
 async function reportApiResult(method: string, url: string, status: number, duration: number, value: unknown, responseSize = 0, contentType = '') {
   if (!apiInspectionEnabled || window.parent === window || url.includes('/__unplugin-pageflow/') || !isLocalBusinessApiResponse(url, window.location.origin, contentType)) return
-  const fields = await collectApiFields(value, renderedPageValues(), { yieldToHost: yieldApiInspection })
+  const fields = await collectApiFields(value, renderedPageValues(), {
+    maximumArrayItems: 20,
+    maximumFields: 250,
+    yieldEvery: 100,
+    yieldToHost: yieldApiInspection,
+  })
   window.parent.postMessage({
     type: PAGEFLOW_API_RESULT_MESSAGE,
     result: {
@@ -57,7 +66,7 @@ interface PageFlowWindow extends Window {
   __UNPLUGIN_PAGEFLOW_WEBGL_CAPTURE_BOUND__?: boolean
 }
 
-function preservePreviewWebGLFrames() {
+function markPreviewWebGLCanvases() {
   if (!new URLSearchParams(window.location.search).has(PAGEFLOW_PREVIEW_PARAM)) return
   const trackedWindow = window as PageFlowWindow
   if (trackedWindow.__UNPLUGIN_PAGEFLOW_WEBGL_CAPTURE_BOUND__) return
@@ -65,10 +74,10 @@ function preservePreviewWebGLFrames() {
   const prototype = window.HTMLCanvasElement.prototype
   const originalGetContext = prototype.getContext
   prototype.getContext = function (this: HTMLCanvasElement, contextId: string, options?: Record<string, unknown>) {
-    const captureWebGL = contextId === 'webgl' || contextId === 'webgl2' || contextId === 'experimental-webgl'
-    return originalGetContext.call(this, contextId, captureWebGL
-      ? { ...options, preserveDrawingBuffer: true }
-      : options)
+    const context = originalGetContext.call(this, contextId, options)
+    if (context && (contextId === 'webgl' || contextId === 'webgl2' || contextId === 'experimental-webgl'))
+      this.setAttribute(PAGEFLOW_WEBGL_CANVAS_ATTRIBUTE, '')
+    return context
   } as typeof prototype.getContext
 }
 
@@ -465,11 +474,12 @@ function collectLinks(router: PageFlowRouterAdapter, visibleOnly = false) {
     links.push({ label: linkLabel(element, to), to, location: declaredTarget, kind: 'link', hotspot: hotspotCenter(element) })
   })
   document.body.querySelectorAll('*').forEach(element => {
-    if (element.closest('[data-unplugin-pageflow-hotspot-layer], [data-unplugin-pageflow-launcher]') || !hasClickHandler(element)) return
+    if (element.closest('[data-unplugin-pageflow-hotspot-layer], [data-unplugin-pageflow-launcher]')) return
+    if (visibleOnly && !isElementInViewport(element)) return
+    if (!hasClickHandler(element)) return
     if (element.closest('a[href]')) return
     if (element.querySelector('a[href]')) return
     if (element.hasAttribute('data-pageflow-to')) return
-    if (visibleOnly && !isElementInViewport(element)) return
     const label = element.getAttribute('aria-label')?.trim() || element.textContent?.trim() || 'Navigation'
     const targets = router.renderedNavigationTargets?.(element) ?? []
     if (!addHotspot(layer!, element, 'event', targets) || !targets.length) return
@@ -632,7 +642,12 @@ function observePage(router: PageFlowRouterAdapter, config: ResolvedPageFlowOpti
   let timer: ReturnType<typeof setTimeout> | undefined
   const update = () => {
     clearTimeout(timer)
-    timer = setTimeout(() => void publishPage(router, config), 100)
+    timer = setTimeout(() => {
+      void scanRenderedPage(router).then(page => {
+        if (window.parent !== window)
+          window.parent.postMessage({ type: PAGEFLOW_SCAN_RESULT_MESSAGE, page }, window.location.origin)
+      })
+    }, 100)
   }
   const observer = new MutationObserver(records => {
     if (records.every(record => (record.target as Element).closest?.('[data-unplugin-pageflow-hotspot-layer], [data-unplugin-pageflow-launcher]'))) return
@@ -647,7 +662,7 @@ function observePage(router: PageFlowRouterAdapter, config: ResolvedPageFlowOpti
 export async function startPageFlowRuntime(config: ResolvedPageFlowOptions) {
   if (!config.enabled) return
 
-  preservePreviewWebGLFrames()
+  markPreviewWebGLCanvases()
   mountPageFlowLauncher(config)
 
   if (config.routes?.length) window.__UNPLUGIN_PAGEFLOW_ROUTES__ = config.routes

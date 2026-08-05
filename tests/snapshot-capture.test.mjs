@@ -121,7 +121,8 @@ test('uses modern-screenshot and preserves canvas pages', async () => {
   window.HTMLCanvasElement.prototype.toDataURL = () => 'data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22/%3E'
   const server = await createServer({ configFile: false, server: { middlewareMode: true }, appType: 'custom', logLevel: 'silent' })
   try {
-    const { hasMeaningfulSnapshotPixels, renderSnapshotCanvas } = await server.ssrLoadModule('/src/client/snapshot-capture.ts')
+    const { documentUsesWebGL, hasMeaningfulSnapshotPixels, renderSnapshotCanvas } = await server.ssrLoadModule('/src/client/snapshot-capture.ts')
+    assert.equal(documentUsesWebGL(window.document), false)
     assert.equal(hasMeaningfulSnapshotPixels(new Uint8ClampedArray(16).fill(255)), false)
     assert.equal(hasMeaningfulSnapshotPixels(new Uint8ClampedArray([
       255, 255, 255, 255,
@@ -143,7 +144,10 @@ test('uses modern-screenshot and preserves canvas pages', async () => {
     assert.equal(primary, modernCanvas)
     assert.deepEqual({ height: modernOptions.height, scale: modernOptions.scale, width: modernOptions.width }, { height: 852, scale: 2, width: 393 })
 
-    target.append(window.document.createElement('canvas'))
+    const sourceCanvas = window.document.createElement('canvas')
+    sourceCanvas.setAttribute('data-unplugin-pageflow-webgl', '')
+    target.append(sourceCanvas)
+    assert.equal(documentUsesWebGL(window.document), true)
     let canvasPrimaryCalls = 0
     const canvasSnapshot = await renderSnapshotCanvas(target, { backgroundColor: '#fff' }, {
       primary: async (captureTarget) => {

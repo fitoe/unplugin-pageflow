@@ -16,6 +16,13 @@ export interface PageCardOptions {
   dark?: boolean
 }
 
+export function pageCardMetaHit(localX: number, localY: number, previewHeight: number) {
+  if (localX < 0 || localX > PAGE_CARD_WIDTH) return
+  if (localY >= previewHeight + 6 && localY <= previewHeight + 32)
+    return localX >= PAGE_CARD_WIDTH - 30 ? 'open' : 'title'
+  if (localY > previewHeight + 32 && localY <= previewHeight + 56) return 'path'
+}
+
 export function setPageCardShadow(group: Group, highlighted: boolean, capturePulse?: number) {
   const background = group.children[0]
   if (!(background instanceof Rect)) return false

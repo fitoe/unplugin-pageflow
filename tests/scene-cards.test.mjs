@@ -15,7 +15,7 @@ test('builds reusable page cards and real-page deck layers', async () => {
     logLevel: 'silent',
   })
   try {
-    const { createPageCardGroup, createPageDeckGroup } = await server.ssrLoadModule('/src/client/scene-cards.ts')
+    const { createPageCardGroup, createPageDeckGroup, pageCardMetaHit } = await server.ssrLoadModule('/src/client/scene-cards.ts')
     const page = id => ({ id, title: `Title ${id}`, path: `/${id}`, accent: '#fff', links: [] })
     const card = createPageCardGroup({
       page: page('home'),
@@ -30,6 +30,10 @@ test('builds reusable page cards and real-page deck layers', async () => {
     assert.deepEqual(card.children.slice(1).map(child => child.text), [
       'Title home', '/home', 'Title home', '→', '已复制',
     ])
+    assert.equal(pageCardMetaHit(230, 870, 852), 'open')
+    assert.equal(pageCardMetaHit(100, 870, 852), 'title')
+    assert.equal(pageCardMetaHit(100, 895, 852), 'path')
+    assert.equal(pageCardMetaHit(230, 895, 852), 'path')
 
     const layers = [page('index'), page('detail')]
     const deck = createPageDeckGroup({

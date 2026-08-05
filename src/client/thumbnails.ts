@@ -167,3 +167,13 @@ export function visibleThumbnailTilesOrCompact(
   const visible = visibleThumbnailTiles(records, pageWorldY, viewport, transform, margin)
   return visible.length ? visible : compact ? [compact] : []
 }
+
+export function loadedThumbnailTilesOrCompact(
+  records: PageFlowThumbnailRecord[],
+  compact: PageFlowThumbnailRecord | undefined,
+  hasSource: (record: PageFlowThumbnailRecord) => boolean,
+) {
+  if (!records.length) return compact ? [compact] : []
+  if (records.every(hasSource)) return records
+  return compact && hasSource(compact) ? [compact] : records
+}

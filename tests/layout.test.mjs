@@ -9,7 +9,7 @@ test('lays out linked pages in layers and limits previews to the viewport', asyn
     const { forwardWheelToCanvas, PAGEFLOW_CANVAS_CONFIG } = await server.ssrLoadModule('/src/client/canvas.ts')
     const { expandDynamicRoutes } = await server.ssrLoadModule('/src/shared/dynamic-routes.ts')
     const { resolvePreviewUrl, touchPreviewCache } = await server.ssrLoadModule('/src/client/preview.ts')
-    const { fullThumbnailTiles, thumbnailPageKey, thumbnailRecordsAreCurrent, thumbnailRevision, thumbnailSlot, thumbnailTierForZoom, thumbnailUrl, visibleThumbnailTiles, visibleThumbnailTilesOrCompact } = await server.ssrLoadModule('/src/client/thumbnails.ts')
+    const { fullThumbnailTiles, loadedThumbnailTilesOrCompact, thumbnailPageKey, thumbnailRecordsAreCurrent, thumbnailRevision, thumbnailSlot, thumbnailTierForZoom, thumbnailUrl, visibleThumbnailTiles, visibleThumbnailTilesOrCompact } = await server.ssrLoadModule('/src/client/thumbnails.ts')
     const { boundedPreviewDocumentHeight, isInfiniteListDocument, maskedIconBackground, materializeMaskedIcons, previewDocumentHeight } = await server.ssrLoadModule('/src/client/snapshot.ts')
     const { FocusedPageStateCache, preserveScannedFocusedLinks } = await server.ssrLoadModule('/src/client/focus-cache.ts')
     const pages = Array.from({ length: 30 }, (_, index) => ({
@@ -364,6 +364,22 @@ test('lays out linked pages in layers and limits previews to the viewport', asyn
     assert.deepEqual(
       visibleThumbnailTilesOrCompact(tiles, compactFallback, 10_000, { width: 1000, height: 700 }, { x: 0, y: 0, scaleX: 1, scaleY: 1 }, 0),
       [compactFallback],
+    )
+    assert.deepEqual(
+      loadedThumbnailTilesOrCompact(tiles, compactFallback, record => record === compactFallback),
+      [compactFallback],
+    )
+    assert.deepEqual(
+      loadedThumbnailTilesOrCompact(tiles, compactFallback, record => record === compactFallback || record === tiles[0]),
+      [compactFallback],
+    )
+    assert.deepEqual(
+      loadedThumbnailTilesOrCompact(tiles, compactFallback, () => true),
+      tiles,
+    )
+    assert.deepEqual(
+      loadedThumbnailTilesOrCompact(tiles, compactFallback, record => record === tiles[0]),
+      tiles,
     )
     assert.equal(resolvePreviewUrl('/products/:id', {
       enabled: true,

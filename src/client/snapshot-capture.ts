@@ -1,6 +1,7 @@
 import { domToCanvas, type Options as ModernScreenshotOptions } from 'modern-screenshot'
 import type { PageFlowThumbnailRecord, ResolvedPageFlowOptions } from '../shared/types'
 import { PAGE_CARD_WIDTH } from './layout'
+import { PAGEFLOW_WEBGL_CANVAS_ATTRIBUTE } from '../shared/protocol'
 import { boundedPreviewDocumentHeight, materializeMaskedIcons } from './snapshot'
 import {
   canvasToBlob,
@@ -152,6 +153,10 @@ export function hideSnapshotScrollbars(document: Document) {
 
 export function snapshotCaptureTarget(body: HTMLElement) {
   return body
+}
+
+export function documentUsesWebGL(document: Document) {
+  return Boolean(document.querySelector(`canvas[${PAGEFLOW_WEBGL_CANVAS_ATTRIBUTE}]`))
 }
 
 export interface CapturePageThumbnailsOptions {

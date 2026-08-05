@@ -168,8 +168,10 @@ test('discovers Vue Router routes and reports rendered navigation hotspots', asy
 
     assert.equal(typeof window.__UNPLUGIN_PAGEFLOW_READY__, 'function')
     assert.equal(typeof window.__UNPLUGIN_PAGEFLOW_PENDING_REQUESTS__, 'function')
-    window.document.createElement('canvas').getContext('webgl', { alpha: false })
-    assert.deepEqual(webglContextOptions, { alpha: false, preserveDrawingBuffer: true })
+    const webglCanvas = window.document.createElement('canvas')
+    webglCanvas.getContext('webgl', { alpha: false })
+    assert.deepEqual(webglContextOptions, { alpha: false })
+    assert.equal(webglCanvas.hasAttribute('data-unplugin-pageflow-webgl'), true)
     assert.equal(image.src, 'http://localhost/static/example.png')
 
     const pageReportsBeforeScan = requests.filter(request => request.url.endsWith('/api/page')).length
@@ -220,7 +222,8 @@ test('discovers Vue Router routes and reports rendered navigation hotspots', asy
       ['secret', false],
       ['code', true],
     ])
-    assert.equal(apiResult.fields.some(field => field.path === 'items[24].id'), true)
+    assert.equal(apiResult.fields.some(field => field.path === 'items[19].id'), true)
+    assert.equal(apiResult.fields.some(field => field.path === 'items[20].id'), false)
 
     assert.equal(requests[0].url, '/__unplugin-pageflow/api/page')
     assert.deepEqual(JSON.parse(requests[0].init.body), {
@@ -318,6 +321,14 @@ test('discovers Vue Router routes and reports rendered navigation hotspots', asy
     assert.equal(scrolledPage.links.some(item => item.label === 'About us'), false)
     assert.equal([...window.document.querySelectorAll('[data-unplugin-pageflow-hotspot]')]
       .some(element => element.style.top === '900px'), false)
+
+    const reportsBeforeLocalMutation = requests.filter(request => request.url.endsWith('/api/page')).length
+    const scansBeforeLocalMutation = parentMessages.filter(item => item.message.type === 'unplugin-pageflow:scan-result').length
+    const localDialog = window.document.createElement('section')
+    localDialog.textContent = 'Local dialog state'
+    container.append(localDialog)
+    await waitFor(() => parentMessages.filter(item => item.message.type === 'unplugin-pageflow:scan-result').length > scansBeforeLocalMutation)
+    assert.equal(requests.filter(request => request.url.endsWith('/api/page')).length, reportsBeforeLocalMutation)
 
     const navigationCount = parentMessages.filter(item => item.message.type === 'unplugin-pageflow:navigate').length
     router.currentRoute.value = { path: '/about', matched: [routes[1]] }
