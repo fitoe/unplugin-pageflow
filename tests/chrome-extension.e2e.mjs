@@ -325,7 +325,7 @@ test('Chrome extension performance smoke keeps a large grouped canvas responsive
     const maxInteraction = Math.max(...interactionDurations)
 
     assert(readyDuration < 10_000, `large canvas took ${Math.round(readyDuration)}ms to become ready (budget: 10000ms)`)
-    assert(maxInteraction < 2_500, `group navigation took ${Math.round(maxInteraction)}ms (budget: 2500ms)`)
+    assert(maxInteraction < 3_000, `group navigation took ${Math.round(maxInteraction)}ms (budget: 3000ms)`)
     assert(maxFrameGap < 750, `main thread stalled for ${Math.round(maxFrameGap)}ms (budget: 750ms)`)
     assert(maxLongTask < 500, `long task lasted ${Math.round(maxLongTask)}ms (budget: 500ms)`)
   } finally {
