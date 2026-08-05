@@ -1,6 +1,8 @@
 import { SOURCE, type RuntimeEvent } from '../utils/shared'
 import { isBusinessApiResponse } from '@pageflow/core/api'
 import { highlightPageFlowElement, instrumentPageFlowHistory, instrumentPageFlowNetwork, observePageFlowScroll, pageFlowHotspotBounds, pageFlowInternalLinks, pageFlowLinkLabel } from '@pageflow/runtime'
+import { findVueRouterAdapter } from '../../../src/runtime/adapters/vue-router'
+import type { PageFlowRouterAdapter } from '../../../src/runtime/adapters/types'
 
 declare global {
   interface Window { __PAGEFLOW_CHROME_RUNTIME__?: boolean }
@@ -18,18 +20,44 @@ export default defineContentScript({
     window.__PAGEFLOW_CHROME_RUNTIME__ = true
 
     const emit = (event: RuntimeEvent) => window.postMessage({ source: SOURCE, event }, '*')
-    const dynamicRouteParents = new Set<string>()
+    const excludedPageUrls = new Set<string>()
+    let router: PageFlowRouterAdapter | undefined
     const routeKeyFor = (value: string | URL) => {
       const url = new URL(value, location.href)
       url.hash = ''
       url.search = ''
-      const segments = url.pathname.split('/')
-      url.pathname = segments.map((segment, index) => /^\d+$/.test(segment)
-        || /^[0-9a-f]{8}-[0-9a-f-]{27,}$/i.test(segment)
-        || (index === segments.length - 1 && dynamicRouteParents.has(`${url.origin}${segments.slice(0, -1).join('/')}`))
-        ? ':id'
-        : segment).join('/')
+      const resolvedRoute = router?.resolve(url)
+      if (resolvedRoute?.path) {
+        url.pathname = resolvedRoute.path.includes(':') ? url.pathname : resolvedRoute.path
+        return url.href
+      }
       return url.href
+    }
+    const reportRouterPages = async () => {
+      for (let attempt = 0; attempt < 50 && !router; attempt++) {
+        router = findVueRouterAdapter()
+        if (!router) await new Promise(resolve => setTimeout(resolve, 100))
+      }
+      if (!router) return
+      for (const route of router.routes()) {
+        if (route.redirect || route.aliasOf || route.catchAll) {
+          if (!route.path.includes(':')) {
+            const url = new URL(route.path, location.origin).href
+            excludedPageUrls.add(url)
+            emit({ kind: 'page-remove', url })
+          }
+          continue
+        }
+        if (route.path.includes(':')) continue
+        const url = new URL(route.path, location.origin)
+        emit({ kind: 'page', page: {
+          url: url.href,
+          routeKey: new URL(route.path, location.origin).href,
+          discovered: true,
+          title: route.title || route.name || route.path,
+          updatedAt: Date.now(),
+        } })
+      }
     }
     let currentUrl = location.href
     const reportedLinks = new Set<string>()
@@ -39,22 +67,11 @@ export default defineContentScript({
       const sourceUrl = new URL(location.href)
       sourceUrl.hash = ''
       const candidates = pageFlowInternalLinks(document).map(({ element, target }) => ({ anchor: element, url: target }))
-      const leavesByParent = new Map<string, Set<string>>()
-      candidates.forEach(({ url }) => {
-        const segments = url.pathname.split('/').filter(Boolean)
-        if (segments.length < 2) return
-        const parent = `${url.origin}/${segments.slice(0, -1).join('/')}`
-        const leaves = leavesByParent.get(parent) ?? new Set<string>()
-        leaves.add(segments.at(-1)!)
-        leavesByParent.set(parent, leaves)
-      })
-      leavesByParent.forEach((leaves, parent) => {
-        if (leaves.size > 1) dynamicRouteParents.add(parent)
-      })
       for (const { anchor, url: targetUrl } of candidates) {
         if (targetUrl.href === sourceUrl.href) continue
         const sourceRouteKey = routeKeyFor(sourceUrl)
         const targetRouteKey = routeKeyFor(targetUrl)
+        if (excludedPageUrls.has(targetRouteKey)) continue
         const edgeId = `${sourceRouteKey}->${targetRouteKey}`
         const reported = reportedLinks.has(edgeId)
         if (reported && !positionsOnly) continue
@@ -86,6 +103,7 @@ export default defineContentScript({
     addEventListener('DOMContentLoaded', () => {
       reportPage()
       reportLinkedPages()
+      void reportRouterPages()
     }, { once: true })
     observePageFlowScroll(document, () => reportLinkedPages(true))
 

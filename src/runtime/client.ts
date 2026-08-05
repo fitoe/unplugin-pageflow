@@ -4,7 +4,7 @@ import type {
 } from '../shared/types'
 import { PAGEFLOW_PREVIEW_PARAM } from './index'
 import { startPageFlowDomStatePersistence } from './state'
-import { PAGEFLOW_API_RESULT_MESSAGE, PAGEFLOW_DIAGNOSTIC_HIGHLIGHT_MESSAGE, PAGEFLOW_DIAGNOSTICS_RESULT_MESSAGE, PAGEFLOW_DIAGNOSTICS_SCAN_MESSAGE, PAGEFLOW_HOTSPOT_HOVER_MESSAGE, PAGEFLOW_NAVIGATE_MESSAGE, PAGEFLOW_NETWORK_EVENT, PAGEFLOW_PAGE_REPORTED_MESSAGE, PAGEFLOW_READY_EVENT, PAGEFLOW_SCAN_MESSAGE, PAGEFLOW_SCAN_RESULT_MESSAGE, PAGEFLOW_WEBGL_CANVAS_ATTRIBUTE } from '../shared/protocol'
+import { PAGEFLOW_API_RESULT_MESSAGE, PAGEFLOW_DIAGNOSTIC_HIGHLIGHT_MESSAGE, PAGEFLOW_DIAGNOSTICS_RESULT_MESSAGE, PAGEFLOW_DIAGNOSTICS_SCAN_MESSAGE, PAGEFLOW_ESCAPE_MESSAGE, PAGEFLOW_HOTSPOT_HOVER_MESSAGE, PAGEFLOW_NAVIGATE_MESSAGE, PAGEFLOW_NETWORK_EVENT, PAGEFLOW_PAGE_REPORTED_MESSAGE, PAGEFLOW_READY_EVENT, PAGEFLOW_SCAN_MESSAGE, PAGEFLOW_SCAN_RESULT_MESSAGE, PAGEFLOW_WEBGL_CANVAS_ATTRIBUTE } from '../shared/protocol'
 import { highlightDiagnosticElement, scanPageDiagnostics } from './diagnostics'
 import type { PageFlowRouterAdapter } from './adapters/types'
 import { findVueRouterAdapter } from './adapters/vue-router'
@@ -63,7 +63,22 @@ interface PageFlowWindow extends Window {
   __UNPLUGIN_PAGEFLOW_PENDING_REQUESTS__?: () => number
   __UNPLUGIN_PAGEFLOW_SCAN_BOUND__?: boolean
   __UNPLUGIN_PAGEFLOW_SCROLL_SCAN_BOUND__?: boolean
+  __UNPLUGIN_PAGEFLOW_ESCAPE_BOUND__?: boolean
   __UNPLUGIN_PAGEFLOW_WEBGL_CAPTURE_BOUND__?: boolean
+}
+
+function forwardPreviewEscape() {
+  if (!new URLSearchParams(window.location.search).has(PAGEFLOW_PREVIEW_PARAM) || window.parent === window) return
+  const trackedWindow = window as PageFlowWindow
+  if (trackedWindow.__UNPLUGIN_PAGEFLOW_ESCAPE_BOUND__) return
+  trackedWindow.__UNPLUGIN_PAGEFLOW_ESCAPE_BOUND__ = true
+  window.addEventListener('keydown', (event) => {
+    if (event.key !== 'Escape' || event.repeat) return
+    queueMicrotask(() => {
+      if (!event.defaultPrevented)
+        window.parent.postMessage({ type: PAGEFLOW_ESCAPE_MESSAGE }, window.location.origin)
+    })
+  })
 }
 
 function markPreviewWebGLCanvases() {
@@ -278,6 +293,16 @@ function isElementInViewport(element: Element) {
   return isRectInViewport(element.getBoundingClientRect())
 }
 
+export function isElementExposed(element: Element, rect: HotspotRect = element.getBoundingClientRect()) {
+  if (element.ownerDocument !== document || typeof document.elementFromPoint !== 'function') return true
+  const left = Math.max(0, rect.left)
+  const right = Math.min(window.innerWidth, rect.left + rect.width)
+  const top = Math.max(0, rect.top)
+  const bottom = Math.min(window.innerHeight, rect.top + rect.height)
+  const hit = document.elementFromPoint((left + right) / 2, (top + bottom) / 2)
+  return !hit || hit === element || element.contains(hit)
+}
+
 function hotspotCenter(element: Element, hotspotRect?: HotspotRect) {
   return pageFlowHotspotCenter(element, hotspotRect, document)
 }
@@ -286,6 +311,7 @@ function addHotspot(layer: HTMLElement, element: Element, type: 'link' | 'event'
   const rect = hotspotRect ?? element.getBoundingClientRect()
   if (!isRectInViewport(rect)) return false
   if (!rect.width || !rect.height) return false
+  if (!hotspotRect && !isElementExposed(element, rect)) return false
   const overlay = document.createElement('div')
   overlay.setAttribute('data-unplugin-pageflow-hotspot', type)
   overlay.setAttribute('data-unplugin-pageflow-targets', targets.join('\n'))
@@ -313,7 +339,22 @@ function addHotspot(layer: HTMLElement, element: Element, type: 'link' | 'event'
     hotspotHoverTargets.set(overlay, targets)
     hotspotOverlaysByElement.set(overlay, new Set([overlay]))
     let pointerNavigationAt = 0
+    const forwardStaleInteraction = (event: Event) => {
+      if (hotspotRect) return false
+      const current = element.getBoundingClientRect()
+      const moved = Math.abs(current.left - rect.left) > 2 || Math.abs(current.top - rect.top) > 2
+        || Math.abs(current.width - rect.width) > 2 || Math.abs(current.height - rect.height) > 2
+      if (!moved && isElementExposed(element, current)) return false
+      event.preventDefault()
+      event.stopImmediatePropagation()
+      overlay.style.pointerEvents = 'none'
+      const pointer = event as PointerEvent
+      const target = document.elementFromPoint?.(pointer.clientX, pointer.clientY)
+      if (target instanceof window.HTMLElement && target !== layer && !target.closest('[data-unplugin-pageflow-hotspot-layer]')) target.click()
+      return true
+    }
     const navigate = (event: Event) => {
+      if (forwardStaleInteraction(event)) return
       event.preventDefault()
       event.stopImmediatePropagation()
       notifyNavigation(targets[0], locations[0] ?? targets[0], 'hotspot')
@@ -631,6 +672,7 @@ export async function startPageFlowRuntime(config: ResolvedPageFlowOptions) {
   if (!config.enabled) return
 
   markPreviewWebGLCanvases()
+  forwardPreviewEscape()
   mountPageFlowLauncher(config)
 
   if (config.routes?.length) window.__UNPLUGIN_PAGEFLOW_ROUTES__ = config.routes

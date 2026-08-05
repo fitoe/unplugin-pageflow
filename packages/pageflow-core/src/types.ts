@@ -58,6 +58,7 @@ export interface PageFlowNavigationEdge {
 
 export type PageFlowBrowserRuntimeEvent =
   | { kind: 'page'; page: PageFlowPageSnapshot }
+  | { kind: 'page-remove'; url: string }
   | { kind: 'navigation'; edge: PageFlowNavigationEdge }
   | { kind: 'request'; request: PageFlowApiRequest }
   | { kind: 'diagnostics'; diagnostics: PageFlowDiagnostic[] }

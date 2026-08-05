@@ -245,6 +245,10 @@ test('lays out linked pages in layers and limits previews to the viewport', asyn
     assert.deepEqual(routeDeckPathForPage(routeFamilyPages, 'screen-root'), ['screen'])
     assert.deepEqual(routeDeckPathForPage(routeFamilyPages, 'screen-admin-detail'), ['screen', 'admin'])
     assert.deepEqual(promotedRouteGroupPath(routeFamilyPages.filter(page => page.id !== 'screening')), ['screen'])
+    assert.deepEqual(promotedRouteGroupPath([
+      { id: 'root', path: '/', links: [] },
+      ...routeFamilyPages.filter(page => page.id !== 'screening'),
+    ]), ['screen'])
     assert.deepEqual(promotedRouteGroupPath(routeFamilyPages), [])
     const singleChildFamily = createRouteDeckView([
       { id: 'account-root', path: '/account', links: [] },

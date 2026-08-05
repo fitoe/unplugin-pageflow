@@ -159,6 +159,8 @@ test('serves the unplugin-pageflow client from the configured development route'
     const pageEvent = eventDecoder.decode((await eventReader.read()).value)
     const graphResponse = await fetch(`${origin}/__unplugin-pageflow/api/graph`)
     const graph = await graphResponse.json()
+    const publicConfigResponse = await fetch(`${origin}/.well-known/pageflow.json`)
+    const publicConfig = await publicConfigResponse.json()
     await fetch(`${origin}/__unplugin-pageflow/api/routes`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -170,6 +172,7 @@ test('serves the unplugin-pageflow client from the configured development route'
     assert.match(appHtml, /html-proxy&index=0\.js/)
     assert(appHtml.indexOf('html-proxy&index=0.js') < appHtml.indexOf('/src/main.ts'))
     assert.match(runtimeProxyCode, /virtual:unplugin-pageflow\/runtime/)
+    assert.match(appHtml, /rel="pageflow-config" href="\/.well-known\/pageflow.json"/)
     assert.equal(pageflow.status, 200)
     assert.match(html, /<title>unplugin-pageflow<\/title>/)
     assert.match(clientPath, /^\/@id\/virtual:unplugin-pageflow\/client\?v=\d+(?:\.\d+)?$/)
@@ -191,6 +194,10 @@ test('serves the unplugin-pageflow client from the configured development route'
     assert.match(pageEvent, /event: unplugin-pageflow:page-update/)
     assert.match(pageEvent, /About us/)
     assert.equal(graphResponse.status, 200)
+    assert.equal(publicConfigResponse.status, 200)
+    assert.deepEqual(publicConfig.graph.pages, graph.pages.map(({ id, title, path }) => ({ id, title, path })))
+    assert.equal('testCommands' in publicConfig, false)
+    assert.equal(publicConfig.graph.pages.some(page => 'sourceFile' in page), false)
     assert.equal(graph.routeMode, 'hash')
     assert.equal(graph.pages.filter(page => page.path === '/about').length, 1)
     assert.equal(graph.pages[0].title, 'Rendered home later')

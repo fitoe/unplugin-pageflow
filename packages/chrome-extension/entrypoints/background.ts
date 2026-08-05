@@ -41,17 +41,15 @@ export default defineBackground(() => {
     return true
   })
 
-  if (__PAGEFLOW_CHROME_ENHANCED__) {
-    browser.debugger.onEvent.addListener((source, method, params) => {
-      if (source.tabId != null && networkSessions.has(source.tabId)) void handleNetworkEvent(source.tabId, method, params as Record<string, any>)
-    })
-    browser.debugger.onDetach.addListener((source) => {
-      if (source.tabId == null) return
-      const wasNetworkSession = networkSessions.delete(source.tabId)
-      pendingRequests.delete(source.tabId)
-      if (wasNetworkSession) void browser.tabs.sendMessage(source.tabId, { type: 'pageflow:network-mode', mode: 'injected' } satisfies ExtensionMessage).catch(() => undefined)
-    })
-  }
+  browser.debugger.onEvent.addListener((source, method, params) => {
+    if (source.tabId != null && networkSessions.has(source.tabId)) void handleNetworkEvent(source.tabId, method, params as Record<string, any>)
+  })
+  browser.debugger.onDetach.addListener((source) => {
+    if (source.tabId == null) return
+    const wasNetworkSession = networkSessions.delete(source.tabId)
+    pendingRequests.delete(source.tabId)
+    if (wasNetworkSession) void browser.tabs.sendMessage(source.tabId, { type: 'pageflow:network-mode', mode: 'injected' } satisfies ExtensionMessage).catch(() => undefined)
+  })
   browser.tabs.onRemoved.addListener(tabId => {
     networkSessions.delete(tabId)
     pendingRequests.delete(tabId)
@@ -60,7 +58,6 @@ export default defineBackground(() => {
 
 async function startNetworkSession(tabId: number) {
   if (networkSessions.has(tabId)) return
-  if (!__PAGEFLOW_CHROME_ENHANCED__) throw new Error('debugger is disabled in the standard build')
   await browser.debugger.attach({ tabId }, '1.3')
   try {
     await browser.debugger.sendCommand({ tabId }, 'Network.enable', {
@@ -80,7 +77,7 @@ async function stopNetworkSession(tabId: number) {
   await browser.tabs.sendMessage(tabId, { type: 'pageflow:network-mode', mode: 'injected' } satisfies ExtensionMessage).catch(() => undefined)
   networkSessions.delete(tabId)
   pendingRequests.delete(tabId)
-  if (__PAGEFLOW_CHROME_ENHANCED__) await browser.debugger.detach({ tabId }).catch(() => undefined)
+  await browser.debugger.detach({ tabId }).catch(() => undefined)
 }
 
 async function handleNetworkEvent(tabId: number, method: string, params: Record<string, any>) {
@@ -150,7 +147,6 @@ async function waitForTabComplete(tabId: number) {
 }
 
 async function captureBackgroundPage(sourceTabId: number, url: string, viewport: { width: number; height: number }) {
-  if (!__PAGEFLOW_CHROME_ENHANCED__) throw new Error('Background capture requires the enhanced build')
   const sourceTab = await browser.tabs.get(sourceTabId)
   const captureTab = await browser.tabs.create({ url, active: false, windowId: sourceTab.windowId })
   if (captureTab.id == null) throw new Error('PageFlow capture tab is unavailable')

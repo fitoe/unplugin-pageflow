@@ -4,6 +4,8 @@
 
 The extension is distributed without the Chrome Web Store. Once installed, it periodically checks the PageFlow website and updates automatically.
 
+The extension requests the `debugger` permission when installed or upgraded. It enables CDP network capture and high-resolution background screenshots; CDP contention, user cancellation, or attachment failure falls back to injected page capture. Chrome does not allow `debugger` as a runtime optional permission.
+
 ## Installation support
 
 - Linux: download the CRX and install it using Chrome's self-hosted extension flow.
@@ -12,4 +14,4 @@ The extension is distributed without the Chrome Web Store. Once installed, it pe
 
 ## Updates
 
-Chrome reads the extension's `update_url` every few hours. When the website advertises a higher version, Chrome downloads the CRX signed by the same private key and replaces the installed version. Before publishing a release, increase the `version` in `packages/chrome-extension/package.json`.
+Chrome reads the extension's `update_url` every few hours. When the website advertises a higher version, Chrome downloads the CRX signed by the same private key and replaces the installed version. The version is generated automatically from the root package SemVer and Git commit count.

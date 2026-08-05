@@ -3,8 +3,9 @@ import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import type { Plugin } from 'vite'
 import { defineConfig } from 'wxt'
+import { resolvePageFlowVersion } from '../../scripts/pageflow-version.mjs'
 
-const enhanced = process.env.PAGEFLOW_CHROME_ENHANCED === '1'
+const pageFlowVersion = resolvePageFlowVersion()
 const pageFlowIcons = [
   'i-lucide-box',
   'i-lucide-chevron-down',
@@ -69,11 +70,11 @@ function pageFlowIconCss(): Plugin {
 }
 
 export default defineConfig({
-  outDir: enhanced ? '.output-enhanced' : '.output',
+  outDir: '.output',
   modules: ['@wxt-dev/module-vue'],
   vite: () => ({
     define: {
-      __PAGEFLOW_CHROME_ENHANCED__: JSON.stringify(enhanced),
+      __PAGEFLOW_VERSION__: JSON.stringify(pageFlowVersion),
     },
     resolve: {
       alias: {
@@ -96,10 +97,11 @@ export default defineConfig({
   }),
   manifest: {
     name: 'PageFlow',
+    version: pageFlowVersion,
     description: '在独立画板中查看页面流、接口、诊断和 Todo。',
     update_url: 'https://fitoe.github.io/unplugin-pageflow/chrome/updates.xml',
     action: { default_title: '打开 PageFlow' },
-    permissions: enhanced ? ['storage', 'unlimitedStorage', 'tabs', 'debugger'] : ['storage', 'unlimitedStorage', 'tabs'],
+    permissions: ['storage', 'unlimitedStorage', 'tabs', 'debugger'],
     host_permissions: ['<all_urls>'],
   },
 })

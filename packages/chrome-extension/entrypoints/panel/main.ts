@@ -3,6 +3,7 @@ import { mountPageFlow } from '../../../../src/client/mount'
 import type { ResolvedPageFlowOptions } from '../../../../src/shared/types'
 import { resolvePageFlowApiDiagnosticOptions, resolvePageFlowDiagnosticOptions } from '../../../../src/shared/options'
 import { ChromePageFlowHost } from '../../utils/chrome-host'
+import { loadVitePageFlowProject } from '../../utils/vite-project'
 
 const target = document.querySelector('#app')
 const tabId = Number(new URLSearchParams(location.search).get('tabId'))
@@ -16,6 +17,8 @@ window.addEventListener('pagehide', () => {
 }, { once: true })
 const state = await host.loadState()
 const appUrl = new URL(state.currentUrl).origin
+const project = await loadVitePageFlowProject(appUrl, await host.configUrl())
+host.setSupplementalPages(project.pages ?? [])
 const config: ResolvedPageFlowOptions = {
   enabled: true,
   launcher: false,
@@ -25,9 +28,9 @@ const config: ResolvedPageFlowOptions = {
   appUrl,
   dynamicParams: {},
   previewRoles: [],
-  groupNames: {},
-  pageNames: {},
-  canvasLayouts: {},
+  groupNames: project.groupNames ?? {},
+  pageNames: project.pageNames ?? {},
+  canvasLayouts: project.canvasLayouts ?? {},
   pageTests: {},
   testCommands: {},
   diagnostics: resolvePageFlowDiagnosticOptions(),

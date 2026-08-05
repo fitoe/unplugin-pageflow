@@ -4,3 +4,8 @@ name = "启动调试"
 
 [setup]
 script = ""
+
+[[actions]]
+name = "dev"
+icon = "run"
+command = "npm run dev"

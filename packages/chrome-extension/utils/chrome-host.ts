@@ -9,8 +9,24 @@ export class ChromePageFlowHost implements PageFlowHost {
     this.sourceId = `chrome-tab:${tabId}`
   }
 
+  private supplementalPages: PageFlowHostState['pages'] = []
+
+  setSupplementalPages(pages: PageFlowHostState['pages']) {
+    this.supplementalPages = pages
+  }
+
+  configUrl() {
+    return browser.tabs.sendMessage(this.tabId, { type: 'pageflow:get-config-url' } satisfies ExtensionMessage) as Promise<string | undefined>
+  }
+
   async loadState() {
-    return browser.tabs.sendMessage(this.tabId, { type: 'pageflow:get-state' } satisfies ExtensionMessage) as Promise<PageFlowHostState>
+    const state = await browser.tabs.sendMessage(this.tabId, { type: 'pageflow:get-state' } satisfies ExtensionMessage) as PageFlowHostState
+    const pages = new Map(this.supplementalPages.map(page => [page.routeKey ?? page.url, page]))
+    state.pages.forEach((page) => {
+      const key = page.routeKey ?? page.url
+      if (!this.supplementalPages.length || pages.has(key)) pages.set(key, page)
+    })
+    return { ...state, pages: [...pages.values()] }
   }
 
   async navigate(url: string) {

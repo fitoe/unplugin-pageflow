@@ -1,3 +1,3 @@
-declare const __PAGEFLOW_CHROME_ENHANCED__: boolean
+declare const __PAGEFLOW_VERSION__: string
 
 declare module 'virtual:pageflow-icon-css'

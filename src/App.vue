@@ -46,6 +46,8 @@ import { decodePreviewMessage } from './client/preview-message'
 import { createPageFlowAIContext, createPageFlowAIPrompt } from './client/ai-context'
 import { createPageChecks, type PageFlowPageCheckStatus } from './client/page-checks'
 import { buildApiFieldTree } from './client/api-field-tree'
+
+const pageFlowVersion = __PAGEFLOW_VERSION__
 import { createApiIssues, mergeApiResult, type PageFlowApiIssue } from './client/api-diagnostics'
 import { cachedPreviewUsers, configuredUsers, isPreviewUserStorageKey, loadUserSessions, saveUserSessions, visibleSessionUsers } from './client/user-sessions'
 import LayoutWorker from './client/layout.worker?worker&inline'
@@ -1785,10 +1787,22 @@ function selectSearchPage(pageId: string) {
   activatePreview(pageId)
 }
 
-function handleSearchShortcut(event: KeyboardEvent) {
-  if (event.key === 'Escape' && focusedPageId.value) {
-    event.preventDefault()
+function handleEscape() {
+  if (focusedPageId.value) {
     exitFocusedPage()
+    return true
+  }
+  const promotedPath = promotedRouteGroupPath(pages.value)
+  if (routeGroupPath.value.length > promotedPath.length) {
+    enterRouteGroup(routeGroupPath.value.slice(0, -1))
+    return true
+  }
+  return false
+}
+
+function handleSearchShortcut(event: KeyboardEvent) {
+  if (event.key === 'Escape') {
+    if (handleEscape()) event.preventDefault()
     return
   }
   if (event.key.toLowerCase() !== 'k' || (!event.metaKey && !event.ctrlKey)) return
@@ -2717,6 +2731,10 @@ function handlePreviewMessage(event: MessageEvent) {
     setHoveredHotspot(message.targets.length && message.hotspot
       ? { targets: message.targets, ...message.hotspot }
       : undefined)
+    return
+  }
+  if (message.type === 'escape') {
+    if (sourcePageId === focusedPageId.value) handleEscape()
     return
   }
   if (message.type === 'scan-result') {
@@ -3974,6 +3992,6 @@ onUnmounted(() => {
       </aside>
     </section>
     <div class="zoom"><button type="button" @click="zoomCanvas('in')">+</button><span>{{ zoomPercent }}%</span><button type="button" @click="zoomCanvas('out')">−</button></div>
-    <footer><span><i></i> {{ status }}</span><span>{{ routeDeckView.decks.length }} 组 / {{ pages.length }} 页</span></footer>
+    <footer><span><i></i> {{ status }}</span><span>{{ routeDeckView.decks.length }} 组 / {{ pages.length }} 页 · v{{ pageFlowVersion }}</span></footer>
   </main>
 </template>

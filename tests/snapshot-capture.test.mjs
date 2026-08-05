@@ -121,7 +121,7 @@ test('uses modern-screenshot and preserves canvas pages', async () => {
   window.HTMLCanvasElement.prototype.toDataURL = () => 'data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22/%3E'
   const server = await createServer({ configFile: false, server: { middlewareMode: true }, appType: 'custom', logLevel: 'silent' })
   try {
-    const { documentUsesWebGL, hasMeaningfulSnapshotPixels, renderSnapshotCanvas } = await server.ssrLoadModule('/src/client/snapshot-capture.ts')
+    const { documentUsesWebGL, hasMeaningfulSnapshotPixels, renderSnapshotCanvas, waitForWebGLRender } = await server.ssrLoadModule('/src/client/snapshot-capture.ts')
     assert.equal(documentUsesWebGL(window.document), false)
     assert.equal(hasMeaningfulSnapshotPixels(new Uint8ClampedArray(16).fill(255)), false)
     assert.equal(hasMeaningfulSnapshotPixels(new Uint8ClampedArray([
@@ -148,8 +148,20 @@ test('uses modern-screenshot and preserves canvas pages', async () => {
     sourceCanvas.setAttribute('data-unplugin-pageflow-webgl', '')
     target.append(sourceCanvas)
     assert.equal(documentUsesWebGL(window.document), true)
+    let renderFrame
+    window.requestAnimationFrame = callback => {
+      renderFrame = callback
+      return 1
+    }
+    let webGLFrameReady = false
+    const webGLFrame = waitForWebGLRender(target).then(() => { webGLFrameReady = true })
+    await Promise.resolve()
+    assert.equal(webGLFrameReady, false)
+    renderFrame()
+    await webGLFrame
+    assert.equal(webGLFrameReady, true)
     let canvasPrimaryCalls = 0
-    const canvasSnapshot = await renderSnapshotCanvas(target, { backgroundColor: '#fff' }, {
+    const canvasSnapshotPromise = renderSnapshotCanvas(target, { backgroundColor: '#fff' }, {
       primary: async (captureTarget) => {
         canvasPrimaryCalls++
         assert.equal(captureTarget.querySelectorAll('canvas').length, 0)
@@ -159,6 +171,10 @@ test('uses modern-screenshot and preserves canvas pages', async () => {
         return modernCanvas
       },
     })
+    await Promise.resolve()
+    assert.equal(canvasPrimaryCalls, 0)
+    renderFrame()
+    const canvasSnapshot = await canvasSnapshotPromise
     assert.equal(canvasSnapshot, modernCanvas)
     assert.equal(canvasPrimaryCalls, 1)
     assert.equal(target.querySelectorAll('canvas').length, 1)

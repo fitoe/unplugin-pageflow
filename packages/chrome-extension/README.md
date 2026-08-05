@@ -17,14 +17,6 @@ pnpm --filter pageflow-chrome-extension build
 
 打开 `chrome://extensions`，启用开发者模式，选择“加载已解压的扩展程序”，加载 `.output/chrome-mv3`。
 
-默认构建不申请 `debugger` 权限，接口通过页面注入采集，只能截取当前可见页面。
-
-需要 CDP 网络采集和后台页面截图时，构建增强版：
-
-```bash
-pnpm --filter pageflow-chrome-extension build:enhanced
-```
-
-加载 `.output-enhanced/chrome-mv3`。增强版会在安装时声明 `debugger` 权限；如果 CDP 被 DevTools 占用或 attach 失败，会自动回退到页面注入采集。两个版本共享同一套 PageFlow UI 和业务代码。
+插件只有一个构建版本。安装时授权 `debugger` 后启用 CDP 接口采集和后台高清截图；CDP 被占用、用户中止调试或 attach 失败时，自动回退到页面注入采集和当前可见区域截图。Chrome 不允许将 `debugger` 声明为运行时可选权限。
 
 源码分析、HMR 精确更新、测试发现与执行仍属于 unplugin 版本。

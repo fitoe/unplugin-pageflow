@@ -2,6 +2,7 @@ import type { PageFlowApiResult, PageFlowDiagnostic, PageFlowLink } from '../sha
 import {
   PAGEFLOW_API_RESULT_MESSAGE,
   PAGEFLOW_DIAGNOSTICS_RESULT_MESSAGE,
+  PAGEFLOW_ESCAPE_MESSAGE,
   PAGEFLOW_HOTSPOT_HOVER_MESSAGE,
   PAGEFLOW_NAVIGATE_MESSAGE,
   PAGEFLOW_PAGE_REPORTED_MESSAGE,
@@ -14,6 +15,7 @@ export type PreviewMessage =
   | { type: 'hotspot-hover'; targets: string[]; hotspot?: { centerX: number; centerY: number } }
   | { type: 'scan-result'; path: string; links: PageFlowLink[] }
   | { type: 'diagnostics-result'; path: string; diagnostics: PageFlowDiagnostic[] }
+  | { type: 'escape' }
   | { type: 'navigate'; to: string; location?: string; hotspot: boolean }
 
 export function decodePreviewMessage(data: unknown): PreviewMessage | undefined {
@@ -24,6 +26,7 @@ export function decodePreviewMessage(data: unknown): PreviewMessage | undefined 
     return { type: 'api-result', result: message.result as PageFlowApiResult }
   }
   if (message.type === PAGEFLOW_PAGE_REPORTED_MESSAGE) return { type: 'page-reported' }
+  if (message.type === PAGEFLOW_ESCAPE_MESSAGE) return { type: 'escape' }
   if (message.type === PAGEFLOW_HOTSPOT_HOVER_MESSAGE) {
     const targets = Array.isArray(message.targets)
       ? message.targets.filter((target: unknown): target is string => typeof target === 'string')

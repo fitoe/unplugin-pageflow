@@ -360,7 +360,8 @@ export function createRouteDeckView(items: PageFlowPage[], groupPath: string[] =
 
 export function promotedRouteGroupPath(items: PageFlowPage[]) {
   const root = createRouteDeckView(items)
-  return root.directPages.length === 0 && root.decks.length === 1
+  const onlyRootEntrypoints = root.directPages.every(page => page.path === '/')
+  return onlyRootEntrypoints && root.decks.length === 1
     ? root.decks[0].key.split('/').filter(Boolean)
     : []
 }

@@ -707,6 +707,10 @@ const factory: UnpluginFactory<PageFlowOptions | undefined> = (options) => {
         handler(_html, context) {
           if (!resolved.enabled || resolved.framework === 'nuxt' || resolved.framework === 'qwik-city' || context.path?.startsWith(resolved.previewPath)) return
           return [{
+            tag: 'link',
+            attrs: { rel: 'pageflow-config', href: '/.well-known/pageflow.json' },
+            injectTo: 'head-prepend',
+          }, {
             tag: 'script',
             attrs: { type: 'module' },
             children: `import '${PAGEFLOW_RUNTIME_ID}'`,
@@ -759,6 +763,7 @@ const factory: UnpluginFactory<PageFlowOptions | undefined> = (options) => {
           const requestUrl = new URL(request.url ?? '/', 'http://unplugin-pageflow.local')
           const pathname = requestUrl.pathname
           const graphPath = `${resolved.previewPath}api/graph`
+          const publicConfigPath = '/.well-known/pageflow.json'
           const eventsPath = `${resolved.previewPath}api/events`
           const routesPath = `${resolved.previewPath}api/routes`
           const pagePath = `${resolved.previewPath}api/page`
@@ -773,6 +778,19 @@ const factory: UnpluginFactory<PageFlowOptions | undefined> = (options) => {
           const lighthousePath = `${resolved.previewPath}api/lighthouse`
           const aiContextPath = `${resolved.previewPath}api/ai-context`
           const editorPath = `${resolved.previewPath}api/editor`
+
+          if (pathname === publicConfigPath && request.method === 'GET') {
+            response.setHeader('Content-Type', 'application/json; charset=utf-8')
+            response.setHeader('Cache-Control', 'no-store')
+            response.end(JSON.stringify({
+              version: 1,
+              graph: { pages: graph.pages.map(({ id, title, path }) => ({ id, title, path })) },
+              groupNames: resolved.groupNames,
+              pageNames: resolved.pageNames,
+              canvasLayouts: resolved.canvasLayouts,
+            }))
+            return
+          }
 
           if (pathname === editorPath && request.method === 'GET') {
             const { id, name } = configuredEditor()

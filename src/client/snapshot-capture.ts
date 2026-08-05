@@ -67,6 +67,13 @@ interface SnapshotRenderers {
   primary(target: HTMLElement, options: ModernScreenshotOptions): Promise<HTMLCanvasElement>
 }
 
+export function waitForWebGLRender(target: HTMLElement) {
+  if (!target.querySelector(`canvas[${PAGEFLOW_WEBGL_CANVAS_ATTRIBUTE}]`)) return Promise.resolve()
+  const view = target.ownerDocument.defaultView
+  if (!view?.requestAnimationFrame) return Promise.resolve()
+  return new Promise<void>(resolve => view.requestAnimationFrame(() => resolve()))
+}
+
 export async function preserveCanvasFrames(target: HTMLElement) {
   const restores: Array<() => void> = []
   const decodes: Promise<unknown>[] = []
@@ -116,6 +123,7 @@ export async function renderSnapshotCanvas(
   options: Record<string, unknown>,
   renderers: SnapshotRenderers = { primary: domToCanvas },
 ) {
+  await waitForWebGLRender(target)
   const restoreCanvasFrames = await preserveCanvasFrames(target)
   try {
     return await renderers.primary(target, {

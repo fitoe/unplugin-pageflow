@@ -5,11 +5,8 @@
   "type": "module",
   "scripts": {
     "dev": "wxt",
-    "dev:enhanced": "cross-env PAGEFLOW_CHROME_ENHANCED=1 wxt",
     "build": "wxt build",
-    "build:enhanced": "cross-env PAGEFLOW_CHROME_ENHANCED=1 wxt build",
     "zip": "wxt zip",
-    "zip:enhanced": "cross-env PAGEFLOW_CHROME_ENHANCED=1 wxt zip",
     "typecheck": "vue-tsc --noEmit"
   },
   "dependencies": {

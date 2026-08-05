@@ -8,3 +8,7 @@ export function pageFlowCanvasStorageKey(origin: string) {
 export function legacyChromeCanvasStorageKey(origin: string) {
   return `canvas:${origin}`
 }
+
+export function pageFlowRuntimeStorageKey(origin: string) {
+  return `pageflow:runtime:${origin}`
+}

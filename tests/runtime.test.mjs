@@ -174,6 +174,23 @@ test('discovers Vue Router routes and reports rendered navigation hotspots', asy
     assert.equal(webglCanvas.hasAttribute('data-unplugin-pageflow-webgl'), true)
     assert.equal(image.src, 'http://localhost/static/example.png')
 
+    const coveringDialog = window.document.createElement('section')
+    const originalElementFromPoint = window.document.elementFromPoint
+    window.document.elementFromPoint = () => coveringDialog
+    assert.equal(runtime.isElementExposed(link), false)
+    window.document.elementFromPoint = () => link
+    assert.equal(runtime.isElementExposed(link), true)
+    window.document.elementFromPoint = originalElementFromPoint
+
+    window.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'Escape' }))
+    await waitFor(() => parentMessages.some(item => item.message.type === 'unplugin-pageflow:escape'))
+    const escapeMessageCount = parentMessages.filter(item => item.message.type === 'unplugin-pageflow:escape').length
+    const handledEscape = new window.KeyboardEvent('keydown', { key: 'Escape', cancelable: true })
+    handledEscape.preventDefault()
+    window.dispatchEvent(handledEscape)
+    await Promise.resolve()
+    assert.equal(parentMessages.filter(item => item.message.type === 'unplugin-pageflow:escape').length, escapeMessageCount)
+
     const pageReportsBeforeScan = requests.filter(request => request.url.endsWith('/api/page')).length
     window.dispatchEvent(new window.MessageEvent('message', {
       data: { type: 'unplugin-pageflow:scan-page' },
@@ -280,6 +297,18 @@ test('discovers Vue Router routes and reports rendered navigation hotspots', asy
       location: '/about?from=hotspot',
       interaction: 'hotspot',
     })
+
+    let coveredButtonClicks = 0
+    const coveredButton = window.document.createElement('button')
+    coveredButton.addEventListener('click', () => { coveredButtonClicks++ })
+    const activeLinkHotspot = window.document.querySelector('[data-unplugin-pageflow-targets="/about"]')
+    const elementFromPointBeforeCoveredClick = window.document.elementFromPoint
+    window.document.elementFromPoint = () => coveredButton
+    const navigationsBeforeCoveredClick = parentMessages.filter(item => item.message.type === 'unplugin-pageflow:navigate').length
+    activeLinkHotspot.dispatchEvent(new window.PointerEvent('pointerdown', { bubbles: true, clientX: 30, clientY: 30 }))
+    assert.equal(coveredButtonClicks, 1)
+    assert.equal(parentMessages.filter(item => item.message.type === 'unplugin-pageflow:navigate').length, navigationsBeforeCoveredClick)
+    window.document.elementFromPoint = elementFromPointBeforeCoveredClick
 
     const uniButton = window.document.createElement('button')
     uniButton.textContent = 'Open about with uni'

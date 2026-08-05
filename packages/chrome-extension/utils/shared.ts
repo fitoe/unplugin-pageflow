@@ -8,6 +8,7 @@ export type Diagnostic = PageFlowDiagnostic
 export type RuntimeEvent = PageFlowBrowserRuntimeEvent
 export type ExtensionMessage =
   | { type: 'pageflow:get-state' }
+  | { type: 'pageflow:get-config-url' }
   | { type: 'pageflow:get-metrics' }
   | { type: 'pageflow:get-capture-size'; viewport: { width: number; height: number } }
   | { type: 'pageflow:scan' }
