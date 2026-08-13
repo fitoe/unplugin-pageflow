@@ -11,7 +11,7 @@ import {
 
 export type PreviewMessage =
   | { type: 'api-result'; result: PageFlowApiResult }
-  | { type: 'page-reported' }
+  | { type: 'page-reported'; path?: string }
   | { type: 'hotspot-hover'; targets: string[]; hotspot?: { centerX: number; centerY: number } }
   | { type: 'scan-result'; path: string; links: PageFlowLink[] }
   | { type: 'diagnostics-result'; path: string; diagnostics: PageFlowDiagnostic[] }
@@ -25,7 +25,10 @@ export function decodePreviewMessage(data: unknown): PreviewMessage | undefined 
     if (!message.result || !Array.isArray(message.result.fields)) return
     return { type: 'api-result', result: message.result as PageFlowApiResult }
   }
-  if (message.type === PAGEFLOW_PAGE_REPORTED_MESSAGE) return { type: 'page-reported' }
+  if (message.type === PAGEFLOW_PAGE_REPORTED_MESSAGE) return {
+    type: 'page-reported',
+    path: typeof message.path === 'string' ? message.path : undefined,
+  }
   if (message.type === PAGEFLOW_ESCAPE_MESSAGE) return { type: 'escape' }
   if (message.type === PAGEFLOW_HOTSPOT_HOVER_MESSAGE) {
     const targets = Array.isArray(message.targets)

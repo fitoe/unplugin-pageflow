@@ -129,6 +129,7 @@ export interface PageFlowPage {
   id: string
   title: string
   path: string
+  virtual?: boolean
   sourceFile?: string
   routeOrder?: number
   revision?: string

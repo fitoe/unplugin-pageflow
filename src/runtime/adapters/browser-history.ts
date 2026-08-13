@@ -19,20 +19,25 @@ export class BrowserHistoryAdapter implements PageFlowRouterAdapter {
   constructor(private readonly runtimeRoutes: PageFlowRuntimeRoute[]) {}
 
   routes() { return this.runtimeRoutes }
-  routeMode() { return 'history' as const }
+  routeMode() { return window.location.hash.startsWith('#/') ? 'hash' as const : 'history' as const }
   currentPath() { return this.resolve(window.location.href)?.path ?? normalizePath(window.location.pathname) }
 
   resolve(to: unknown): PageFlowResolvedNavigation | undefined {
     if (typeof to !== 'string' && !(to instanceof URL)) return
     const target = new URL(String(to), window.location.href)
     if (target.origin !== window.location.origin) return
-    const pathname = normalizePath(target.pathname)
+    const hashLocation = target.hash.startsWith('#/') ? target.hash.slice(1) : undefined
+    const pathname = normalizePath(hashLocation ?? target.pathname)
     const route = this.runtimeRoutes.find(candidate => normalizePath(candidate.path) === pathname)
-    return route ? { path: route.path, location: `${target.pathname}${target.search}${target.hash}` } : undefined
+    return route ? { path: route.path, location: hashLocation ?? `${target.pathname}${target.search}${target.hash}` } : undefined
   }
 
   resolveAnchor(target: URL) {
-    return this.resolve(target) ?? { path: normalizePath(target.pathname), location: `${target.pathname}${target.search}${target.hash}` }
+    const hashLocation = target.hash.startsWith('#/') ? target.hash.slice(1) : undefined
+    return this.resolve(target) ?? {
+      path: normalizePath(hashLocation ?? target.pathname),
+      location: hashLocation ?? `${target.pathname}${target.search}${target.hash}`,
+    }
   }
 
   interceptNavigation(callback: (navigation: PageFlowResolvedNavigation, method: string) => void) {

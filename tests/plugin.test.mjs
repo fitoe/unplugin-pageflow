@@ -355,6 +355,8 @@ test('collapses the configured uni-app home into the root route', async () => {
     })
     const plugin = server.config.plugins.find(item => item.name === 'unplugin-pageflow')
     const clientConfig = await (await fetch(`${origin}/@id/virtual:unplugin-pageflow/config`)).text()
+    const initialGraph = await (await fetch(`${origin}/__unplugin-pageflow/api/graph`)).json()
+    assert.equal(initialGraph.routeMode, 'hash')
     await plugin.transform('<template><navigator url="/pages/login">Login</navigator></template>', resolve('tests/fixtures/uniapp/src/pages/index.vue'))
     await plugin.transform("uni.switchTab({ url: '/pages/index' })", 'src/menu.vue')
     const graph = await (await fetch(`${origin}/__unplugin-pageflow/api/graph`)).json()

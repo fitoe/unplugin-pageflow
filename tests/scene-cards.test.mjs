@@ -25,8 +25,11 @@ test('builds reusable page cards and real-page deck layers', async () => {
       tiles: [],
       thumbnailSource: () => undefined,
       copied: true,
+      orphan: true,
     })
     assert.deepEqual([card.x, card.y, card.children.length], [10, 20, 6])
+    assert.equal(card.children[0].stroke, '#a3a3a3')
+    assert.equal(card.children[0].strokeWidth, 2)
     assert.deepEqual(card.children.slice(1).map(child => child.text), [
       'Title home', '/home', 'Title home', '→', '已复制',
     ])

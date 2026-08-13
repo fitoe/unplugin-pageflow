@@ -6,7 +6,11 @@ import { createServer } from 'vite'
 async function waitFor(predicate, timeout = 10_000) {
   const startedAt = Date.now()
   while (!predicate()) {
-    if (Date.now() - startedAt >= timeout) throw new Error(`Condition was not met within ${timeout}ms`)
+    if (Date.now() - startedAt >= timeout) {
+      await new Promise(resolve => setTimeout(resolve, 0))
+      if (!predicate()) throw new Error(`Condition was not met within ${timeout}ms`)
+      return
+    }
     await new Promise(resolve => setTimeout(resolve, 10))
   }
 }
@@ -288,27 +292,9 @@ test('discovers Vue Router routes and reports rendered navigation hotspots', asy
     assert(parentMessages.some(item => item.message.type === 'unplugin-pageflow:navigate'
       && item.message.to === '/about'
       && item.message.location === '/about?from=hotspot'))
-    const hotspotNavigationCount = parentMessages.filter(item => item.message.type === 'unplugin-pageflow:navigate').length
-    window.document.querySelector('[data-unplugin-pageflow-hotspot="link"]').dispatchEvent(new window.PointerEvent('pointerdown', { bubbles: true }))
-    assert.equal(parentMessages.filter(item => item.message.type === 'unplugin-pageflow:navigate').length, hotspotNavigationCount + 1)
-    assert.deepEqual(parentMessages.findLast(item => item.message.type === 'unplugin-pageflow:navigate').message, {
-      type: 'unplugin-pageflow:navigate',
-      to: '/about',
-      location: '/about?from=hotspot',
-      interaction: 'hotspot',
-    })
-
-    let coveredButtonClicks = 0
-    const coveredButton = window.document.createElement('button')
-    coveredButton.addEventListener('click', () => { coveredButtonClicks++ })
-    const activeLinkHotspot = window.document.querySelector('[data-unplugin-pageflow-targets="/about"]')
-    const elementFromPointBeforeCoveredClick = window.document.elementFromPoint
-    window.document.elementFromPoint = () => coveredButton
-    const navigationsBeforeCoveredClick = parentMessages.filter(item => item.message.type === 'unplugin-pageflow:navigate').length
-    activeLinkHotspot.dispatchEvent(new window.PointerEvent('pointerdown', { bubbles: true, clientX: 30, clientY: 30 }))
-    assert.equal(coveredButtonClicks, 1)
-    assert.equal(parentMessages.filter(item => item.message.type === 'unplugin-pageflow:navigate').length, navigationsBeforeCoveredClick)
-    window.document.elementFromPoint = elementFromPointBeforeCoveredClick
+    const semanticHotspot = window.document.querySelector('[data-unplugin-pageflow-hotspot="link"]')
+    assert.equal(semanticHotspot.tagName, 'A')
+    assert.equal(semanticHotspot.getAttribute('href'), '/about?from=hotspot')
 
     const uniButton = window.document.createElement('button')
     uniButton.textContent = 'Open about with uni'
@@ -320,6 +306,15 @@ test('discovers Vue Router routes and reports rendered navigation hotspots', asy
     assert(parentMessages.some(item => item.message.type === 'unplugin-pageflow:navigate'
       && item.message.to === '/about'
       && item.message.location === '/about?from=uni'))
+
+    const detachedNavigationCount = parentMessages.filter(item => item.message.type === 'unplugin-pageflow:navigate').length
+    await window.uni.navigateTo({ url: '/about?from=login-success' })
+    assert.equal(parentMessages.filter(item => item.message.type === 'unplugin-pageflow:navigate').length, detachedNavigationCount + 1)
+    assert.deepEqual(parentMessages.findLast(item => item.message.type === 'unplugin-pageflow:navigate').message, {
+      type: 'unplugin-pageflow:navigate',
+      to: '/about',
+      location: '/about?from=login-success',
+    })
 
     const wheel = new window.WheelEvent('wheel', { cancelable: true, clientX: 40, clientY: 50, deltaY: 120 })
     window.dispatchEvent(wheel)

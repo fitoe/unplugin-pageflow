@@ -12,6 +12,7 @@ export interface PageCardOptions {
   copied?: boolean
   scale?: number
   highlighted?: boolean
+  orphan?: boolean
   hideMeta?: boolean
   dark?: boolean
 }
@@ -46,6 +47,9 @@ export function createPageCardGroup(options: PageCardOptions) {
     width: PAGE_CARD_WIDTH,
     height: previewHeight,
     fill: options.dark ? '#171717' : '#fff',
+    stroke: options.orphan ? (options.dark ? '#737373' : '#a3a3a3') : undefined,
+    strokeWidth: options.orphan ? 2 : 0,
+    strokeScaleFixed: true,
     shadow: options.highlighted
       ? { x: 0, y: 16, blur: 42, color: '#090a0b78' }
       : { x: 0, y: 8, blur: 20, color: '#090a0b40' },

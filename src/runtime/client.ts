@@ -312,9 +312,14 @@ function addHotspot(layer: HTMLElement, element: Element, type: 'link' | 'event'
   if (!isRectInViewport(rect)) return false
   if (!rect.width || !rect.height) return false
   if (!hotspotRect && !isElementExposed(element, rect)) return false
-  const overlay = document.createElement('div')
+  const overlay = document.createElement(targets.length ? 'a' : 'div')
   overlay.setAttribute('data-unplugin-pageflow-hotspot', type)
   overlay.setAttribute('data-unplugin-pageflow-targets', targets.join('\n'))
+  if (overlay instanceof window.HTMLAnchorElement) {
+    const location = locations[0] ?? targets[0]
+    overlay.href = window.location.hash.startsWith('#/') ? `#${location.startsWith('/') ? location : `/${location}`}` : location
+    overlay.setAttribute('aria-label', `Open ${targets[0]}`)
+  }
   const background = type === 'link' ? 'rgba(255, 92, 168, 0.2)' : 'rgba(101, 191, 255, 0.2)'
   const border = type === 'link' ? 'rgba(255, 92, 168, 0.2)' : 'rgba(101, 191, 255, 0.2)'
   Object.assign(overlay.style, {
@@ -335,8 +340,8 @@ function addHotspot(layer: HTMLElement, element: Element, type: 'link' | 'event'
   const overlays = hotspotOverlaysByElement.get(element) ?? new Set<HTMLElement>()
   overlays.add(overlay)
   hotspotOverlaysByElement.set(element, overlays)
-  if (targets.length) {
-    hotspotHoverTargets.set(overlay, targets)
+  if (targets.length) hotspotHoverTargets.set(overlay, targets)
+  if (targets.length && !(overlay instanceof window.HTMLAnchorElement)) {
     hotspotOverlaysByElement.set(overlay, new Set([overlay]))
     let pointerNavigationAt = 0
     const forwardStaleInteraction = (event: Event) => {
@@ -344,7 +349,7 @@ function addHotspot(layer: HTMLElement, element: Element, type: 'link' | 'event'
       const current = element.getBoundingClientRect()
       const moved = Math.abs(current.left - rect.left) > 2 || Math.abs(current.top - rect.top) > 2
         || Math.abs(current.width - rect.width) > 2 || Math.abs(current.height - rect.height) > 2
-      if (!moved && isElementExposed(element, current)) return false
+      if (!moved) return false
       event.preventDefault()
       event.stopImmediatePropagation()
       overlay.style.pointerEvents = 'none'
@@ -584,8 +589,8 @@ function protectPreviewInteractions(router: PageFlowRouterAdapter, config: Resol
     setTimeout(() => { lastClickedElement = null })
     const anchor = lastClickedElement?.closest<HTMLAnchorElement>('a[href]')
     if (anchor) {
+      if (anchor.closest('[data-unplugin-pageflow-hotspot-layer]')) return
       event.preventDefault()
-      event.stopImmediatePropagation()
       const navigation = router.resolveAnchor(new URL(anchor.href, window.location.href))
       notifyNavigation(navigation.path, navigation.location)
     }
@@ -606,7 +611,7 @@ function protectPreviewInteractions(router: PageFlowRouterAdapter, config: Resol
           hotspot: element ? hotspotCenter(element) : undefined,
         })
         if (element) associateProgrammaticElement(element, target, navigation.location)
-        if (element) notifyNavigation(target, navigation.location)
+        notifyNavigation(target, navigation.location)
         void publishPage(router, config)
       }
   })
@@ -629,7 +634,7 @@ function protectPreviewInteractions(router: PageFlowRouterAdapter, config: Resol
           hotspot: element ? hotspotCenter(element) : undefined,
         })
         if (element) associateProgrammaticElement(element, target, location)
-        if (element) notifyNavigation(target, location)
+        notifyNavigation(target, location)
         void publishPage(router, config)
       }
       const result = { errMsg: `${method}:ok` }

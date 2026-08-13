@@ -28,3 +28,27 @@ test('adapts framework routes and preserves browser navigation parameters', asyn
     await window.happyDOM.close()
   }
 })
+
+test('adapts hash-based framework routes without collapsing previews to root', async () => {
+  const window = new Window({ url: 'http://localhost/?__unplugin_pageflow_preview=1#/pages/orders/index?tab=mine' })
+  Object.assign(globalThis, { window, document: window.document, URL: window.URL })
+  window.__UNPLUGIN_PAGEFLOW_ROUTES__ = [
+    { id: 'home', path: '/', title: 'home' },
+    { id: 'orders', path: '/pages/orders/index', title: 'orders' },
+  ]
+  const server = await createServer({ configFile: false, server: { middlewareMode: true }, appType: 'custom', logLevel: 'silent' })
+  try {
+    const { findBrowserHistoryAdapter } = await server.ssrLoadModule('/src/runtime/adapters/browser-history.ts')
+    const adapter = findBrowserHistoryAdapter()
+    assert(adapter)
+    assert.equal(adapter.routeMode(), 'hash')
+    assert.equal(adapter.currentPath(), '/pages/orders/index')
+    assert.deepEqual(adapter.resolve('/#/pages/orders/index?tab=all'), {
+      path: '/pages/orders/index',
+      location: '/pages/orders/index?tab=all',
+    })
+  } finally {
+    await server.close()
+    await window.happyDOM.close()
+  }
+})

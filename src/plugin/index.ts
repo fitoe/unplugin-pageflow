@@ -735,6 +735,7 @@ const factory: UnpluginFactory<PageFlowOptions | undefined> = (options) => {
           const uniAppConfig = await readUniAppConfig(projectRoot)
           uniAppHomePath = uniAppConfig.homePath
           if (resolved.framework === 'auto' && uniAppHomePath) resolved.framework = 'uni-app'
+          if (resolved.framework === 'uni-app') routeMode = 'hash'
           configuredTitlesByPath = uniAppConfig.titlesByPath
           routeOrderByPath = uniAppConfig.routeOrderByPath
           tabPaths = uniAppConfig.tabPaths
@@ -1271,26 +1272,30 @@ const factory: UnpluginFactory<PageFlowOptions | undefined> = (options) => {
           response.end(pageflowHtml(server.config.base, clientStyleFile ? stylePath : undefined, clientVersionPath, await getClientVersion()))
         })
 
-        const printUrls = server.printUrls.bind(server)
-        server.printUrls = () => {
-          printUrls()
-          const address = server.httpServer?.address()
-          const port = typeof address === 'object' && address ? address.port : server.config.server.port
-          const configuredHost = server.config.server.host
-          const host = typeof configuredHost === 'string' && configuredHost !== '0.0.0.0'
-            ? configuredHost
-            : 'localhost'
-          const protocol = server.config.server.https ? 'https' : 'http'
-          const localUrl = server.resolvedUrls?.local[0]
-          const pageflowUrl = localUrl
-            ? new URL(resolved.previewPath, localUrl).href
-            : `${protocol}://${host}:${port}${resolved.previewPath}`
-          server.config.logger.info(`  ➜  PageFlow: ${pageflowUrl}`)
-        }
         server.httpServer?.once('close', () => {
           eventResponses.forEach(response => response.end())
           eventResponses.clear()
         })
+        if (projectRoot !== pluginRoot) return () => {
+          // Install after every plugin's configureServer hook. Plugins such as
+          // UnoCSS also decorate printUrls, so wrapping earlier can be replaced.
+          const printUrls = server.printUrls.bind(server)
+          server.printUrls = () => {
+            printUrls()
+            const address = server.httpServer?.address()
+            const port = typeof address === 'object' && address ? address.port : server.config.server.port
+            const configuredHost = server.config.server.host
+            const host = typeof configuredHost === 'string' && configuredHost !== '0.0.0.0'
+              ? configuredHost
+              : 'localhost'
+            const protocol = server.config.server.https ? 'https' : 'http'
+            const localUrl = server.resolvedUrls?.local[0]
+            const pageflowUrl = localUrl
+              ? new URL(resolved.previewPath, localUrl).href
+              : `${protocol}://${host}:${port}${resolved.previewPath}`
+            server.config.logger.info(`  ➜  PageFlow: ${pageflowUrl}`)
+          }
+        }
       },
     },
   }

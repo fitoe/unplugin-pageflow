@@ -43,8 +43,10 @@ import { SceneNodeCache } from './client/scene-node-cache'
 import { FrameAnimation } from './client/frame-animation'
 import { PreviewFrameRegistry } from './client/preview-frame-registry'
 import { decodePreviewMessage } from './client/preview-message'
+import { detectUnexpectedPreviewRedirect } from './client/preview-redirect'
+import { writeClipboardText } from './client/clipboard'
 import { createPageFlowAIContext, createPageFlowAIPrompt } from './client/ai-context'
-import { createPageChecks, type PageFlowPageCheckStatus } from './client/page-checks'
+import { createPageChecks, isOrphanPage, type PageFlowPageCheckStatus } from './client/page-checks'
 import { buildApiFieldTree } from './client/api-field-tree'
 
 const pageFlowVersion = __PAGEFLOW_VERSION__
@@ -128,7 +130,19 @@ const viewportTabs: Array<Record<string, unknown>> = [
 ]
 const PREVIEW_MODE_STORAGE_KEY = 'unplugin-pageflow:preview-mode'
 const PANEL_COLLAPSED_STORAGE_KEY = 'unplugin-pageflow:panel-collapsed'
+const VIRTUAL_PAGES_STORAGE_KEY = 'unplugin-pageflow:virtual-pages'
 const initialUserSessions = loadUserSessions()
+
+function storedVirtualPages(): PageFlowPage[] {
+  try {
+    const value = JSON.parse(localStorage.getItem(VIRTUAL_PAGES_STORAGE_KEY) ?? '[]')
+    if (!Array.isArray(value)) return []
+    return value.filter((page): page is PageFlowPage => page?.virtual === true
+      && typeof page.id === 'string' && typeof page.title === 'string' && typeof page.path === 'string')
+  } catch {
+    return []
+  }
+}
 
 function storedPreviewMode(): PageFlowPreviewMode {
   try {
@@ -153,7 +167,8 @@ const demoPages: PageFlowPage[] = [
   { id: 'login', title: 'Sign in', path: '/login', accent: '#e7ad43', links: [{ label: 'Submit', to: 'home' }] },
   { id: 'checkout', title: 'Checkout', path: '/checkout', accent: '#dd648e', links: [{ label: 'Complete', to: 'home' }] },
 ]
-const pages = ref<PageFlowPage[]>(props.config.previewPath === '/' ? demoPages : [])
+const virtualPages = ref<PageFlowPage[]>(storedVirtualPages())
+const pages = ref<PageFlowPage[]>([...(props.config.previewPath === '/' ? demoPages : []), ...virtualPages.value])
 const routeGroupPath = ref<string[]>([])
 const active = ref('home')
 const status = ref(props.config.previewPath === '/' ? 'Demo data' : 'Discovering routes…')
@@ -229,6 +244,7 @@ const darkMode = ref(document.documentElement.classList.contains('dark'))
 const searchOpen = ref(false)
 const searchSelection = ref<string>()
 const searchRoot = ref<HTMLDivElement>()
+const virtualPageMenu = ref<{ pageId: string, x: number, y: number }>()
 const canvas = ref<HTMLDivElement>()
 const connectionCanvas = ref<HTMLDivElement>()
 const overlayWorld = ref<HTMLDivElement>()
@@ -485,6 +501,7 @@ const captureOnlyPage = computed(() => pages.value.find(page => page.id === capt
   && page.id !== focusedPageId.value
   && !livePreviewCacheIds.value.includes(page.id)))
 const previewPages = computed(() => renderedPages.value.filter(page => shouldRenderPreview(page.id) && page.id !== captureOnlyPage.value?.id))
+const userLabelPages = computed(() => focusScene.value ? [focusScene.value.source] : [])
 const requiredThumbnailRecords = computed(() => {
   const records = renderedPages.value.flatMap(page => {
   const records = pageThumbnailTiles(page)
@@ -1585,6 +1602,17 @@ function selectPageUser(pageId: string, user: string) {
   saveCurrentUserSessions()
 }
 
+function activatePreviewNavigation(to: string, location = to, animate = true) {
+  const locationPath = location.split(/[?#]/, 1)[0]
+  const target = pages.value.find(page => page.id === to || page.path === to || page.path === locationPath)
+  if (!target) return false
+  readyPreviewIds.value = new Set([...readyPreviewIds.value].filter(id => id !== target.id))
+  navigationLocations.value = { ...navigationLocations.value, [target.path]: location }
+  failedPreviewIds.delete(target.id)
+  activatePreview(target.id, animate)
+  return true
+}
+
 function setUserNote(user: string, note: string) {
   userNotes.value = { ...userNotes.value, [user]: note.trim() }
   saveCurrentUserSessions()
@@ -1657,10 +1685,32 @@ function handleViewportTransform() {
 }
 
 function shouldRenderPreview(pageId: string) {
+  if (pages.value.find(page => page.id === pageId)?.virtual) return false
   if (props.config.previewPath === '/') return false
   if (focusedPageId.value) return pageId === focusedPageId.value
   if (capturePreviewId.value === pageId) return true
   return livePreviewCacheIds.value.includes(pageId)
+}
+
+function createVirtualPage() {
+  const groupPath = [...routeGroupPath.value]
+  const sequence = virtualPages.value.length + 1
+  const id = `virtual-${Date.now()}`
+  const page: PageFlowPage = {
+    id,
+    title: `未命名页面 ${sequence}`,
+    path: `/${[...groupPath.filter(segment => segment !== '/'), `virtual-page-${sequence}`].join('/')}`,
+    virtual: true,
+    accent: ACCENTS[virtualPages.value.length % ACCENTS.length],
+    links: [],
+  }
+  virtualPages.value = [...virtualPages.value, page]
+  localStorage.setItem(VIRTUAL_PAGES_STORAGE_KEY, JSON.stringify(virtualPages.value))
+  pages.value = [...pages.value, page]
+  active.value = id
+  routeGroupPath.value = groupPath
+  requestLayout()
+  status.value = '已新建虚拟页面'
 }
 
 function cancelScheduledCapture() {
@@ -1747,12 +1797,16 @@ function cacheCurrentFocusedLinks() {
 
 function activatePreview(pageId: string, animate = true) {
   if (animate && focusedPageId.value && focusedPageId.value !== pageId) {
-    if (focusTransitionTargetId) return
+    if (focusTransitionTargetId) {
+      focusTransitionTargetId = pageId
+      return
+    }
     focusTransitionTargetId = pageId
     animateFocusLayout(0, () => {
+      const targetId = focusTransitionTargetId ?? pageId
       clearFocus()
       focusTransitionTargetId = undefined
-      activatePreview(pageId, true)
+      activatePreview(targetId, true)
     })
     return
   }
@@ -1764,11 +1818,15 @@ function activatePreview(pageId: string, animate = true) {
     || targetGroupPath.some((segment, index) => segment !== routeGroupPath.value[index])
   const next = groupChanged || !positions.value.has(pageId) ? layoutRouteGroup(targetGroupPath) : undefined
   if (animate && groupChanged) {
-    if (routeTransitionTargetId) return
+    if (routeTransitionTargetId) {
+      routeTransitionTargetId = pageId
+      return
+    }
     routeTransitionTargetId = pageId
     animateToRouteGroup(targetGroupPath, () => {
+      const targetId = routeTransitionTargetId ?? pageId
       routeTransitionTargetId = undefined
-      activatePreview(pageId, true)
+      activatePreview(targetId, true)
     })
     return
   }
@@ -2075,13 +2133,13 @@ function exitFocusedPage() {
 }
 
 async function copyPagePath(path: string) {
-  try {
-    await navigator.clipboard.writeText(path)
+  if (await writeClipboardText(path)) {
     copiedPath.value = path
     clearTimeout(copiedPathTimer)
     copiedPathTimer = setTimeout(() => { copiedPath.value = undefined }, 1400)
-  } catch {
+  } else {
     copiedPath.value = undefined
+    status.value = '复制失败，请手动复制页面路径'
   }
 }
 
@@ -2163,6 +2221,7 @@ async function editPageName(page: PageFlowPage) {
 }
 
 function handleCanvasClick(event: MouseEvent) {
+  virtualPageMenu.value = undefined
   if (!leafer || !canvas.value || viewportInteracting.value) return
   if (performance.now() < suppressCanvasClickUntil || performance.now() - focusTargetDraggedAt < 160) return
   const bounds = canvas.value.getBoundingClientRect()
@@ -2195,7 +2254,7 @@ function handleCanvasClick(event: MouseEvent) {
     if (!position) return false
     const previewH = pagePreviewHeight(item.id)
     const insideCard = worldX >= position[0] && worldX <= position[0] + PAGE_CARD_WIDTH
-      && worldY >= position[1] && worldY <= position[1] + previewH + 56
+      && worldY >= position[1] && worldY <= position[1] + previewH + PAGE_CARD_META_HEIGHT
     return insideCard
   })
   if (!page) {
@@ -2224,6 +2283,46 @@ function handleCanvasClick(event: MouseEvent) {
   else if (metaHit === 'open') openPage(page.path)
   else if (metaHit === 'path') void copyPagePath(page.path)
   else if (localX >= 0 && localX <= PAGE_CARD_WIDTH && localY >= 0 && localY <= previewH) activatePreview(page.id)
+}
+
+function handleCanvasContextMenu(event: MouseEvent) {
+  if (!leafer || !canvas.value) return
+  const bounds = canvas.value.getBoundingClientRect()
+  const layer = leafer.zoomLayer
+  const worldX = (event.clientX - bounds.left - (layer.x ?? 0)) / (layer.scaleX ?? 1)
+  const worldY = (event.clientY - bounds.top - (layer.y ?? 0)) / (layer.scaleY ?? 1)
+  const focus = focusScene.value
+  const focusedCandidates = focus
+    ? [{ page: focus.source, x: focus.sourcePosition[0], y: focus.sourcePosition[1], scale: 1 }, ...focus.targets]
+    : []
+  const focusedHit = [...focusedCandidates].reverse().find(item => item.page.virtual
+    && worldX >= item.x && worldX <= item.x + PAGE_CARD_WIDTH * item.scale
+    && worldY >= item.y && worldY <= item.y + pageCardHeight(item.page.id) * item.scale)
+  const page = focusedHit?.page ?? [...pages.value].reverse().find(item => {
+    if (!item.virtual || !visiblePageIds.value.has(item.id)) return false
+    const position = positions.value.get(item.id)
+    return Boolean(position && worldX >= position[0] && worldX <= position[0] + PAGE_CARD_WIDTH
+      && worldY >= position[1] && worldY <= position[1] + pageCardHeight(item.id))
+  })
+  if (!page) {
+    virtualPageMenu.value = undefined
+    return
+  }
+  event.preventDefault()
+  virtualPageMenu.value = { pageId: page.id, x: event.clientX, y: event.clientY }
+}
+
+function deleteVirtualPage(pageId: string) {
+  if (!virtualPages.value.some(page => page.id === pageId)) return
+  if (focusedPageId.value === pageId) exitFocus(false)
+  virtualPages.value = virtualPages.value.filter(page => page.id !== pageId)
+  localStorage.setItem(VIRTUAL_PAGES_STORAGE_KEY, JSON.stringify(virtualPages.value))
+  pages.value = pages.value.filter(page => page.id !== pageId)
+  positions.value = new Map([...positions.value].filter(([id]) => id !== pageId))
+  if (active.value === pageId) active.value = canvasPages.value[0]?.id ?? pages.value[0]?.id ?? ''
+  virtualPageMenu.value = undefined
+  requestLayout()
+  status.value = '已删除虚拟页面'
 }
 
 function handleFocusTargetPointerDown(event: PointerEvent) {
@@ -2502,7 +2601,33 @@ function handleCaptureFrameLoad(frame: HTMLIFrameElement) {
 
 function syncPreviewHotspots(pageId: string) {
   const layer = previewFrames.get(pageId)?.contentDocument?.querySelector<HTMLElement>('[data-unplugin-pageflow-hotspot-layer]')
-  if (layer) layer.style.display = focusedPageId.value === pageId ? 'block' : 'none'
+  if (!layer) return
+  layer.style.display = focusedPageId.value === pageId ? 'block' : 'none'
+  if (layer.dataset.unpluginPageflowNavigationBound) return
+  layer.dataset.unpluginPageflowNavigationBound = 'true'
+  let pointerNavigationAt = 0
+  const navigateFromHotspot = (event: Event) => {
+    const hotspot = (event.target as Element | null)?.closest<HTMLElement>('[data-unplugin-pageflow-hotspot]')
+    const target = hotspot?.dataset.unpluginPageflowTargets?.split('\n').find(Boolean)
+    if (!target) return
+    event.preventDefault()
+    event.stopImmediatePropagation()
+    const href = hotspot.tagName === 'A' ? hotspot.getAttribute('href') : undefined
+    const location = href?.startsWith('#/') ? href.slice(1) : href || target
+    activatePreviewNavigation(target, location, false)
+  }
+  layer.addEventListener('pointerdown', (event) => {
+    pointerNavigationAt = performance.now()
+    navigateFromHotspot(event)
+  }, true)
+  layer.addEventListener('click', (event) => {
+    if (performance.now() - pointerNavigationAt < 500) {
+      event.preventDefault()
+      event.stopImmediatePropagation()
+      return
+    }
+    navigateFromHotspot(event)
+  }, true)
 }
 
 function applyDetectedPcPreviewSize(frame: HTMLIFrameElement) {
@@ -2531,6 +2656,17 @@ function schedulePcPreviewSizeDetection(pageId: string, frame: HTMLIFrameElement
 
 async function handlePreviewLoad(pageId: string, frame: HTMLIFrameElement) {
   try {
+    const page = pages.value.find(item => item.id === pageId)
+    if (!page) return
+    const actualUrl = frame.contentWindow?.location.href
+    const redirect = actualUrl
+      ? detectUnexpectedPreviewRedirect(previewUrl(page.path), actualUrl, routeMode.value, window.location.origin)
+      : undefined
+    if (redirect) {
+      if (pageId === focusedPageId.value && pageId === livePreviewId.value)
+        activatePreviewNavigation(redirect.actualPath)
+      return
+    }
     loadedPreviewIds.value = new Set(loadedPreviewIds.value).add(pageId)
     syncPreviewHotspots(pageId)
     requestFocusedPageScan(pageId)
@@ -2540,7 +2676,6 @@ async function handlePreviewLoad(pageId: string, frame: HTMLIFrameElement) {
     syncPreviewHotspots(pageId)
     readyPreviewIds.value = new Set(readyPreviewIds.value).add(pageId)
     requestFocusedPageScan(pageId)
-    const page = pages.value.find(item => item.id === pageId)
     if (pageId === focusedPageId.value && !cachedPageDiagnostics(page)) requestFocusedDiagnostics()
     const title = frame.contentDocument?.title.trim()
     if (page && title && title !== page.title) await reportPageTitle(props.config, page.path, title)
@@ -2748,17 +2883,23 @@ function handlePreviewMessage(event: MessageEvent) {
   const sourcePageId = previewFrames.pageIdForSource(event.source)
   const message = decodePreviewMessage(event.data)
   if (!message) return
+  if (message.type === 'page-reported') {
+    if (!sourcePageId) return
+    const page = pages.value.find(item => item.id === sourcePageId)
+    if (page && message.path && message.path !== page.path) {
+      if (sourcePageId === focusedPageId.value && sourcePageId === livePreviewId.value)
+        activatePreviewNavigation(message.path)
+      return
+    }
+    if (sourcePageId === focusedPageId.value) {
+      requestAnimationFrame(() => requestFocusedPageScan(sourcePageId))
+      if (!cachedPageDiagnostics(page)) requestAnimationFrame(() => requestFocusedDiagnostics())
+    }
+    return
+  }
   if (message.type === 'api-result') {
     if (!sourcePageId || !isLocalBusinessApiResponse(message.result.url, window.location.origin, message.result.contentType)) return
     queueApiResult(sourcePageId, message.result)
-    return
-  }
-  if (message.type === 'page-reported') {
-    if (sourcePageId && sourcePageId === focusedPageId.value) {
-      requestAnimationFrame(() => requestFocusedPageScan(sourcePageId))
-      const page = pages.value.find(item => item.id === sourcePageId)
-      if (!cachedPageDiagnostics(page)) requestAnimationFrame(() => requestFocusedDiagnostics())
-    }
     return
   }
   if (message.type === 'hotspot-hover') {
@@ -2796,18 +2937,8 @@ function handlePreviewMessage(event: MessageEvent) {
     if (diagnosticsRefreshQueued) requestFocusedDiagnostics()
     return
   }
-  const hotspotNavigation = message.hotspot
-  if (!sourcePageId || sourcePageId !== focusedPageId.value || sourcePageId !== livePreviewId.value
-    || (!hotspotNavigation && !readyPreviewIds.value.has(sourcePageId))) return
-  const locationPath = message.location?.split(/[?#]/, 1)[0]
-  const target = pages.value.find(page => page.path === message.to || page.path === locationPath)
-  if (!target) return
-  if (message.location) {
-    readyPreviewIds.value = new Set([...readyPreviewIds.value].filter(id => id !== target.id))
-    navigationLocations.value = { ...navigationLocations.value, [target.path]: message.location }
-    failedPreviewIds.delete(target.id)
-  }
-  activatePreview(target.id)
+  if (!sourcePageId || sourcePageId !== focusedPageId.value || sourcePageId !== livePreviewId.value) return
+  activatePreviewNavigation(message.to, message.location)
 }
 
 function createCardGroup(page: PageFlowPage, x: number, y: number, scale = 1, highlighted = false, compactOnly = false, hideMeta = false) {
@@ -2818,6 +2949,7 @@ function createCardGroup(page: PageFlowPage, x: number, y: number, scale = 1, hi
     y,
     scale,
     highlighted,
+    orphan: isOrphanPage(page, pages.value),
     hideMeta,
     previewHeight: pagePreviewHeight(page.id),
     tiles: compactOnly ? (compact ? [compact] : []) : renderablePageThumbnailTiles(page),
@@ -2939,6 +3071,7 @@ function renderCanvasScene() {
       pageDisplayName(page),
       page.path,
       page.id === active.value,
+      isOrphanPage(page, pages.value),
       copiedPath.value === page.path,
       deck?.pages.length ?? 0,
       deck ? groupDisplayName(deck.key, deck.label) : '',
@@ -3053,6 +3186,7 @@ function draw() {
     leafer.on(MoveEvent.MOVE, () => handleViewportTransform())
     leafer.on(ZoomEvent.ZOOM, () => handleViewportTransform())
     canvas.value.addEventListener('click', handleCanvasClick)
+    canvas.value.addEventListener('contextmenu', handleCanvasContextMenu)
     canvas.value.addEventListener('pointerdown', handleFocusTargetPointerDown, true)
     canvas.value.addEventListener('pointermove', handleCanvasCursor, true)
     canvas.value.addEventListener('pointermove', handleFocusTargetHover)
@@ -3078,6 +3212,7 @@ function draw() {
 }
 
 function applyGraph(nextPages: PageFlowPage[], nextRouteMode: PageFlowRouteMode) {
+  nextPages = [...nextPages, ...virtualPages.value.filter(virtual => !nextPages.some(page => page.id === virtual.id))]
   const previousPromotedPath = promotedRouteGroupPath(pages.value)
   const followsPromotedRoot = routeGroupPath.value.length === previousPromotedPath.length
     && routeGroupPath.value.every((segment, index) => segment === previousPromotedPath[index])
@@ -3478,6 +3613,7 @@ onUnmounted(() => {
   window.removeEventListener('resize', handlePcViewportResize)
   window.clearTimeout(pcViewportResizeTimer)
   canvas.value?.removeEventListener('click', handleCanvasClick)
+  canvas.value?.removeEventListener('contextmenu', handleCanvasContextMenu)
   canvas.value?.removeEventListener('pointerdown', handleFocusTargetPointerDown, true)
   canvas.value?.removeEventListener('pointermove', handleCanvasCursor, true)
   canvas.value?.removeEventListener('pointermove', handleFocusTargetHover)
@@ -3574,30 +3710,101 @@ onUnmounted(() => {
           :aria-label="darkMode ? '切换到浅色模式' : '切换到暗黑模式'"
           @click="toggleColorMode"
         />
-        <div class="user-menu">
-          <UDropdownMenu :items="headerUserMenuItems" :content="{ align: 'end', sideOffset: 7 }">
-            <button type="button" :title="activeUser" :aria-label="`当前用户：${activeUser}`">
-              <UAvatar :alt="activeUser" size="sm" />
-            </button>
+          <div class="user-menu">
+            <UDropdownMenu :items="headerUserMenuItems" :content="{ align: 'end', sideOffset: 7 }">
+              <button type="button" class="user-menu-trigger" :title="activeUser" :aria-label="`当前用户：${activeUser}`">
+                <UAvatar :alt="activeUser" size="sm" />
+                <span class="user-menu-current">{{ userNotes[activeUser ?? ''] || activeUser }}</span>
+                <svg viewBox="0 0 12 12" aria-hidden="true"><path d="m3 4.5 3 3 3-3" /></svg>
+              </button>
             <template #item-leading="{ item }">
-              <span>{{ menuItemUser(item)?.slice(0, 1).toUpperCase() }}</span>
+              <span v-if="menuItemUser(item)" class="user-menu-avatar">{{ menuItemUser(item)?.slice(0, 1).toUpperCase() }}</span>
             </template>
             <template #item-trailing="{ item }">
-              <button v-if="menuItemUser(item)" type="button" :aria-label="`编辑 ${menuItemUser(item)} 的备注`" :title="userNotes[menuItemUser(item)!] || '添加备注'" @click.stop.prevent="editUserNote(menuItemUser(item)!)">
+              <span
+                v-if="menuItemUser(item)"
+                class="user-menu-edit"
+                role="button"
+                tabindex="0"
+                :aria-label="`编辑 ${menuItemUser(item)} 的备注`"
+                :title="userNotes[menuItemUser(item)!] || '添加备注'"
+                @click.stop.prevent="editUserNote(menuItemUser(item)!)"
+                @keydown.enter.stop.prevent="editUserNote(menuItemUser(item)!)"
+                @keydown.space.stop.prevent="editUserNote(menuItemUser(item)!)"
+              >
                 <svg viewBox="0 0 16 16" aria-hidden="true">
                   <path d="M10.8 2.2a1.4 1.4 0 0 1 2 2L5.2 11.8 2.5 12.5l.7-2.7z" />
                   <path d="m9.8 3.2 2 2" />
                 </svg>
-              </button>
+              </span>
             </template>
           </UDropdownMenu>
         </div>
       </template>
     </UHeader>
     <section class="workspace" :class="{ 'scene-ready': initialSceneReady }">
+      <nav class="canvas-toolbar" aria-label="画布工具栏">
+        <UButton
+          type="button"
+          class="canvas-tool"
+          icon="i-lucide-file-plus-2"
+          color="neutral"
+          variant="ghost"
+          title="在当前层级新建虚拟页面"
+          aria-label="新建页面"
+          @click="createVirtualPage"
+        />
+      </nav>
+      <div
+        v-if="virtualPageMenu"
+        class="canvas-context-menu"
+        role="menu"
+        :style="{ left: `${virtualPageMenu.x}px`, top: `${virtualPageMenu.y}px` }"
+      >
+        <UButton
+          type="button"
+          role="menuitem"
+          icon="i-lucide-trash-2"
+          label="删除页面"
+          color="error"
+          variant="ghost"
+          @click="deleteVirtualPage(virtualPageMenu.pageId)"
+        />
+      </div>
       <div ref="canvas" class="canvas"></div>
       <div class="preview-overlay" @wheel="handleOverlayWheel">
         <div ref="overlayWorld" class="preview-world">
+          <div
+            v-for="page in userLabelPages"
+            :key="`user-label:${page.id}`"
+            class="page-user-overlay"
+            :style="{
+              left: `${focusScene?.sourcePosition[0] ?? pagePosition(page.id)[0]}px`,
+              top: `${focusScene?.sourcePosition[1] ?? pagePosition(page.id)[1]}px`,
+              transform: page.id === active ? `scale(${SELECTED_PAGE_SCALE})` : undefined,
+              transformOrigin: 'center center',
+            }"
+          >
+            <UDropdownMenu
+              v-if="users.length > 1"
+              :items="pageUserMenuItems(page.id)"
+              :content="{ align: 'end', sideOffset: 4 }"
+            >
+              <button
+                type="button"
+                class="page-user-label"
+                :aria-label="`切换 ${page.title} 的用户`"
+                :style="{
+                  bottom: `${8 / Math.max(settledTransform.scaleY, 0.01)}px`,
+                  transform: `scale(${1 / Math.max(settledTransform.scaleX, 0.01)}, ${1 / Math.max(settledTransform.scaleY, 0.01)})`,
+                  transformOrigin: 'bottom right',
+                }"
+              >
+                <span>{{ userNotes[pageUsers[page.id] ?? activeUser ?? ''] || pageUsers[page.id] || activeUser }}</span>
+                <svg viewBox="0 0 12 12" aria-hidden="true"><path d="m3 4.5 3 3 3-3" /></svg>
+              </button>
+            </UDropdownMenu>
+          </div>
           <div
             v-for="page in previewPages"
             :key="page.id"
@@ -3612,16 +3819,6 @@ onUnmounted(() => {
             }"
             :data-page-id="page.id"
           >
-            <UDropdownMenu
-              v-if="users.length > 1 && page.id === focusedPageId"
-              :items="pageUserMenuItems(page.id)"
-              :content="{ align: 'end', sideOffset: 4 }"
-            >
-              <button type="button" aria-label="切换当前页面用户">
-                <span>{{ userNotes[pageUsers[page.id] ?? activeUser ?? ''] || pageUsers[page.id] || activeUser }}</span>
-                <svg viewBox="0 0 12 12" aria-hidden="true"><path d="m3 4.5 3 3 3-3" /></svg>
-              </button>
-            </UDropdownMenu>
             <iframe
               :ref="element => setPreviewFrame(page.id, element as Element | null)"
               :key="`${previewMode}:${currentPreviewMode.width}x${currentPreviewMode.height}:${page.id}:${pageUsers[page.id] ?? activeUser}`"

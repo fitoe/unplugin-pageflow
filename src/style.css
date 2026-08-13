@@ -51,11 +51,30 @@ header {
 }
 
 .user-menu { position: relative; flex: none; }
-.page-user-label { position: absolute; z-index: 4; top: -24px; right: 0; max-width: 100%; color: #202428; font: 9px 'DM Mono'; pointer-events: auto; }
-.page-user-label { padding: 2px 0; text-align: right; text-shadow: 0 1px 2px #fff, 0 0 4px #fff; }
+.user-menu-trigger { display: flex; max-width: 190px; height: 32px; cursor: pointer; align-items: center; gap: 7px; border: 1px solid var(--pageflow-border); border-radius: 8px; background: var(--pageflow-surface-muted); padding: 0 8px 0 4px; color: var(--pageflow-text); }
+.user-menu-trigger:hover, .user-menu-trigger[aria-expanded='true'] { background: var(--ui-bg-elevated); }
+.user-menu-trigger:focus-visible { outline: 2px solid var(--ui-text-muted); outline-offset: 2px; }
+.user-menu-trigger > svg { width: 12px; height: 12px; flex: none; fill: none; stroke: currentColor; stroke-linecap: round; stroke-linejoin: round; stroke-width: 1.5px; }
+.user-menu-current { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; font-weight: 500; }
+.user-menu-avatar { display: inline-grid; width: 20px; height: 20px; flex: none; place-items: center; border-radius: 999px; background: var(--ui-bg-elevated); color: var(--ui-text-muted); font-size: 10px; font-weight: 700; line-height: 1; }
+.user-menu-edit { display: inline-grid; width: 24px; height: 24px; flex: none; cursor: pointer; place-items: center; border-radius: 6px; color: var(--ui-text-muted); }
+.user-menu-edit:hover, .user-menu-edit:focus-visible { background: var(--ui-bg-elevated); color: var(--ui-text-highlighted); outline: none; }
+.user-menu-edit svg { width: 14px; height: 14px; fill: none; stroke: currentColor; stroke-linecap: round; stroke-linejoin: round; stroke-width: 1.5; }
+.page-user-label { position: absolute; z-index: 4; right: 0; bottom: 8px; display: flex; max-width: 160px; height: 22px; cursor: pointer; align-items: center; gap: 3px; border: 1px solid var(--pageflow-border); border-radius: 5px; background: var(--pageflow-surface); padding: 0 6px; color: var(--pageflow-muted); box-shadow: 0 2px 7px var(--pageflow-shadow); font: 9px 'DM Mono'; pointer-events: auto; }
+.page-user-label:hover, .page-user-label[aria-expanded='true'] { color: var(--pageflow-text); background: var(--pageflow-surface-muted); }
+.page-user-label span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.page-user-label svg { width: 10px; height: 10px; flex: none; fill: none; stroke: currentColor; stroke-linecap: round; stroke-linejoin: round; stroke-width: 1.5px; }
+.page-user-overlay { position: absolute; z-index: 4; width: 240px; height: 0; overflow: visible; pointer-events: none; }
 .viewport-switch-layout { margin-left: 0; }
 
 .workspace { position: absolute; inset: 46px 0 28px; overflow: hidden; overscroll-behavior: none; touch-action: none; }
+.canvas-toolbar { position: absolute; z-index: 8; top: 18px; left: 14px; display: flex; width: 40px; flex-direction: column; align-items: center; border: 1px solid var(--pageflow-border); border-radius: 9px; background: var(--pageflow-surface); padding: 4px; box-shadow: 0 5px 18px var(--pageflow-shadow); pointer-events: auto; }
+.canvas-tool { display: grid; width: 32px; height: 32px; cursor: pointer; place-items: center; border: 0; border-radius: 6px; background: transparent; color: var(--pageflow-muted); font-size: 17px; }
+.canvas-tool:hover { background: var(--pageflow-surface-muted); color: var(--pageflow-text); }
+.canvas-tool:focus-visible { outline: 2px solid var(--ui-text-muted); outline-offset: 1px; }
+.canvas-context-menu { position: fixed; z-index: 20; min-width: 142px; border: 1px solid var(--pageflow-border); border-radius: 8px; background: var(--pageflow-surface); padding: 4px; box-shadow: 0 8px 28px var(--pageflow-shadow); pointer-events: auto; }
+.canvas-context-menu button { display: flex; width: 100%; height: 32px; cursor: pointer; align-items: center; gap: 8px; border: 0; border-radius: 5px; background: transparent; padding: 0 9px; color: #dc2626; font-size: 12px; text-align: left; }
+.canvas-context-menu button:hover, .canvas-context-menu button:focus-visible { background: color-mix(in srgb, #dc2626 10%, transparent); outline: none; }
 .workspace > .canvas,
 .workspace > .preview-overlay,
 .workspace > .connection-canvas { opacity: 0; }

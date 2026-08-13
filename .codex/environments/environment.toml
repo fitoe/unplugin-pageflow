@@ -8,4 +8,9 @@ script = ""
 [[actions]]
 name = "dev"
 icon = "run"
-command = "npm run dev"
+command = "npm run dev:plugin"
+
+[[actions]]
+name = "dev"
+icon = "run"
+command = "npm run dev:plugin"

@@ -5,7 +5,7 @@ import { createServer } from 'vite'
 test('checks page entries, links, self-links, and test coverage', async () => {
   const server = await createServer({ configFile: false, server: { middlewareMode: true }, appType: 'custom', logLevel: 'silent' })
   try {
-    const { createPageChecks } = await server.ssrLoadModule('/src/client/page-checks.ts')
+    const { createPageChecks, isOrphanPage } = await server.ssrLoadModule('/src/client/page-checks.ts')
     const pages = [
       { id: 'home', path: '/', title: '首页', links: [{ label: '详情', to: '/detail' }] },
       { id: 'detail', path: '/detail', title: '详情', links: [
@@ -26,6 +26,9 @@ test('checks page entries, links, self-links, and test coverage', async () => {
     assert.equal(orphanChecks.find(item => item.id === 'entry').status, 'uncovered')
     assert.equal(orphanChecks.find(item => item.id === 'tests').status, 'uncovered')
     assert.equal(createPageChecks(pages[0], pages, []).find(item => item.id === 'entry').status, 'passed')
+    assert.equal(isOrphanPage(pages[0], pages), false)
+    assert.equal(isOrphanPage(pages[1], pages), false)
+    assert.equal(isOrphanPage(pages[2], pages), true)
   } finally {
     await server.close()
   }

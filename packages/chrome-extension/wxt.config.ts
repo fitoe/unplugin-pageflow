@@ -13,6 +13,7 @@ const pageFlowIcons = [
   'i-lucide-code-2',
   'i-lucide-download',
   'i-lucide-file-code-2',
+  'i-lucide-file-plus-2',
   'i-lucide-gauge',
   'i-lucide-monitor',
   'i-lucide-moon',
@@ -25,6 +26,7 @@ const pageFlowIcons = [
   'i-lucide-square-mouse-pointer',
   'i-lucide-sun',
   'i-lucide-tablet',
+  'i-lucide-trash-2',
   'i-lucide-zap',
 ]
 

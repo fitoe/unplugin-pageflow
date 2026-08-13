@@ -21,6 +21,13 @@ function targetPageId(target: string, pages: PageFlowPage[]) {
   return pages.find(page => page.id === value || page.path === value)?.id
 }
 
+export function isOrphanPage(page: PageFlowPage, pages: PageFlowPage[]) {
+  const isHome = pages[0]?.id === page.id || page.path === '/'
+  if (isHome) return false
+  return !pages.some(source => source.id !== page.id
+    && source.links.some(link => targetPageId(link.to, pages) === page.id))
+}
+
 export function createPageChecks(page: PageFlowPage, pages: PageFlowPage[], tests: PageFlowPageTest[]): PageFlowPageCheck[] {
   const incoming = pages.filter(source => source.id !== page.id)
     .flatMap(source => source.links.filter(link => targetPageId(link.to, pages) === page.id))
