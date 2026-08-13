@@ -202,6 +202,8 @@ const pageUsers = ref<Record<string, string>>(Object.fromEntries(
 const settledTransform = ref<CanvasTransform>({ x: 0, y: 0, scaleX: 1, scaleY: 1 })
 const livePreviewId = ref<string>()
 const focusedPageId = ref<string>()
+const hoveredUserPageId = ref<string>()
+const openUserMenuPageId = ref<string>()
 const focusedLinks = ref<PageFlowLink[]>([])
 const apiResultsByPage = ref<Record<string, PageFlowApiResult[]>>({})
 const pendingApiResultsByPage = new Map<string, PageFlowApiResult[]>()
@@ -501,7 +503,14 @@ const captureOnlyPage = computed(() => pages.value.find(page => page.id === capt
   && page.id !== focusedPageId.value
   && !livePreviewCacheIds.value.includes(page.id)))
 const previewPages = computed(() => renderedPages.value.filter(page => shouldRenderPreview(page.id) && page.id !== captureOnlyPage.value?.id))
-const userLabelPages = computed(() => focusScene.value ? [focusScene.value.source] : [])
+const userLabelPages = computed(() => {
+  if (focusScene.value) return [focusScene.value.source]
+  const pageIds = new Set([focusedPageId.value, hoveredUserPageId.value, openUserMenuPageId.value].filter(Boolean))
+  return [...pageIds].flatMap(pageId => {
+    const page = pages.value.find(item => item.id === pageId)
+    return page ? [page] : []
+  })
+})
 const requiredThumbnailRecords = computed(() => {
   const records = renderedPages.value.flatMap(page => {
   const records = pageThumbnailTiles(page)
@@ -1598,7 +1607,12 @@ function saveCurrentUserSessions(selectedUser = activeUser.value) {
 }
 
 function selectPageUser(pageId: string, user: string) {
-  pageUsers.value = { ...pageUsers.value, [pageId]: user }
+  const deck = routeDeckByPageId.value.get(pageId)
+  const pageIds = deck ? deck.pages.map(page => page.id) : [pageId]
+  pageUsers.value = Object.fromEntries([
+    ...Object.entries(pageUsers.value),
+    ...pageIds.map(id => [id, user] as const),
+  ])
   saveCurrentUserSessions()
 }
 
@@ -2438,6 +2452,26 @@ function setCanvasCursor(cursor: 'default' | 'pointer' | 'move') {
   if (canvasView) canvasView.style.cursor = cursor
 }
 
+let clearHoveredUserPageTimer = 0
+
+function clearHoveredUserPage(delay = 0) {
+  window.clearTimeout(clearHoveredUserPageTimer)
+  clearHoveredUserPageTimer = window.setTimeout(() => {
+    if (!openUserMenuPageId.value) hoveredUserPageId.value = undefined
+  }, delay)
+}
+
+function keepUserLabelVisible(pageId: string) {
+  window.clearTimeout(clearHoveredUserPageTimer)
+  hoveredUserPageId.value = pageId
+}
+
+function handleUserMenuOpen(pageId: string, open: boolean) {
+  openUserMenuPageId.value = open ? pageId : undefined
+  if (open) keepUserLabelVisible(pageId)
+  else clearHoveredUserPage(120)
+}
+
 function handleCanvasCursor(event: PointerEvent) {
   if (!canvas.value || !leafer) return
   if (focusTargetDrag?.moved || canvasPageDrag?.moved) {
@@ -2453,6 +2487,7 @@ function handleCanvasCursor(event: PointerEvent) {
     ? [focusScene.value.source, ...focusScene.value.targets.map(target => target.page)]
     : pages.value.filter(page => visiblePageIds.value.has(page.id))
   let linkHit = false
+  let previewPageId: string | undefined
   const pageHit = candidates.some(page => {
     const position = focusScene.value?.source.id === page.id
       ? focusScene.value.sourcePosition
@@ -2463,6 +2498,9 @@ function handleCanvasCursor(event: PointerEvent) {
     const localX = worldX - position[0]
     const localY = worldY - position[1]
     const previewHeight = pagePreviewHeight(page.id)
+    if (!focusScene.value && localX >= 0 && localX <= PAGE_CARD_WIDTH
+      && localY >= 0 && localY <= previewHeight)
+      previewPageId = page.id
     const hit = localX >= 0 && localX <= PAGE_CARD_WIDTH
       && localY >= 0 && localY <= pageCardHeight(page.id)
     if (hit) {
@@ -2471,6 +2509,8 @@ function handleCanvasCursor(event: PointerEvent) {
     }
     return hit
   })
+  if (previewPageId) keepUserLabelVisible(previewPageId)
+  else clearHoveredUserPage(120)
   if (linkHit) {
     setTimeout(() => {
       setCanvasCursor('pointer')
@@ -2487,6 +2527,7 @@ function handleCanvasCursor(event: PointerEvent) {
 }
 
 function clearFocusTargetHover() {
+  clearHoveredUserPage(120)
   if (focusTargetDrag || canvasPageDrag || hoveredHotspot.value?.centerX != null) return
   setHoveredHotspot(undefined)
 }
@@ -3603,6 +3644,7 @@ onMounted(async () => {
 onUnmounted(() => {
   cancelAnimationFrame(apiResultFrame)
   pendingApiResultsByPage.clear()
+  window.clearTimeout(clearHoveredUserPageTimer)
   window.removeEventListener('storage', handlePageFlowStorage)
   document.removeEventListener('visibilitychange', handleVisibilityChange)
   window.clearTimeout(aiContextTimer)
@@ -3789,11 +3831,14 @@ onUnmounted(() => {
               v-if="users.length > 1"
               :items="pageUserMenuItems(page.id)"
               :content="{ align: 'end', sideOffset: 4 }"
+              @update:open="handleUserMenuOpen(page.id, $event)"
             >
               <button
                 type="button"
                 class="page-user-label"
                 :aria-label="`切换 ${page.title} 的用户`"
+                @pointerenter="keepUserLabelVisible(page.id)"
+                @pointerleave="clearHoveredUserPage(120)"
                 :style="{
                   bottom: `${8 / Math.max(settledTransform.scaleY, 0.01)}px`,
                   transform: `scale(${1 / Math.max(settledTransform.scaleX, 0.01)}, ${1 / Math.max(settledTransform.scaleY, 0.01)})`,
