@@ -2,6 +2,13 @@
   "enabled": true,
   "previewPath": "/__unplugin-pageflow/",
   "appUrl": "/",
+  "routes": [
+    {
+      "id": "configured-login",
+      "path": "/pages/login",
+      "title": "Configured login"
+    }
+  ],
   "dynamicParams": {},
   "previewRoles": [],
   "groupNames": {}

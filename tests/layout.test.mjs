@@ -8,7 +8,7 @@ test('lays out linked pages in layers and limits previews to the viewport', asyn
     const { assignOrderedFocusSides, centerPageTransform, collapseRepeatedListLinks, createPageSpatialIndex, createRouteDeckView, expandedRouteGroupPath, fitFocusedPreviewTransform, fitPageBoundsTransform, getRenderablePages, getVisiblePageIds, layoutPageGrid, layoutPagesByRoute, promotedRouteGroupPath, queryPageSpatialIndex, responsivePageGridColumns, routeDeckPathForPage } = await server.ssrLoadModule('/src/client/layout.ts')
     const { forwardWheelToCanvas, PAGEFLOW_CANVAS_CONFIG } = await server.ssrLoadModule('/src/client/canvas.ts')
     const { expandDynamicRoutes } = await server.ssrLoadModule('/src/shared/dynamic-routes.ts')
-    const { resolvePreviewUrl, touchPreviewCache } = await server.ssrLoadModule('/src/client/preview.ts')
+    const { previewRole, resolvePreviewUrl, touchPreviewCache } = await server.ssrLoadModule('/src/client/preview.ts')
     const { fullThumbnailTiles, loadedThumbnailTilesOrCompact, thumbnailPageKey, thumbnailRecordsAreCurrent, thumbnailRevision, thumbnailSlot, thumbnailTierForZoom, thumbnailUrl, visibleThumbnailTiles, visibleThumbnailTilesOrCompact } = await server.ssrLoadModule('/src/client/thumbnails.ts')
     const { boundedPreviewDocumentHeight, isInfiniteListDocument, maskedIconBackground, materializeMaskedIcons, previewDocumentHeight } = await server.ssrLoadModule('/src/client/snapshot.ts')
     const { FocusedPageStateCache, preserveScannedFocusedLinks } = await server.ssrLoadModule('/src/client/focus-cache.ts')
@@ -416,6 +416,12 @@ test('lays out linked pages in layers and limits previews to the viewport', asyn
       dynamicParams: {},
       previewRoles: [{ match: '/machinery/**', role: 'operator' }],
     }, 'http://localhost', 'history', '/machinery/orders/42?tab=dispatch'), '/app/machinery/orders/42?tab=dispatch&__unplugin-pageflow_preview=1&__unplugin-pageflow_role=operator')
+    assert.equal(previewRole('/pages/inspection/report/fill/index', {
+      previewRoles: [
+        { match: '/pages/farmer/**', role: 'farmer' },
+        { match: '/pages/inspection/**', role: 'inspection' },
+      ],
+    }), 'inspection')
   } finally {
     await server.close()
   }

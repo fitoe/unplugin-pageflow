@@ -204,6 +204,7 @@ async function readUniAppConfig(root: string) {
       const normalizePath = (path: string) => `/${path.replace(/^\/+|\/+$/g, '')}`
       const titlesByPath = new Map<string, string>()
       const routeOrderByPath = new Map<string, number>()
+      const routes: PageFlowRuntimeRoute[] = []
       const addPage = (page: PageConfig, packageRoot = '') => {
         if (typeof page.path !== 'string' || !page.path.trim()) return
         const path = normalizePath(`${packageRoot}/${page.path}`)
@@ -211,6 +212,12 @@ async function readUniAppConfig(root: string) {
         const title = page.style?.navigationBarTitleText
         if (typeof title === 'string' && title.trim())
           titlesByPath.set(path, title.trim())
+        routes.push({
+          id: path,
+          path,
+          title: typeof title === 'string' ? title.trim() : '',
+          componentFile: resolve(root, 'src', `${path.slice(1)}.vue`),
+        })
       }
       config.pages?.forEach(page => addPage(page))
       ;[...(config.subPackages ?? []), ...(config.subpackages ?? [])].forEach(pkg => {
@@ -220,6 +227,7 @@ async function readUniAppConfig(root: string) {
       const home = config.pages?.[0]?.path
       return {
         homePath: typeof home === 'string' && home.trim() ? normalizePath(home) : undefined,
+        routes,
         titlesByPath,
         routeOrderByPath,
         tabPaths: new Set((config.tabBar?.list ?? []).flatMap(item => typeof item.pagePath === 'string' ? [normalizePath(item.pagePath)] : [])),
@@ -228,7 +236,42 @@ async function readUniAppConfig(root: string) {
       if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error
     }
   }
-  return { homePath: undefined, titlesByPath: new Map<string, string>(), routeOrderByPath: new Map<string, number>(), tabPaths: new Set<string>() }
+  return { homePath: undefined, routes: [] as PageFlowRuntimeRoute[], titlesByPath: new Map<string, string>(), routeOrderByPath: new Map<string, number>(), tabPaths: new Set<string>() }
+}
+
+function mergeUniAppRoutes(
+  discovered: PageFlowRuntimeRoute[],
+  configured: PageFlowRuntimeRoute[],
+  runtime: PageFlowRuntimeRoute[] = [],
+  homePath?: string,
+) {
+  const configuredByPath = new Map(configured.map(route => [route.path, route]))
+  const runtimeByPath = new Map(runtime.map(route => [route.path, route]))
+  const rootOverride = configuredByPath.get('/') ?? runtimeByPath.get('/')
+  const consumedPaths = new Set<string>()
+  const merged = discovered.map((route) => {
+    const collapseHome = Boolean(homePath && route.path === homePath && rootOverride)
+    const path = collapseHome ? '/' : route.path
+    const next = {
+      ...route,
+      ...configuredByPath.get(route.path),
+      ...runtimeByPath.get(route.path),
+      ...(collapseHome ? configuredByPath.get('/') : undefined),
+      ...(collapseHome ? runtimeByPath.get('/') : undefined),
+      path,
+    }
+    consumedPaths.add(route.path)
+    consumedPaths.add(path)
+    return next
+  })
+  for (const layer of [configured, runtime]) {
+    for (const route of layer) {
+      if (consumedPaths.has(route.path)) continue
+      consumedPaths.add(route.path)
+      merged.push(route)
+    }
+  }
+  return merged
 }
 
 function createGraph(
@@ -538,6 +581,7 @@ const factory: UnpluginFactory<PageFlowOptions | undefined> = (options) => {
   let routes: PageFlowRuntimeRoute[] = []
   let routeMode: PageFlowRouteMode = 'history'
   let uniAppHomePath: string | undefined
+  let uniAppRoutes: PageFlowRuntimeRoute[] = []
   let configuredTitlesByPath = new Map<string, string>()
   let routeOrderByPath = new Map<string, number>()
   let tabPaths = new Set<string>()
@@ -734,11 +778,16 @@ const factory: UnpluginFactory<PageFlowOptions | undefined> = (options) => {
         try {
           const uniAppConfig = await readUniAppConfig(projectRoot)
           uniAppHomePath = uniAppConfig.homePath
+          uniAppRoutes = uniAppConfig.routes
           if (resolved.framework === 'auto' && uniAppHomePath) resolved.framework = 'uni-app'
           if (resolved.framework === 'uni-app') routeMode = 'hash'
           configuredTitlesByPath = uniAppConfig.titlesByPath
           routeOrderByPath = uniAppConfig.routeOrderByPath
           tabPaths = uniAppConfig.tabPaths
+          if (resolved.framework === 'uni-app' && uniAppRoutes.length) {
+            routes = mergeUniAppRoutes(uniAppRoutes, resolved.routes, [], uniAppHomePath)
+            rebuildGraph()
+          }
         } catch (error) {
           server.config.logger.warn(`unplugin-pageflow could not read pages.json: ${error instanceof Error ? error.message : error}`)
         }
@@ -755,7 +804,7 @@ const factory: UnpluginFactory<PageFlowOptions | undefined> = (options) => {
           server.ws.send({ type: 'custom', event: PAGEFLOW_PAGE_EVENT, data: page })
           sendEvent(PAGEFLOW_PAGE_EVENT, page)
         }
-        if (resolved.routes.length) {
+        if (resolved.routes.length && resolved.framework !== 'uni-app') {
           routes = resolved.routes
           rebuildGraph()
         }
@@ -1225,9 +1274,12 @@ const factory: UnpluginFactory<PageFlowOptions | undefined> = (options) => {
           if (pathname === routesPath && request.method === 'POST') {
             try {
               const next = await readRoutes(request)
-              if (next.routeMode !== routeMode || JSON.stringify(next.routes) !== JSON.stringify(routes)) {
+              const nextRoutes = resolved.framework === 'uni-app'
+                ? mergeUniAppRoutes(uniAppRoutes, resolved.routes, next.routes, uniAppHomePath)
+                : next.routes
+              if (next.routeMode !== routeMode || JSON.stringify(nextRoutes) !== JSON.stringify(routes)) {
                 routeMode = next.routeMode
-                routes = next.routes
+                routes = nextRoutes
                 pageTestIndex?.setRoutes(routes)
                 rebuildGraph()
               }

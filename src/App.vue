@@ -28,7 +28,7 @@ import type {
 } from './shared/types'
 import { cancelPageFlowTest, fetchPageFlowEditor, fetchPageFlowGraph, fetchPageFlowTests, openPageFlowEditor, publishPageFlowAIContext, refreshPageFlowConfig, reportPageTitle, runPageFlowLighthouse, runPageFlowTest, startRouteDiscovery, subscribeToPageFlowUpdates, type PageFlowEditorInfo } from './client/graph'
 import { planGraphUpdate } from './client/graph-update'
-import { resolvePreviewUrl, touchPreviewCache } from './client/preview'
+import { previewRole, resolvePreviewUrl, touchPreviewCache } from './client/preview'
 import { PAGEFLOW_SCAN_MESSAGE } from './shared/protocol'
 import { forwardWheelToCanvas, PAGEFLOW_CANVAS_CONFIG, type PageFlowWheelInteraction } from './client/canvas'
 import { CaptureQueue } from './client/capture-queue'
@@ -43,7 +43,7 @@ import { SceneNodeCache } from './client/scene-node-cache'
 import { FrameAnimation } from './client/frame-animation'
 import { PreviewFrameRegistry } from './client/preview-frame-registry'
 import { decodePreviewMessage } from './client/preview-message'
-import { detectUnexpectedPreviewRedirect } from './client/preview-redirect'
+import { confirmReportedPreviewRedirect, detectUnexpectedPreviewRedirect } from './client/preview-redirect'
 import { writeClipboardText } from './client/clipboard'
 import { createPageFlowAIContext, createPageFlowAIPrompt } from './client/ai-context'
 import { createPageChecks, isOrphanPage, type PageFlowPageCheckStatus } from './client/page-checks'
@@ -51,7 +51,7 @@ import { buildApiFieldTree } from './client/api-field-tree'
 
 const pageFlowVersion = __PAGEFLOW_VERSION__
 import { createApiIssues, mergeApiResult, type PageFlowApiIssue } from './client/api-diagnostics'
-import { cachedPreviewUsers, configuredUsers, isPreviewUserStorageKey, loadUserSessions, saveUserSessions, visibleSessionUsers } from './client/user-sessions'
+import { assignGroupUser, cachedPreviewUsers, configuredUsers, isPreviewUserStorageKey, loadUserSessions, saveUserSessions, visibleSessionUsers } from './client/user-sessions'
 import LayoutWorker from './client/layout.worker?worker&inline'
 import { focusTargetSetKey, planPageUpdate } from './client/page-update'
 import { pageUpdateEffectTarget } from './client/page-update-effect'
@@ -1593,6 +1593,8 @@ function pageUser(page: PageFlowPage) {
     const inheritedUser = representative && pageUsers.value[representative.id]
     if (inheritedUser) return inheritedUser
   }
+  const configuredUser = previewRole(page.path, props.config)
+  if (configuredUser) return configuredUser
   return activeUser.value
 }
 
@@ -1629,7 +1631,7 @@ function saveCurrentUserSessions(selectedUser = activeUser.value) {
 function selectPageUser(pageId: string, user: string) {
   const deck = routeDeckByPageId.value.get(pageId)
   if (deck) {
-    groupUsers.value = { ...groupUsers.value, [deck.key]: user }
+    groupUsers.value = assignGroupUser(groupUsers.value, deck.key, user)
     const pageIds = new Set(deck.pages.map(page => page.id))
     pageUsers.value = Object.fromEntries(Object.entries(pageUsers.value).filter(([id]) => !pageIds.has(id)))
     saveCurrentUserSessions()
@@ -1650,7 +1652,7 @@ function activatePreviewNavigation(to: string, location = to, animate = true) {
   readyPreviewIds.value = new Set([...readyPreviewIds.value].filter(id => id !== target.id))
   navigationLocations.value = { ...navigationLocations.value, [target.path]: location }
   failedPreviewIds.delete(target.id)
-  activatePreview(target.id, animate)
+  activatePreview(target.id, animate, true)
   return true
 }
 
@@ -1836,7 +1838,7 @@ function cacheCurrentFocusedLinks() {
   )
 }
 
-function activatePreview(pageId: string, animate = true) {
+function activatePreview(pageId: string, animate = true, preserveNavigation = false) {
   if (animate && focusedPageId.value && focusedPageId.value !== pageId) {
     if (focusTransitionTargetId) {
       focusTransitionTargetId = pageId
@@ -1847,7 +1849,7 @@ function activatePreview(pageId: string, animate = true) {
       const targetId = focusTransitionTargetId ?? pageId
       clearFocus()
       focusTransitionTargetId = undefined
-      activatePreview(targetId, true)
+      activatePreview(targetId, true, preserveNavigation)
     })
     return
   }
@@ -1867,7 +1869,7 @@ function activatePreview(pageId: string, animate = true) {
     animateToRouteGroup(targetGroupPath, () => {
       const targetId = routeTransitionTargetId ?? pageId
       routeTransitionTargetId = undefined
-      activatePreview(targetId, true)
+      activatePreview(targetId, true, preserveNavigation)
     })
     return
   }
@@ -1891,6 +1893,10 @@ function activatePreview(pageId: string, animate = true) {
       parkedPageProgress.value = {}
     }
     active.value = pageId
+    if (!preserveNavigation && page) {
+      const { [page.path]: _staleLocation, ...freshNavigationLocations } = navigationLocations.value
+      navigationLocations.value = freshNavigationLocations
+    }
     if (!props.host) {
       pendingApiResultsByPage.delete(pageId)
       apiResultsByPage.value = { ...apiResultsByPage.value, [pageId]: [] }
@@ -2955,8 +2961,13 @@ function handlePreviewMessage(event: MessageEvent) {
     if (!sourcePageId) return
     const page = pages.value.find(item => item.id === sourcePageId)
     if (page && message.path && message.path !== page.path) {
-      if (sourcePageId === focusedPageId.value && sourcePageId === livePreviewId.value)
-        activatePreviewNavigation(message.path)
+      const frame = previewFrames.get(sourcePageId)
+      const actualUrl = frame?.contentWindow?.location.href
+      const redirect = actualUrl
+        ? confirmReportedPreviewRedirect(previewUrl(page.path), actualUrl, message.path, routeMode.value, window.location.origin)
+        : undefined
+      if (redirect && sourcePageId === focusedPageId.value && sourcePageId === livePreviewId.value)
+        activatePreviewNavigation(redirect.actualPath)
       return
     }
     if (sourcePageId === focusedPageId.value) {

@@ -2,7 +2,7 @@ import type { PageFlowRouteMode, ResolvedPageFlowOptions } from '../shared/types
 
 export const PAGEFLOW_LIVE_PREVIEW_CACHE_LIMIT = 3
 
-function previewRole(path: string, config: ResolvedPageFlowOptions) {
+export function previewRole(path: string, config: ResolvedPageFlowOptions) {
   return config.previewRoles?.find(({ match }) => match.endsWith('/**')
     ? path.startsWith(match.slice(0, -3))
     : path === match)?.role

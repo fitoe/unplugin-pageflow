@@ -85,4 +85,4 @@ The sidecar is not used in production builds.
 
 ## uni-app
 
-PageFlow supports current Vite-based uni-app projects and reads their generated routes during development.
+PageFlow supports current Vite-based uni-app projects and reads their generated routes during development. `pages.json` remains the authoritative page set and order; explicit `routes` only override metadata or add custom pages, and runtime reports enrich that stable set instead of replacing it.

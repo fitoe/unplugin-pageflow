@@ -96,7 +96,7 @@ http://localhost:5173/__unplugin-pageflow/
 PageFlow.vite({ launcher: false })
 ```
 
-浮动按钮只注入开发环境，不进入生产构建。端口跟随项目的 Vite 开发服务器。Vue Router 路由会自动发现；uni-app 还会读取 `pages.json` 中的页面标题、顺序和 Tab 配置。
+浮动按钮只注入开发环境，不进入生产构建。端口跟随项目的 Vite 开发服务器。Vue Router 路由会自动发现；uni-app 以 `pages.json` 作为页面集合与顺序的唯一来源，`.pageflow` 中的 `routes` 只用于覆盖路由元数据或补充自定义页面，不会裁剪 `pages.json` 页面。
 
 ## 框架支持
 

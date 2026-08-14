@@ -85,4 +85,4 @@ pageflow-next --dir . --host 127.0.0.1 --port 3000
 
 ## uni-app
 
-PageFlow 支持当前基于 Vite 的 uni-app 项目，并在开发时读取其生成的路由。
+PageFlow 支持当前基于 Vite 的 uni-app 项目，并在开发时读取其生成的路由。`pages.json` 是页面集合和顺序的唯一来源；显式 `routes` 只覆盖元数据或补充自定义页面，运行时上报只增强这份稳定集合，不会替换或裁剪页面。

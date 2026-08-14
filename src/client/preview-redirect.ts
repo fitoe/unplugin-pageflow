@@ -17,3 +17,15 @@ export function detectUnexpectedPreviewRedirect(
   const actualPath = previewLocation(actualUrl, routeMode, origin)
   return expectedPath === actualPath ? undefined : { expectedPath, actualPath }
 }
+
+export function confirmReportedPreviewRedirect(
+  expectedUrl: string,
+  actualUrl: string,
+  reportedPath: string,
+  routeMode: PageFlowRouteMode,
+  origin = window.location.origin,
+) {
+  const redirect = detectUnexpectedPreviewRedirect(expectedUrl, actualUrl, routeMode, origin)
+  const normalizedReportedPath = reportedPath.split(/[?#]/, 1)[0] || '/'
+  return redirect?.actualPath === normalizedReportedPath ? redirect : undefined
+}

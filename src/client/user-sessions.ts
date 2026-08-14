@@ -61,3 +61,14 @@ export function saveUserSessions(sessions: PageFlowUserSessions, storage: Pick<S
     storage.setItem(STORAGE_KEY, JSON.stringify({ ...rest, customUsers: users }))
   } catch {}
 }
+
+export function assignGroupUser(
+  groupUsers: Record<string, string>,
+  groupKey: string,
+  user: string,
+) {
+  return Object.fromEntries([
+    ...Object.entries(groupUsers).filter(([key]) => key !== groupKey && !key.startsWith(`${groupKey}/`)),
+    [groupKey, user],
+  ])
+}
