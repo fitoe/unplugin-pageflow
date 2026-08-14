@@ -1,7 +1,5 @@
 import { defineConfig } from 'vitepress'
-import { resolvePageFlowVersion } from '../../scripts/pageflow-version.mjs'
 
-const chromeExtensionPath = `/chrome/pageflow-v${resolvePageFlowVersion()}.crx`
 const chromeExtensionUpdatedAt = process.env.PAGEFLOW_CHROME_UPDATED_AT
   || new Date().toISOString().slice(0, 10)
 const chromeExtensionUpdatedLabelCss = `
@@ -14,26 +12,7 @@ export default defineConfig({
   description: 'See every application page and navigation path on one infinite canvas.',
   base: process.env.VITEPRESS_BASE || '/unplugin-pageflow/',
   cleanUrls: true,
-  ignoreDeadLinks: [/^\/chrome\/pageflow-v\d+\.\d+\.\d+\.\d+\.crx$/],
-  transformPageData(pageData) {
-    const actions = pageData.frontmatter.hero?.actions
-    if (Array.isArray(actions)) {
-      for (const action of actions) {
-        if (action.link === '/chrome/pageflow.crx') action.link = chromeExtensionPath
-      }
-    }
-  },
-  markdown: {
-    config(md) {
-      const renderLinkOpen = md.renderer.rules.link_open
-      md.renderer.rules.link_open = (tokens, index, options, env, self) => {
-        const hrefIndex = tokens[index].attrIndex('href')
-        if (hrefIndex >= 0 && tokens[index].attrs?.[hrefIndex][1] === '/chrome/pageflow.crx')
-          tokens[index].attrs![hrefIndex][1] = chromeExtensionPath
-        return renderLinkOpen?.(tokens, index, options, env, self) ?? self.renderToken(tokens, index, options)
-      }
-    },
-  },
+  ignoreDeadLinks: [/^\/chrome\/pageflow\.crx$/],
   lastUpdated: true,
   srcExclude: ['smoke-test-plan.md'],
   rewrites(id) {

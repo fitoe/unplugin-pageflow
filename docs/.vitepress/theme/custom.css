@@ -12,13 +12,13 @@
   }
 }
 
-.VPHomeHero .actions .action:has(a[href*="/chrome/pageflow-v"]) {
+.VPHomeHero .actions .action:has(a[href$="/chrome/pageflow.crx"]) {
   display: flex;
   flex-direction: column;
   align-items: center;
 }
 
-.VPHomeHero .actions .action:has(a[href*="/chrome/pageflow-v"])::after {
+.VPHomeHero .actions .action:has(a[href$="/chrome/pageflow.crx"])::after {
   margin-top: 6px;
   color: var(--vp-c-text-3);
   content: var(--pageflow-chrome-updated-label);
