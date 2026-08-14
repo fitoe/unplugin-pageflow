@@ -11,3 +11,18 @@
     max-height: none;
   }
 }
+
+.VPHomeHero .actions .action:has(a[href*="/chrome/pageflow-v"]) {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.VPHomeHero .actions .action:has(a[href*="/chrome/pageflow-v"])::after {
+  margin-top: 6px;
+  color: var(--vp-c-text-3);
+  content: var(--pageflow-chrome-updated-label);
+  font-size: 11px;
+  line-height: 1;
+  white-space: nowrap;
+}

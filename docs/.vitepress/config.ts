@@ -2,6 +2,12 @@ import { defineConfig } from 'vitepress'
 import { resolvePageFlowVersion } from '../../scripts/pageflow-version.mjs'
 
 const chromeExtensionPath = `/chrome/pageflow-v${resolvePageFlowVersion()}.crx`
+const chromeExtensionUpdatedAt = process.env.PAGEFLOW_CHROME_UPDATED_AT
+  || new Date().toISOString().slice(0, 10)
+const chromeExtensionUpdatedLabelCss = `
+  :root { --pageflow-chrome-updated-label: "Updated: ${chromeExtensionUpdatedAt}"; }
+  html[lang="zh-CN"], html[lang="zh-HK"] { --pageflow-chrome-updated-label: "更新日期：${chromeExtensionUpdatedAt}"; }
+`
 
 export default defineConfig({
   title: 'PageFlow',
@@ -37,6 +43,7 @@ export default defineConfig({
   },
   head: [
     ['meta', { name: 'theme-color', content: '#646cff' }],
+    ['style', {}, chromeExtensionUpdatedLabelCss],
   ],
   locales: {
     root: {
