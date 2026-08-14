@@ -3,6 +3,7 @@ export interface PageFlowUserSessions {
   notes: Record<string, string>
   activeUser?: string
   pageUsers: Record<string, string>
+  groupUsers: Record<string, string>
 }
 
 const STORAGE_KEY = 'unplugin-pageflow:user-sessions'
@@ -47,9 +48,10 @@ export function loadUserSessions(storage: Pick<Storage, 'getItem'> = localStorag
       notes: value?.notes && typeof value.notes === 'object' ? value.notes : {},
       activeUser: typeof value?.activeUser === 'string' ? value.activeUser : undefined,
       pageUsers: value?.pageUsers && typeof value.pageUsers === 'object' ? value.pageUsers : {},
+      groupUsers: value?.groupUsers && typeof value.groupUsers === 'object' ? value.groupUsers : {},
     }
   } catch {
-    return { users: [], notes: {}, pageUsers: {} }
+    return { users: [], notes: {}, pageUsers: {}, groupUsers: {} }
   }
 }
 

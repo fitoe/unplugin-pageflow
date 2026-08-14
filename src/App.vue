@@ -88,6 +88,7 @@ import {
   fitFocusedPreviewTransform,
   createPageSpatialIndex,
   createRouteDeckView,
+  expandedRouteGroupPath,
   getRenderablePages,
   getVisiblePageIds,
   layoutPageGrid,
@@ -199,6 +200,8 @@ const activeUser = ref(users.value.includes(initialUserSessions.activeUser ?? ''
 const pageUsers = ref<Record<string, string>>(Object.fromEntries(
   Object.entries(initialUserSessions.pageUsers).filter(([, user]) => users.value.includes(user)),
 ))
+const groupUsers = ref<Record<string, string>>(initialUserSessions.groupUsers)
+const hasUserSystem = computed(() => props.config.previewRoles.length > 0)
 const settledTransform = ref<CanvasTransform>({ x: 0, y: 0, scaleX: 1, scaleY: 1 })
 const livePreviewId = ref<string>()
 const focusedPageId = ref<string>()
@@ -1565,7 +1568,7 @@ function scheduleInitialSceneReveal() {
 
 function previewUrl(path: string) {
   const page = pages.value.find(item => item.path === path)
-  const selectedUser = page ? pageUsers.value[page.id] ?? activeUser.value : activeUser.value
+  const selectedUser = page ? pageUser(page) : activeUser.value
   const user = selectedUser === '默认用户' ? undefined : selectedUser
   const resolvedPath = resolvePreviewUrl(path, props.config, window.location.origin, routeMode.value, navigationLocations.value[path], user)
   const resolved = props.host ? new URL(resolvedPath, props.config.appUrl).href : resolvedPath
@@ -1574,6 +1577,23 @@ function previewUrl(path: string) {
   url.searchParams.set('__unplugin_pageflow_inspect', '1')
   if (props.host) return url.href
   return `${url.pathname}${url.search}${url.hash}`
+}
+
+function pageUser(page: PageFlowPage) {
+  const explicitUser = pageUsers.value[page.id]
+  if (explicitUser) return explicitUser
+  const groupPath = routeDeckPathForPage(pages.value, page.id)
+  for (let depth = groupPath.length; depth > 0; depth--) {
+    const groupKey = groupPath.slice(0, depth).join('/')
+    const configuredGroupUser = groupUsers.value[groupKey]
+    if (configuredGroupUser) return configuredGroupUser
+    const parentPath = groupPath.slice(0, depth - 1)
+    const representative = createRouteDeckView(pages.value, parentPath).decks
+      .find(deck => deck.key === groupKey)?.representative
+    const inheritedUser = representative && pageUsers.value[representative.id]
+    if (inheritedUser) return inheritedUser
+  }
+  return activeUser.value
 }
 
 function refreshSessionUsers() {
@@ -1603,12 +1623,19 @@ function selectActiveUser(user: string) {
 
 function saveCurrentUserSessions(selectedUser = activeUser.value) {
   const configured = new Set(configuredUsers(props.config.previewRoles))
-  saveUserSessions({ users: users.value.filter(user => !configured.has(user)), notes: userNotes.value, activeUser: selectedUser, pageUsers: pageUsers.value })
+  saveUserSessions({ users: users.value.filter(user => !configured.has(user)), notes: userNotes.value, activeUser: selectedUser, pageUsers: pageUsers.value, groupUsers: groupUsers.value })
 }
 
 function selectPageUser(pageId: string, user: string) {
   const deck = routeDeckByPageId.value.get(pageId)
-  const pageIds = deck ? deck.pages.map(page => page.id) : [pageId]
+  if (deck) {
+    groupUsers.value = { ...groupUsers.value, [deck.key]: user }
+    const pageIds = new Set(deck.pages.map(page => page.id))
+    pageUsers.value = Object.fromEntries(Object.entries(pageUsers.value).filter(([id]) => !pageIds.has(id)))
+    saveCurrentUserSessions()
+    return
+  }
+  const pageIds = [pageId]
   pageUsers.value = Object.fromEntries([
     ...Object.entries(pageUsers.value),
     ...pageIds.map(id => [id, user] as const),
@@ -2285,7 +2312,7 @@ function handleCanvasClick(event: MouseEvent) {
       void editGroupName(deck.key, deck.label)
       return
     }
-    enterRouteGroup(deck.key.split('/').filter(Boolean), true, page.id)
+    enterRouteGroup(expandedRouteGroupPath(pages.value, deck.key.split('/').filter(Boolean)), true, page.id)
     return
   }
   const position = positions.value.get(page.id)!
@@ -3252,6 +3279,27 @@ function draw() {
   requestAnimationFrame(() => syncOverlay())
 }
 
+function migrateLegacyGroupUsers(nextPages: PageFlowPage[]) {
+  if (Object.keys(groupUsers.value).length) return
+  const migratedGroups: Record<string, string> = {}
+  const migratedPageUsers = { ...pageUsers.value }
+  const visit = (items: PageFlowPage[], path: string[] = []) => {
+    createRouteDeckView(items, path).decks.forEach((deck) => {
+      const user = migratedPageUsers[deck.representative.id]
+      if (user) {
+        migratedGroups[deck.key] = user
+        deck.pages.forEach(page => delete migratedPageUsers[page.id])
+      }
+      visit(deck.pages, [...path, deck.label])
+    })
+  }
+  visit(nextPages)
+  if (!Object.keys(migratedGroups).length) return
+  groupUsers.value = migratedGroups
+  pageUsers.value = migratedPageUsers
+  saveCurrentUserSessions()
+}
+
 function applyGraph(nextPages: PageFlowPage[], nextRouteMode: PageFlowRouteMode) {
   nextPages = [...nextPages, ...virtualPages.value.filter(virtual => !nextPages.some(page => page.id === virtual.id))]
   const previousPromotedPath = promotedRouteGroupPath(pages.value)
@@ -3286,6 +3334,7 @@ function applyGraph(nextPages: PageFlowPage[], nextRouteMode: PageFlowRouteMode)
   deferredThumbnailRefreshIds.forEach((pageId) => {
     if (!plan.pageIds.has(pageId)) deferredThumbnailRefreshIds.delete(pageId)
   })
+  migrateLegacyGroupUsers(nextPages)
   pages.value = nextPages
   if (followsPromotedRoot) routeGroupPath.value = nextPromotedPath
   active.value = plan.activeId
@@ -3752,7 +3801,7 @@ onUnmounted(() => {
           :aria-label="darkMode ? '切换到浅色模式' : '切换到暗黑模式'"
           @click="toggleColorMode"
         />
-          <div class="user-menu">
+          <div v-if="hasUserSystem" class="user-menu">
             <UDropdownMenu :items="headerUserMenuItems" :content="{ align: 'end', sideOffset: 7 }">
               <button type="button" class="user-menu-trigger" :title="activeUser" :aria-label="`当前用户：${activeUser}`">
                 <UAvatar :alt="activeUser" size="sm" />
@@ -3828,7 +3877,7 @@ onUnmounted(() => {
             }"
           >
             <UDropdownMenu
-              v-if="users.length > 1"
+              v-if="hasUserSystem && users.length > 1"
               :items="pageUserMenuItems(page.id)"
               :content="{ align: 'end', sideOffset: 4 }"
               @update:open="handleUserMenuOpen(page.id, $event)"
@@ -3845,7 +3894,7 @@ onUnmounted(() => {
                   transformOrigin: 'bottom right',
                 }"
               >
-                <span>{{ userNotes[pageUsers[page.id] ?? activeUser ?? ''] || pageUsers[page.id] || activeUser }}</span>
+                <span>{{ userNotes[pageUser(page) ?? ''] || pageUser(page) }}</span>
                 <svg viewBox="0 0 12 12" aria-hidden="true"><path d="m3 4.5 3 3 3-3" /></svg>
               </button>
             </UDropdownMenu>
@@ -3866,7 +3915,7 @@ onUnmounted(() => {
           >
             <iframe
               :ref="element => setPreviewFrame(page.id, element as Element | null)"
-              :key="`${previewMode}:${currentPreviewMode.width}x${currentPreviewMode.height}:${page.id}:${pageUsers[page.id] ?? activeUser}`"
+              :key="`${previewMode}:${currentPreviewMode.width}x${currentPreviewMode.height}:${page.id}:${pageUser(page)}`"
               :src="previewUrl(page.path)"
               :title="`${page.title} preview`"
               :style="{

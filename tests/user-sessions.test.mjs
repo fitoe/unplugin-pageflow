@@ -15,8 +15,8 @@ test('user sessions deduplicate users and persist global and page selections', a
     assert.equal(isPreviewUserStorageKey('other'), false)
     const values = new Map()
     const storage = { getItem: key => values.get(key) ?? null, setItem: (key, value) => values.set(key, value) }
-    saveUserSessions({ users: ['admin', 'buyer'], notes: { admin: '管理员账号' }, activeUser: 'admin', pageUsers: { checkout: 'buyer' } }, storage)
-    assert.deepEqual(loadUserSessions(storage), { users: ['admin', 'buyer'], notes: { admin: '管理员账号' }, activeUser: 'admin', pageUsers: { checkout: 'buyer' } })
+    saveUserSessions({ users: ['admin', 'buyer'], notes: { admin: '管理员账号' }, activeUser: 'admin', pageUsers: { checkout: 'buyer' }, groupUsers: { orders: 'buyer' } }, storage)
+    assert.deepEqual(loadUserSessions(storage), { users: ['admin', 'buyer'], notes: { admin: '管理员账号' }, activeUser: 'admin', pageUsers: { checkout: 'buyer' }, groupUsers: { orders: 'buyer' } })
     values.set('unplugin-pageflow:user-sessions', JSON.stringify({ users: ['legacy-role'], notes: {}, pageUsers: {} }))
     assert.deepEqual(loadUserSessions(storage).users, [])
   } finally {

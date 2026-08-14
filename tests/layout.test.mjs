@@ -5,7 +5,7 @@ import { createServer } from 'vite'
 test('lays out linked pages in layers and limits previews to the viewport', async () => {
   const server = await createServer({ configFile: false, server: { middlewareMode: true }, appType: 'custom', logLevel: 'silent' })
   try {
-    const { assignOrderedFocusSides, centerPageTransform, collapseRepeatedListLinks, createPageSpatialIndex, createRouteDeckView, fitFocusedPreviewTransform, fitPageBoundsTransform, getRenderablePages, getVisiblePageIds, layoutPageGrid, layoutPagesByRoute, promotedRouteGroupPath, queryPageSpatialIndex, responsivePageGridColumns, routeDeckPathForPage } = await server.ssrLoadModule('/src/client/layout.ts')
+    const { assignOrderedFocusSides, centerPageTransform, collapseRepeatedListLinks, createPageSpatialIndex, createRouteDeckView, expandedRouteGroupPath, fitFocusedPreviewTransform, fitPageBoundsTransform, getRenderablePages, getVisiblePageIds, layoutPageGrid, layoutPagesByRoute, promotedRouteGroupPath, queryPageSpatialIndex, responsivePageGridColumns, routeDeckPathForPage } = await server.ssrLoadModule('/src/client/layout.ts')
     const { forwardWheelToCanvas, PAGEFLOW_CANVAS_CONFIG } = await server.ssrLoadModule('/src/client/canvas.ts')
     const { expandDynamicRoutes } = await server.ssrLoadModule('/src/shared/dynamic-routes.ts')
     const { resolvePreviewUrl, touchPreviewCache } = await server.ssrLoadModule('/src/client/preview.ts')
@@ -250,6 +250,12 @@ test('lays out linked pages in layers and limits previews to the viewport', asyn
       ...routeFamilyPages.filter(page => page.id !== 'screening'),
     ]), ['screen'])
     assert.deepEqual(promotedRouteGroupPath(routeFamilyPages), [])
+    const emptyWrapperPages = [
+      { id: 'supplier-index', path: '/product/supplier/index', links: [] },
+      { id: 'supplier-search', path: '/product/supplier/search', links: [] },
+    ]
+    assert.deepEqual(expandedRouteGroupPath(emptyWrapperPages, ['product']), ['product', 'supplier'])
+    assert.deepEqual(expandedRouteGroupPath(routeFamilyPages, ['screen']), ['screen'])
     const singleChildFamily = createRouteDeckView([
       { id: 'account-root', path: '/account', links: [] },
       { id: 'account-profile', path: '/account/profile', links: [] },

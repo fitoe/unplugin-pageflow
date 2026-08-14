@@ -366,6 +366,15 @@ export function promotedRouteGroupPath(items: PageFlowPage[]) {
     : []
 }
 
+export function expandedRouteGroupPath(items: PageFlowPage[], initialPath: string[]) {
+  const path = [...initialPath]
+  while (true) {
+    const view = createRouteDeckView(items, path)
+    if (view.directPages.length || view.decks.length !== 1) return path
+    path.push(view.decks[0].label)
+  }
+}
+
 export function routeDeckPathForPage(items: PageFlowPage[], pageId: string) {
   const path: string[] = []
   while (true) {
