@@ -190,6 +190,59 @@ export function layoutPageGrid(items: PageFlowPage[], cardHeights = new Map<stri
   }))
 }
 
+export function restoreCanvasLayoutPositions(
+  source: Map<string, [number, number]>,
+  stored: Record<string, [number, number]> | undefined,
+  cardHeights = new Map<string, number>(),
+) {
+  if (!stored) return source
+  const isPosition = (value: unknown): value is [number, number] => Array.isArray(value)
+    && value.length === 2
+    && value.every(item => typeof item === 'number' && Number.isFinite(item))
+  const storedPositions = new Map([...source].flatMap(([id]) => isPosition(stored[id])
+    ? [[id, [...stored[id]] as [number, number]] as const]
+    : []))
+  if (!storedPositions.size) return source
+
+  const height = (id: string) => cardHeights.get(id) ?? PAGE_CARD_HEIGHT
+  const occupied: Array<{ id: string, position: [number, number] }> = [...storedPositions]
+    .map(([id, position]) => ({ id, position }))
+  const overlaps = (id: string, position: [number, number], other: typeof occupied[number]) => {
+    const gap = 8
+    return position[0] < other.position[0] + PAGE_CARD_WIDTH + gap
+      && position[0] + PAGE_CARD_WIDTH + gap > other.position[0]
+      && position[1] < other.position[1] + height(other.id) + gap
+      && position[1] + height(id) + gap > other.position[1]
+  }
+  const isFree = (id: string, position: [number, number]) => !occupied.some(other => overlaps(id, position, other))
+  const displaced: Array<[string, [number, number]]> = []
+
+  source.forEach((position, id) => {
+    if (storedPositions.has(id)) return
+    const desired = [...position] as [number, number]
+    if (isFree(id, desired)) {
+      storedPositions.set(id, desired)
+      occupied.push({ id, position: desired })
+    } else {
+      displaced.push([id, desired])
+    }
+  })
+
+  const sourceSlots = [...source.values()]
+  displaced.forEach(([id, desired]) => {
+    const position = sourceSlots
+      .map(slot => [...slot] as [number, number])
+      .sort((left, right) => Math.hypot(left[0] - desired[0], left[1] - desired[1])
+        - Math.hypot(right[0] - desired[0], right[1] - desired[1]))
+      .find(candidate => isFree(id, candidate))
+      ?? [desired[0], Math.max(...occupied.map(item => item.position[1] + height(item.id))) + PAGE_GRID_GAP_Y] as [number, number]
+    storedPositions.set(id, position)
+    occupied.push({ id, position })
+  })
+
+  return new Map([...source].map(([id]) => [id, storedPositions.get(id)!]))
+}
+
 export interface FocusSideItem {
   id: string
   centerX: number

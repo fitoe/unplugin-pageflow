@@ -96,6 +96,7 @@ import {
   getVisiblePageIds,
   layoutPageGrid,
   responsivePageGridColumns,
+  restoreCanvasLayoutPositions,
   promotedRouteGroupPath,
   routeDeckPathForPage,
   PAGE_CARD_META_HEIGHT,
@@ -1362,13 +1363,11 @@ function restoreCanvasLayout(
   path = routeGroupPath.value,
 ) {
   const stored = canvasLayouts.value[canvasLayoutKey(path)]
-  if (!stored) return source
-  const next = new Map(source)
-  layoutPages.forEach((page) => {
-    const position = stored[page.id]
-    if (Array.isArray(position) && position.length === 2 && position.every(Number.isFinite)) next.set(page.id, position)
-  })
-  return next
+  return restoreCanvasLayoutPositions(
+    source,
+    stored,
+    new Map(layoutPages.map(page => [page.id, pageCardHeight(page.id)])),
+  )
 }
 
 async function saveCurrentCanvasLayout(positionOverrides: Record<string, [number, number]> = {}) {

@@ -5,7 +5,7 @@ import { createServer } from 'vite'
 test('lays out linked pages in layers and limits previews to the viewport', async () => {
   const server = await createServer({ configFile: false, server: { middlewareMode: true }, appType: 'custom', logLevel: 'silent' })
   try {
-    const { assignOrderedFocusSides, centerPageTransform, collapseRepeatedListLinks, createPageSpatialIndex, createRouteDeckView, expandedRouteGroupPath, fitFocusedPreviewTransform, fitPageBoundsTransform, getRenderablePages, getVisiblePageIds, layoutPageGrid, layoutPagesByRoute, promotedRouteGroupPath, queryPageSpatialIndex, responsivePageGridColumns, routeDeckPathForPage } = await server.ssrLoadModule('/src/client/layout.ts')
+    const { assignOrderedFocusSides, centerPageTransform, collapseRepeatedListLinks, createPageSpatialIndex, createRouteDeckView, expandedRouteGroupPath, fitFocusedPreviewTransform, fitPageBoundsTransform, getRenderablePages, getVisiblePageIds, layoutPageGrid, layoutPagesByRoute, promotedRouteGroupPath, queryPageSpatialIndex, responsivePageGridColumns, restoreCanvasLayoutPositions, routeDeckPathForPage } = await server.ssrLoadModule('/src/client/layout.ts')
     const { forwardWheelToCanvas, PAGEFLOW_CANVAS_CONFIG } = await server.ssrLoadModule('/src/client/canvas.ts')
     const { expandDynamicRoutes } = await server.ssrLoadModule('/src/shared/dynamic-routes.ts')
     const { previewRole, resolvePreviewUrl, touchPreviewCache } = await server.ssrLoadModule('/src/client/preview.ts')
@@ -165,6 +165,27 @@ test('lays out linked pages in layers and limits previews to the viewport', asyn
     assert.equal(masonryPositions.get('page-3')[0], masonryPositions.get('page-1')[0])
     assert.equal(masonryPositions.get('page-3')[1], 294)
     assert.equal(masonryPositions.get('page-4')[0], masonryPositions.get('page-2')[0])
+
+    const restoredPositions = restoreCanvasLayoutPositions(new Map([
+      ['home', [64, 64]],
+      ['change-password', [392, 64]],
+      ['login', [720, 64]],
+      ['role-select', [1048, 64]],
+      ['news', [64, 650]],
+    ]), {
+      home: [64, 64],
+      login: [720, 64],
+      'role-select': [392, 64],
+      news: [64, 650],
+    }, new Map([
+      ['home', 556],
+      ['change-password', 556],
+      ['login', 556],
+      ['role-select', 556],
+      ['news', 556],
+    ]))
+    assert.deepEqual(restoredPositions.get('role-select'), [392, 64])
+    assert.deepEqual(restoredPositions.get('change-password'), [1048, 64])
 
     const groupedRoutePositions = layoutPagesByRoute([
       { id: 'machinery-root', path: '/machinery/index', links: [] },
