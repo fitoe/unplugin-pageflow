@@ -3,7 +3,7 @@ import ui from '@nuxt/ui/vue-plugin'
 import App from '../App.vue'
 import '../style.css'
 import type { ResolvedPageFlowOptions } from '../shared/types'
-import type { PageFlowHost } from '../../packages/pageflow-core/src/host'
+import type { PageFlowHost } from '@pageflow/core/host'
 
 export function mountPageFlow(target: Element | null, config: ResolvedPageFlowOptions, host?: PageFlowHost) {
   if (!target) throw new Error('unplugin-pageflow mount target was not found')

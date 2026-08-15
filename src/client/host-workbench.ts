@@ -1,5 +1,5 @@
-import type { PageFlowHostState } from '../../packages/pageflow-core/src/host'
-import type { PageFlowApiResult } from '../../packages/pageflow-core/src/types'
+import type { PageFlowHostState } from '@pageflow/core/host'
+import type { PageFlowApiResult } from '@pageflow/core/types'
 import type { PageFlowLink, PageFlowPage } from '../shared/types'
 
 export interface PageFlowHostGraph {

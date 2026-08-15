@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed } from 'vue'
-import PageFlowJsonTree from '../../packages/pageflow-ui/src/PageFlowJsonTree.vue'
+import PageFlowJsonTree from '@pageflow/ui/json-tree'
 import type { ApiFieldTreeNode } from '../client/api-field-tree'
 import { apiFieldTreeData } from '../client/api-field-tree'
 

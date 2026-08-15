@@ -2,12 +2,13 @@ import type { PageFlowDiagnostic, PageFlowDiagnosticOptions, ResolvedPageFlowDia
 import { resolvePageFlowDiagnosticOptions } from '../shared/options'
 import type axeCore from 'axe-core'
 import { pageFlowInspectorRevision, runPageFlowInspectors } from './inspectors.ts'
-import { highlightPageFlowElement, pageFlowAccessibleName, pageFlowElementSelector } from '../../packages/pageflow-runtime/src'
+import { highlightPageFlowElement, pageFlowAccessibleName, pageFlowElementSelector } from '@pageflow/runtime'
 
 const INTERACTIVE_SELECTOR = 'a[href], button, input, select, textarea, [role="button"], [role="link"], [tabindex]:not([tabindex="-1"]), uni-button, uni-navigator'
 const INTERNAL_DIAGNOSTIC_IGNORE_SELECTORS = ['#__vue-devtools-container__', '[data-v-inspector-ignore="true"]']
 const IGNORED_SELECTOR = `[hidden], [aria-hidden="true"], [inert], [data-unplugin-pageflow-hotspot-layer], [data-unplugin-pageflow-diagnostic-highlight], [data-unplugin-pageflow-launcher], ${INTERNAL_DIAGNOSTIC_IGNORE_SELECTORS.join(', ')}`
 const TEXT_SELECTOR = 'p, span, label, li, td, th, small, code, [role="text"], h1, h2, h3, h4, h5, h6, a, button'
+const AXE_ENABLED = typeof __PAGEFLOW_AXE_ENABLED__ === 'undefined' || __PAGEFLOW_AXE_ENABLED__
 
 interface RgbColor { red: number, green: number, blue: number, alpha: number }
 
@@ -361,6 +362,10 @@ function axeSeverity(ruleId: string, impact: axeCore.ImpactValue | null | undefi
 
 async function runPageDiagnostics(options: ResolvedPageFlowDiagnosticOptions) {
   const custom = scanCustomPageDiagnostics(options)
+  if (!AXE_ENABLED) {
+    const inspectors = await runPageFlowInspectors({ document, location: window.location })
+    return deduplicateNestedDiagnostics([...custom, ...inspectors])
+  }
   let builtIn: PageFlowDiagnostic[]
   try {
     const [{ default: axe }, { default: locale }] = await Promise.all([

@@ -9,17 +9,44 @@ jobs:
   check:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - uses: pnpm/action-setup@v4
         with:
           version: 10
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v6
         with:
-          node-version: 22
+          node-version: 24
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: pnpm exec playwright install --with-deps chromium
-      - name: Run cross-platform smoke suite
-        run: pnpm test:smoke
-      - name: Verify distributable outputs
-        run: pnpm build:demo && pnpm check:package && pnpm build:playground && pnpm check:production && pnpm pack:check
+      - name: Run release gate
+        run: pnpm check:full
+
+  release:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/master'
+    needs: check
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      issues: write
+      pull-requests: write
+      id-token: write
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          registry-url: https://registry.npmjs.org
+          package-manager-cache: false
+      - run: pnpm install --frozen-lockfile
+      - name: Install release tooling
+        run: npm install --prefix "$RUNNER_TEMP/semantic-release" --no-package-lock --no-save semantic-release@25.0.8 @semantic-release/npm@13.1.5
+      - name: Release
+        run: "$RUNNER_TEMP/semantic-release/node_modules/.bin/semantic-release"
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

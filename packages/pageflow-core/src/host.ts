@@ -1,4 +1,4 @@
-import type { PageFlowApiField, PageFlowApiRequest, PageFlowBrowserRuntimeEvent } from './types'
+import type { PageFlowApiField, PageFlowApiRequest, PageFlowBrowserRuntimeEvent } from './types.ts'
 
 export interface PageFlowHostProjectConfig {
   loaded: boolean

@@ -28,8 +28,8 @@ import type {
 } from './shared/types'
 import { cancelPageFlowTest, fetchPageFlowEditor, fetchPageFlowGraph, fetchPageFlowTests, openPageFlowEditor, publishPageFlowAIContext, refreshPageFlowConfig, reportPageTitle, runPageFlowLighthouse, runPageFlowTest, startRouteDiscovery, subscribeToPageFlowUpdates, type PageFlowEditorInfo } from './client/graph'
 import { planGraphUpdate } from './client/graph-update'
-import { previewRole, resolvePreviewUrl, touchPreviewCache } from './client/preview'
-import { PAGEFLOW_SCAN_MESSAGE } from './shared/protocol'
+import { resolvePreviewUrl, touchPreviewCache } from './client/preview'
+import { deletePageFlowInternalParams, hasPageFlowPreview, PAGEFLOW_INSPECT_PARAM, PAGEFLOW_SCAN_MESSAGE } from './shared/protocol'
 import { forwardWheelToCanvas, PAGEFLOW_CANVAS_CONFIG, type PageFlowWheelInteraction } from './client/canvas'
 import { CaptureQueue } from './client/capture-queue'
 import { planNextCapture } from './client/capture-planner'
@@ -51,17 +51,18 @@ import { buildApiFieldTree } from './client/api-field-tree'
 
 const pageFlowVersion = __PAGEFLOW_VERSION__
 import { createApiIssues, mergeApiResult, type PageFlowApiIssue } from './client/api-diagnostics'
-import { assignGroupUser, cachedPreviewUsers, configuredUsers, isPreviewUserStorageKey, loadUserSessions, saveUserSessions, visibleSessionUsers } from './client/user-sessions'
+import { isPreviewUserStorageKey } from './client/user-sessions'
+import { usePageUsers } from './client/page-users'
 import LayoutWorker from './client/layout.worker?worker&inline'
 import { focusTargetSetKey, planPageUpdate } from './client/page-update'
 import { pageUpdateEffectTarget } from './client/page-update-effect'
 import { centerDiagnosticTransform, navigationDiagnosticBounds, planDiagnosticEvidence } from './client/diagnostic-evidence'
 import { runWithConcurrency } from './client/test-concurrency'
 import { isLocalBusinessApiResponse } from './runtime/api-filter'
-import { addPageFlowTodo, parsePageFlowTodos, removePageFlowTodo, togglePageFlowTodo, type PageFlowTodo } from '../packages/pageflow-core/src/todos'
-import { PAGEFLOW_TODOS_STORAGE_KEY } from '../packages/pageflow-core/src/storage'
-import { loadPageFlowTodos, savePageFlowCanvas, savePageFlowTodos } from '../packages/pageflow-core/src/host-storage'
-import type { PageFlowHost, PageFlowHostCapture, PageFlowHostState } from '../packages/pageflow-core/src/host'
+import { addPageFlowTodo, parsePageFlowTodos, removePageFlowTodo, togglePageFlowTodo, type PageFlowTodo } from '@pageflow/core/todos'
+import { PAGEFLOW_TODOS_STORAGE_KEY } from '@pageflow/core/storage'
+import { loadPageFlowTodos, savePageFlowCanvas, savePageFlowTodos } from '@pageflow/core/host-storage'
+import type { PageFlowHost, PageFlowHostCapture, PageFlowHostState } from '@pageflow/core/host'
 import { initialPreviewMode } from './client/preview-mode'
 import { UnpluginPageFlowHost } from './client/unplugin-host'
 import { hostHotspotRects, hostStateToGraph } from './client/host-workbench'
@@ -132,7 +133,6 @@ const viewportTabs: Array<Record<string, unknown>> = [
 const PREVIEW_MODE_STORAGE_KEY = 'unplugin-pageflow:preview-mode'
 const PANEL_COLLAPSED_STORAGE_KEY = 'unplugin-pageflow:panel-collapsed'
 const VIRTUAL_PAGES_STORAGE_KEY = 'unplugin-pageflow:virtual-pages'
-const initialUserSessions = loadUserSessions()
 
 function storedVirtualPages(): PageFlowPage[] {
   try {
@@ -194,13 +194,20 @@ const previewMode = ref<PageFlowPreviewMode>(storedPreviewMode())
 const thumbnailTier = ref<PageFlowThumbnailTier>(thumbnailTierForZoom(zoomPercent.value))
 const thumbnailResources = ref<Record<string, string>>({})
 const navigationLocations = ref<Record<string, string>>({})
-const users = ref(visibleSessionUsers(initialUserSessions.users, props.config.previewRoles, cachedPreviewUsers()))
-const userNotes = ref<Record<string, string>>(initialUserSessions.notes)
-const activeUser = ref(users.value.includes(initialUserSessions.activeUser ?? '') ? initialUserSessions.activeUser : users.value[0])
-const pageUsers = ref<Record<string, string>>(Object.fromEntries(
-  Object.entries(initialUserSessions.pageUsers).filter(([, user]) => users.value.includes(user)),
-))
-const groupUsers = ref<Record<string, string>>(initialUserSessions.groupUsers)
+const {
+  activeUser,
+  groupUsers,
+  pageUsers,
+  users,
+  userNotes,
+  migrateLegacyGroups,
+  pageUser,
+  refresh: refreshSessionUsers,
+  save: saveCurrentUserSessions,
+  selectActiveUser,
+  selectPageUser,
+  setUserNote,
+} = usePageUsers(pages, props.config, pageId => createRouteDeckView(pages.value, routeGroupPath.value).decks.find(deck => deck.representative.id === pageId))
 const hasUserSystem = computed(() => props.config.previewRoles.length > 0)
 const settledTransform = ref<CanvasTransform>({ x: 0, y: 0, scaleX: 1, scaleY: 1 })
 const livePreviewId = ref<string>()
@@ -656,7 +663,7 @@ async function runFocusedLighthouse() {
     let session: PageFlowLighthouseSession | undefined
     if (frame?.contentWindow) {
       const location = new URL(frame.contentWindow.location.href)
-      location.searchParams.delete('__unplugin-pageflow_preview')
+      deletePageFlowInternalParams(location.searchParams)
       path = `${location.pathname}${location.search}${location.hash}`
       const readStorage = (browserStorage: Storage) => Object.fromEntries(Array.from({ length: browserStorage.length }, (_, index) => {
         const key = browserStorage.key(index)
@@ -1574,35 +1581,9 @@ function previewUrl(path: string) {
   const resolved = props.host ? new URL(resolvedPath, props.config.appUrl).href : resolvedPath
   if (!page || page.id !== focusedPageId.value) return resolved
   const url = new URL(resolved, window.location.origin)
-  url.searchParams.set('__unplugin_pageflow_inspect', '1')
+  url.searchParams.set(PAGEFLOW_INSPECT_PARAM, '1')
   if (props.host) return url.href
   return `${url.pathname}${url.search}${url.hash}`
-}
-
-function pageUser(page: PageFlowPage) {
-  const explicitUser = pageUsers.value[page.id]
-  if (explicitUser) return explicitUser
-  const groupPath = routeDeckPathForPage(pages.value, page.id)
-  for (let depth = groupPath.length; depth > 0; depth--) {
-    const groupKey = groupPath.slice(0, depth).join('/')
-    const configuredGroupUser = groupUsers.value[groupKey]
-    if (configuredGroupUser) return configuredGroupUser
-    const parentPath = groupPath.slice(0, depth - 1)
-    const representative = createRouteDeckView(pages.value, parentPath).decks
-      .find(deck => deck.key === groupKey)?.representative
-    const inheritedUser = representative && pageUsers.value[representative.id]
-    if (inheritedUser) return inheritedUser
-  }
-  const configuredUser = previewRole(page.path, props.config)
-  if (configuredUser) return configuredUser
-  return activeUser.value
-}
-
-function refreshSessionUsers() {
-  const next = visibleSessionUsers(initialUserSessions.users, props.config.previewRoles, cachedPreviewUsers())
-  if (JSON.stringify(next) === JSON.stringify(users.value)) return
-  users.value = next
-  if (!users.value.includes(activeUser.value ?? '')) activeUser.value = users.value[0]
 }
 
 function handlePageFlowStorage(event: StorageEvent) {
@@ -1618,33 +1599,6 @@ function handleVisibilityChange() {
   else cancelScheduledCapture()
 }
 
-function selectActiveUser(user: string) {
-  activeUser.value = user
-  saveCurrentUserSessions(user)
-}
-
-function saveCurrentUserSessions(selectedUser = activeUser.value) {
-  const configured = new Set(configuredUsers(props.config.previewRoles))
-  saveUserSessions({ users: users.value.filter(user => !configured.has(user)), notes: userNotes.value, activeUser: selectedUser, pageUsers: pageUsers.value, groupUsers: groupUsers.value })
-}
-
-function selectPageUser(pageId: string, user: string) {
-  const deck = routeDeckByPageId.value.get(pageId)
-  if (deck) {
-    groupUsers.value = assignGroupUser(groupUsers.value, deck.key, user)
-    const pageIds = new Set(deck.pages.map(page => page.id))
-    pageUsers.value = Object.fromEntries(Object.entries(pageUsers.value).filter(([id]) => !pageIds.has(id)))
-    saveCurrentUserSessions()
-    return
-  }
-  const pageIds = [pageId]
-  pageUsers.value = Object.fromEntries([
-    ...Object.entries(pageUsers.value),
-    ...pageIds.map(id => [id, user] as const),
-  ])
-  saveCurrentUserSessions()
-}
-
 function activatePreviewNavigation(to: string, location = to, animate = true) {
   const locationPath = location.split(/[?#]/, 1)[0]
   const target = pages.value.find(page => page.id === to || page.path === to || page.path === locationPath)
@@ -1654,11 +1608,6 @@ function activatePreviewNavigation(to: string, location = to, animate = true) {
   failedPreviewIds.delete(target.id)
   activatePreview(target.id, animate, true)
   return true
-}
-
-function setUserNote(user: string, note: string) {
-  userNotes.value = { ...userNotes.value, [user]: note.trim() }
-  saveCurrentUserSessions()
 }
 
 function editUserNote(user: string) {
@@ -2762,7 +2711,7 @@ async function capturePreview(pageId: string, frame: HTMLIFrameElement, ready = 
   if (!page || thumbnailIsCurrent(page) || capturePreviewId.value !== pageId || capturesInProgress.has(pageId)) return
   try {
     const frameLocation = frame.contentWindow?.location
-    if (!frameLocation || frameLocation.href === 'about:blank' || !frameLocation.search.includes('__unplugin-pageflow_preview=1')) return
+    if (!frameLocation || frameLocation.href === 'about:blank' || !hasPageFlowPreview(new URLSearchParams(frameLocation.search))) return
   } catch {
     return
   }
@@ -3290,27 +3239,6 @@ function draw() {
   requestAnimationFrame(() => syncOverlay())
 }
 
-function migrateLegacyGroupUsers(nextPages: PageFlowPage[]) {
-  if (Object.keys(groupUsers.value).length) return
-  const migratedGroups: Record<string, string> = {}
-  const migratedPageUsers = { ...pageUsers.value }
-  const visit = (items: PageFlowPage[], path: string[] = []) => {
-    createRouteDeckView(items, path).decks.forEach((deck) => {
-      const user = migratedPageUsers[deck.representative.id]
-      if (user) {
-        migratedGroups[deck.key] = user
-        deck.pages.forEach(page => delete migratedPageUsers[page.id])
-      }
-      visit(deck.pages, [...path, deck.label])
-    })
-  }
-  visit(nextPages)
-  if (!Object.keys(migratedGroups).length) return
-  groupUsers.value = migratedGroups
-  pageUsers.value = migratedPageUsers
-  saveCurrentUserSessions()
-}
-
 function applyGraph(nextPages: PageFlowPage[], nextRouteMode: PageFlowRouteMode) {
   nextPages = [...nextPages, ...virtualPages.value.filter(virtual => !nextPages.some(page => page.id === virtual.id))]
   const previousPromotedPath = promotedRouteGroupPath(pages.value)
@@ -3345,7 +3273,7 @@ function applyGraph(nextPages: PageFlowPage[], nextRouteMode: PageFlowRouteMode)
   deferredThumbnailRefreshIds.forEach((pageId) => {
     if (!plan.pageIds.has(pageId)) deferredThumbnailRefreshIds.delete(pageId)
   })
-  migrateLegacyGroupUsers(nextPages)
+  migrateLegacyGroups(nextPages)
   pages.value = nextPages
   if (followsPromotedRoot) routeGroupPath.value = nextPromotedPath
   active.value = plan.activeId
@@ -3909,6 +3837,29 @@ onUnmounted(() => {
                 <svg viewBox="0 0 12 12" aria-hidden="true"><path d="m3 4.5 3 3 3-3" /></svg>
               </button>
             </UDropdownMenu>
+          </div>
+          <div
+            v-if="focusedEditorPage && focusScene"
+            class="focused-page-meta-actions"
+            :style="{
+              left: `${focusScene.sourcePosition[0]}px`,
+              top: `${focusScene.sourcePosition[1] + pagePreviewHeight(focusedEditorPage.id)}px`,
+              transform: focusedEditorPage.id === active ? `scale(${SELECTED_PAGE_SCALE})` : undefined,
+              transformOrigin: 'top center',
+            }"
+          >
+            <button
+              type="button"
+              class="focused-page-open-action"
+              :aria-label="`打开 ${pageDisplayName(focusedEditorPage)} 页面`"
+              @click="openPage(focusedEditorPage.path)"
+            ></button>
+            <button
+              type="button"
+              class="focused-page-copy-action"
+              :aria-label="`复制 ${pageDisplayName(focusedEditorPage)} 页面路径`"
+              @click="copyPagePath(focusedEditorPage.path)"
+            ></button>
           </div>
           <div
             v-for="page in previewPages"

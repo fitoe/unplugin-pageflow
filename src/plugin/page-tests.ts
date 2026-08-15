@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto'
 import { readFile, readdir } from 'node:fs/promises'
 import { dirname, extname, relative, resolve } from 'node:path'
-import type { PageFlowPageTest, PageFlowRuntimeRoute, PageFlowTestSource } from '../shared/types'
+import type { PageFlowPageTest, PageFlowRuntimeRoute, PageFlowTestSource } from '../shared/types.ts'
 
 const TEST_FILE = /(?:^|[.\-_])(?:test|spec)\.(?:[cm]?[jt]sx?|vue|svelte)$/i
 const EXCLUDED_DIRECTORIES = new Set(['node_modules', 'dist', '.git', '.next', '.nuxt', '.svelte-kit', '.output', 'coverage', '.unplugin-pageflow'])

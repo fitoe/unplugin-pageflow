@@ -16,7 +16,7 @@ async function loadState(window) {
 const wait = ms => new Promise(resolve => setTimeout(resolve, ms))
 
 test('explicit page state restores and stays isolated by query and role', async () => {
-  const window = new Window({ url: 'http://localhost/form?id=7&__unplugin-pageflow_preview=1&__unplugin_pageflow_role=farmer' })
+  const window = new Window({ url: 'http://localhost/form?id=7&__unplugin-pageflow_preview=1&__unplugin-pageflow_role=farmer' })
   const { module, close } = await loadState(window)
   let value = { tab: 'first' }
   const stop = module.definePageFlowState('filters', {
@@ -36,14 +36,14 @@ test('explicit page state restores and stays isolated by query and role', async 
   assert.deepEqual(value, { tab: 'second' })
   stopRestored()
 
-  window.history.replaceState({}, '', '/form?id=8&__unplugin-pageflow_preview=1&__unplugin_pageflow_role=farmer')
+  window.history.replaceState({}, '', '/form?id=8&__unplugin-pageflow_preview=1&__unplugin-pageflow_role=farmer')
   value = { tab: 'query-isolated' }
   const stopQuery = module.definePageFlowState('filters', { get: () => value, restore: state => { value = state } })
   await wait(20)
   assert.deepEqual(value, { tab: 'query-isolated' })
   stopQuery()
 
-  window.history.replaceState({}, '', '/form?id=7&__unplugin-pageflow_preview=1&__unplugin_pageflow_role=operator')
+  window.history.replaceState({}, '', '/form?id=7&__unplugin-pageflow_preview=1&__unplugin-pageflow_role=operator')
   value = { tab: 'role-isolated' }
   const stopRole = module.definePageFlowState('filters', { get: () => value, restore: state => { value = state } })
   await wait(20)
@@ -98,5 +98,22 @@ test('state persistence is inert outside PageFlow preview', async () => {
   await wait(450)
   stop()
   assert.equal(window.localStorage.length, 0)
+  await close()
+})
+
+test('legacy preview and role parameters remain compatible', async () => {
+  const window = new Window({ url: 'http://localhost/legacy?__unplugin_pageflow_preview=1&__unplugin_pageflow_role=farmer' })
+  const { module, close } = await loadState(window)
+  let value = 'first'
+  const stop = module.definePageFlowState('legacy', { get: () => value, restore: state => { value = state } })
+  value = 'saved'
+  await wait(450)
+  stop()
+
+  value = 'empty'
+  const stopRestored = module.definePageFlowState('legacy', { get: () => value, restore: state => { value = state } })
+  await wait(20)
+  assert.equal(value, 'saved')
+  stopRestored()
   await close()
 })

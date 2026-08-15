@@ -1,7 +1,7 @@
 import { defineConfig } from 'vite'
 import vue from '@vitejs/plugin-vue'
 import ui from '@nuxt/ui/vite'
-import unpluginPageFlow from './src/plugin'
+import unpluginPageFlow from './src/plugin/index.ts'
 import { resolvePageFlowVersion } from './scripts/pageflow-version.mjs'
 
 export default defineConfig({

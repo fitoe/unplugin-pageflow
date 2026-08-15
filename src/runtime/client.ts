@@ -2,9 +2,8 @@ import type {
   PageFlowRuntimeLink,
   ResolvedPageFlowOptions,
 } from '../shared/types'
-import { PAGEFLOW_PREVIEW_PARAM } from './index'
-import { startPageFlowDomStatePersistence } from './state'
-import { PAGEFLOW_API_RESULT_MESSAGE, PAGEFLOW_DIAGNOSTIC_HIGHLIGHT_MESSAGE, PAGEFLOW_DIAGNOSTICS_RESULT_MESSAGE, PAGEFLOW_DIAGNOSTICS_SCAN_MESSAGE, PAGEFLOW_ESCAPE_MESSAGE, PAGEFLOW_HOTSPOT_HOVER_MESSAGE, PAGEFLOW_NAVIGATE_MESSAGE, PAGEFLOW_NETWORK_EVENT, PAGEFLOW_PAGE_REPORTED_MESSAGE, PAGEFLOW_READY_EVENT, PAGEFLOW_SCAN_MESSAGE, PAGEFLOW_SCAN_RESULT_MESSAGE, PAGEFLOW_WEBGL_CANVAS_ATTRIBUTE } from '../shared/protocol'
+import { startPageFlowDomStatePersistence } from './state.ts'
+import { hasPageFlowInspection, hasPageFlowPreview, PAGEFLOW_API_RESULT_MESSAGE, PAGEFLOW_DIAGNOSTIC_HIGHLIGHT_MESSAGE, PAGEFLOW_DIAGNOSTICS_RESULT_MESSAGE, PAGEFLOW_DIAGNOSTICS_SCAN_MESSAGE, PAGEFLOW_ESCAPE_MESSAGE, PAGEFLOW_HOTSPOT_HOVER_MESSAGE, PAGEFLOW_NAVIGATE_MESSAGE, PAGEFLOW_NETWORK_EVENT, PAGEFLOW_PAGE_REPORTED_MESSAGE, PAGEFLOW_READY_EVENT, PAGEFLOW_SCAN_MESSAGE, PAGEFLOW_SCAN_RESULT_MESSAGE, PAGEFLOW_WEBGL_CANVAS_ATTRIBUTE } from '../shared/protocol.ts'
 import { highlightDiagnosticElement, scanPageDiagnostics } from './diagnostics'
 import type { PageFlowRouterAdapter } from './adapters/types'
 import { findVueRouterAdapter } from './adapters/vue-router'
@@ -12,9 +11,11 @@ import { findBrowserHistoryAdapter } from './adapters/browser-history'
 import { mountPageFlowLauncher } from './launcher'
 import { isLocalBusinessApiResponse } from './api-filter'
 import { collectApiFields } from './api-fields'
-import { instrumentPageFlowNetwork, observePageFlowScroll, pageFlowHotspotCenter, pageFlowInternalLinks, pageFlowLinkLabel } from '../../packages/pageflow-runtime/src'
+import { instrumentPageFlowNetwork, observePageFlowScroll, pageFlowHotspotCenter, pageFlowInternalLinks, pageFlowLinkLabel } from '@pageflow/runtime'
 
-const apiInspectionEnabled = new URLSearchParams(window.location.search).has('__unplugin_pageflow_inspect')
+const pageFlowSearchParams = () => new URLSearchParams(window.location.search)
+const apiInspectionEnabled = hasPageFlowInspection(pageFlowSearchParams())
+const isPageFlowPreview = () => hasPageFlowPreview(pageFlowSearchParams())
 let renderedValuesCache = { expiresAt: 0, value: '' }
 function renderedPageValues() {
   const now = performance.now()
@@ -68,7 +69,7 @@ interface PageFlowWindow extends Window {
 }
 
 function forwardPreviewEscape() {
-  if (!new URLSearchParams(window.location.search).has(PAGEFLOW_PREVIEW_PARAM) || window.parent === window) return
+  if (!isPageFlowPreview() || window.parent === window) return
   const trackedWindow = window as PageFlowWindow
   if (trackedWindow.__UNPLUGIN_PAGEFLOW_ESCAPE_BOUND__) return
   trackedWindow.__UNPLUGIN_PAGEFLOW_ESCAPE_BOUND__ = true
@@ -82,7 +83,7 @@ function forwardPreviewEscape() {
 }
 
 function markPreviewWebGLCanvases() {
-  if (!new URLSearchParams(window.location.search).has(PAGEFLOW_PREVIEW_PARAM)) return
+  if (!isPageFlowPreview()) return
   const trackedWindow = window as PageFlowWindow
   if (trackedWindow.__UNPLUGIN_PAGEFLOW_WEBGL_CAPTURE_BOUND__) return
   trackedWindow.__UNPLUGIN_PAGEFLOW_WEBGL_CAPTURE_BOUND__ = true
@@ -97,7 +98,7 @@ function markPreviewWebGLCanvases() {
 }
 
 function trackPreviewRequests() {
-  if (!new URLSearchParams(window.location.search).has(PAGEFLOW_PREVIEW_PARAM)) return
+  if (!isPageFlowPreview()) return
   const trackedWindow = window as PageFlowWindow
   if (trackedWindow.__UNPLUGIN_PAGEFLOW_PENDING_REQUESTS__) return
 
@@ -167,7 +168,7 @@ interface UniNavigationApi {
 }
 
 function repairPreviewAssetUrls(config: ResolvedPageFlowOptions) {
-  if (!new URLSearchParams(window.location.search).has(PAGEFLOW_PREVIEW_PARAM)) return
+  if (!isPageFlowPreview()) return
   const appUrl = config.appUrl.endsWith('/') ? config.appUrl : `${config.appUrl}/`
   const base = new URL(appUrl, window.location.origin)
   const resolveRelative = (value: string) => /^\.\.?(?:\/|$)/.test(value) ? new URL(value, base).href : value
@@ -515,7 +516,7 @@ function collectLinks(router: PageFlowRouterAdapter, visibleOnly = false) {
 }
 
 async function publishPage(router: PageFlowRouterAdapter, config: ResolvedPageFlowOptions) {
-  if (!new URLSearchParams(window.location.search).has(PAGEFLOW_PREVIEW_PARAM)) return
+  if (!isPageFlowPreview()) return
   await new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve())))
   const path = router.currentPath()
   const page = { path, title: document.title, links: collectLinks(router) }
@@ -582,7 +583,7 @@ function protectNestedFrameLinks(router: PageFlowRouterAdapter) {
 }
 
 function protectPreviewInteractions(router: PageFlowRouterAdapter, config: ResolvedPageFlowOptions) {
-  if (!new URLSearchParams(window.location.search).has(PAGEFLOW_PREVIEW_PARAM)) return
+  if (!isPageFlowPreview()) return
   protectNestedFrameLinks(router)
   document.addEventListener('click', event => {
     lastClickedElement = event.target as Element | null
@@ -648,7 +649,7 @@ function protectPreviewInteractions(router: PageFlowRouterAdapter, config: Resol
 }
 
 function observePage(router: PageFlowRouterAdapter, config: ResolvedPageFlowOptions) {
-  if (!new URLSearchParams(window.location.search).has(PAGEFLOW_PREVIEW_PARAM)) return
+  if (!isPageFlowPreview()) return
   // Preview URLs can also be opened as normal top-level tabs. There is no
   // PageFlow parent to consume scan results there, so observing large animated
   // pages (for example Cesium) only creates repeated full-DOM scans.
@@ -696,7 +697,7 @@ export async function startPageFlowRuntime(config: ResolvedPageFlowOptions) {
 
   if (!router) return
   startPageFlowDomStatePersistence()
-  const previewMode = new URLSearchParams(window.location.search).has(PAGEFLOW_PREVIEW_PARAM)
+  const previewMode = isPageFlowPreview()
   protectPreviewInteractions(router, config)
   if (!previewMode) await publishRoutes(router, config)
   await publishPage(router, config)

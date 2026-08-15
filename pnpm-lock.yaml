@@ -63,6 +63,15 @@ importers:
       '@napi-rs/canvas':
         specifier: ^1.0.3
         version: 1.0.3
+      '@pageflow/core':
+        specifier: workspace:*
+        version: link:packages/pageflow-core
+      '@pageflow/runtime':
+        specifier: workspace:*
+        version: link:packages/pageflow-runtime
+      '@pageflow/ui':
+        specifier: workspace:*
+        version: link:packages/pageflow-ui
       '@playwright/test':
         specifier: ^1.62.1
         version: 1.62.1

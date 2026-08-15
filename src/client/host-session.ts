@@ -1,6 +1,6 @@
-import type { PageFlowHost, PageFlowHostState } from '../../packages/pageflow-core/src/host'
-import { loadPageFlowCanvas } from '../../packages/pageflow-core/src/host-storage'
-import type { PageFlowApiField, PageFlowApiRequest, PageFlowBrowserRuntimeEvent } from '../../packages/pageflow-core/src/types'
+import type { PageFlowHost, PageFlowHostState } from '@pageflow/core/host'
+import { loadPageFlowCanvas } from '@pageflow/core/host-storage'
+import type { PageFlowApiField, PageFlowApiRequest, PageFlowBrowserRuntimeEvent } from '@pageflow/core/types'
 
 export interface PageFlowHostSessionCallbacks {
   onState(state: PageFlowHostState): void

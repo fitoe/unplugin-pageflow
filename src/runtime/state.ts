@@ -1,7 +1,6 @@
+import { deletePageFlowInternalParams, hasPageFlowPreview, pageFlowPreviewRole } from '../shared/protocol.ts'
+
 const STATE_PREFIX = 'unplugin-pageflow:page-state:'
-const PAGEFLOW_PREVIEW_PARAM = '__unplugin-pageflow_preview'
-const ROLE_PARAM = '__unplugin_pageflow_role'
-const INTERNAL_PARAMS = [PAGEFLOW_PREVIEW_PARAM, ROLE_PARAM, '__unplugin_pageflow_inspect']
 
 export interface PageFlowStateAdapter<T> {
   get(): T
@@ -11,9 +10,9 @@ export interface PageFlowStateAdapter<T> {
 function previewContext() {
   if (typeof window === 'undefined') return
   const url = new URL(window.location.href)
-  if (!url.searchParams.has(PAGEFLOW_PREVIEW_PARAM)) return
-  const role = url.searchParams.get(ROLE_PARAM) ?? ''
-  INTERNAL_PARAMS.forEach(param => url.searchParams.delete(param))
+  if (!hasPageFlowPreview(url.searchParams)) return
+  const role = pageFlowPreviewRole(url.searchParams)
+  deletePageFlowInternalParams(url.searchParams)
   return { role, location: `${url.pathname}${url.search}${url.hash}` }
 }
 

@@ -3,7 +3,7 @@ import type {
   PageFlowDiagnosticOptions,
   ResolvedPageFlowApiDiagnosticOptions,
   ResolvedPageFlowDiagnosticOptions,
-} from './types'
+} from './types.ts'
 
 export function resolvePageFlowDiagnosticOptions(
   options: PageFlowDiagnosticOptions = {},

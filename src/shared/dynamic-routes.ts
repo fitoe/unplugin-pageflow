@@ -1,4 +1,4 @@
-import type { PageFlowDynamicParamValues, PageFlowRuntimeRoute } from './types'
+import type { PageFlowDynamicParamValues, PageFlowRuntimeRoute } from './types.ts'
 
 export function resolveDynamicRoutePath(path: string, params: PageFlowDynamicParamValues) {
   return path.replace(/:([A-Za-z0-9_]+)(\([^)]*\))?[?+*]?/g, (_token, name: string) =>

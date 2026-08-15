@@ -1,11 +1,11 @@
 import type { ResolvedPageFlowOptions } from '../shared/types'
-import { PAGEFLOW_PREVIEW_PARAM } from './index'
+import { hasPageFlowPreview } from '../shared/protocol.ts'
 
 export const PAGEFLOW_LAUNCHER_SELECTOR = '[data-unplugin-pageflow-launcher]'
 
 export function mountPageFlowLauncher(config: Pick<ResolvedPageFlowOptions, 'launcher' | 'previewPath'>) {
   if (!config.launcher || window.parent !== window) return
-  if (new URLSearchParams(window.location.search).has(PAGEFLOW_PREVIEW_PARAM)) return
+  if (hasPageFlowPreview(new URLSearchParams(window.location.search))) return
   if (window.location.pathname.startsWith(config.previewPath)) return
   if (document.querySelector(PAGEFLOW_LAUNCHER_SELECTOR)) return
 

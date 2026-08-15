@@ -1,5 +1,5 @@
-import type { PageFlowHost } from '../../packages/pageflow-core/src/host'
-import { savePageFlowCanvas } from '../../packages/pageflow-core/src/host-storage'
+import type { PageFlowHost } from '@pageflow/core/host'
+import { savePageFlowCanvas } from '@pageflow/core/host-storage'
 import type { PageFlowPage } from '../shared/types'
 import { canvasToBlob } from './thumbnails'
 import type { StoredHostThumbnail } from './host-thumbnails'

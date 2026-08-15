@@ -1,7 +1,7 @@
 {
   "name": "@pageflow/ui",
   "private": true,
-  "version": "0.1.0",
+  "version": "0.7.2",
   "type": "module",
   "exports": {
     "./json-tree": "./src/PageFlowJsonTree.vue",

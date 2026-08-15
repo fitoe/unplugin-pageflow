@@ -170,6 +170,7 @@ test('serves the unplugin-pageflow client from the configured development route'
       body: JSON.stringify({ path: '/', title: 'Rendered home later' }),
     })
     const pageEvent = eventDecoder.decode((await eventReader.read()).value)
+    await eventReader.cancel()
     const graphResponse = await fetch(`${origin}/__unplugin-pageflow/api/graph`)
     const graph = await graphResponse.json()
     const publicConfigResponse = await fetch(`${origin}/.well-known/pageflow.json`)

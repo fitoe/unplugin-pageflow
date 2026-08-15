@@ -77,6 +77,7 @@ export default defineConfig({
   vite: () => ({
     define: {
       __PAGEFLOW_VERSION__: JSON.stringify(pageFlowVersion),
+      __PAGEFLOW_AXE_ENABLED__: 'false',
     },
     resolve: {
       alias: {

@@ -1,6 +1,6 @@
-import type { PageFlowHost } from './host'
-import { parsePageFlowTodos, type PageFlowTodos } from './todos'
-import { legacyChromeCanvasStorageKey, LEGACY_UNPLUGIN_TODOS_STORAGE_KEY, PAGEFLOW_TODOS_STORAGE_KEY, pageFlowCanvasStorageKey } from './storage'
+import type { PageFlowHost } from './host.ts'
+import { parsePageFlowTodos, type PageFlowTodos } from './todos.ts'
+import { legacyChromeCanvasStorageKey, LEGACY_UNPLUGIN_TODOS_STORAGE_KEY, PAGEFLOW_TODOS_STORAGE_KEY, pageFlowCanvasStorageKey } from './storage.ts'
 
 export async function loadPageFlowTodos(host: PageFlowHost): Promise<PageFlowTodos> {
   const current = await host.loadStorage(PAGEFLOW_TODOS_STORAGE_KEY)

@@ -1,6 +1,6 @@
 import type { PageFlowRuntimeRoute } from '../../shared/types'
 import type { PageFlowResolvedNavigation, PageFlowRouterAdapter } from './types'
-import { instrumentPageFlowHistory } from '../../../packages/pageflow-runtime/src'
+import { instrumentPageFlowHistory } from '@pageflow/runtime'
 
 declare global {
   interface Window {

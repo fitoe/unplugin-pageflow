@@ -1,4 +1,5 @@
 import type { PageFlowRouteMode, ResolvedPageFlowOptions } from '../shared/types'
+import { PAGEFLOW_PREVIEW_PARAM, PAGEFLOW_ROLE_PARAM } from '../shared/protocol.ts'
 
 export const PAGEFLOW_LIVE_PREVIEW_CACHE_LIMIT = 3
 
@@ -29,13 +30,13 @@ export function resolvePreviewUrl(
   const base = new URL(config.appUrl.endsWith('/') ? config.appUrl : `${config.appUrl}/`, origin)
   const role = user ?? previewRole(path, config)
   if (routeMode === 'hash') {
-    base.searchParams.set('__unplugin-pageflow_preview', '1')
-    if (role) base.searchParams.set('__unplugin-pageflow_role', role)
+    base.searchParams.set(PAGEFLOW_PREVIEW_PARAM, '1')
+    if (role) base.searchParams.set(PAGEFLOW_ROLE_PARAM, role)
     base.hash = `#${resolvedPath.startsWith('/') ? resolvedPath : `/${resolvedPath}`}`
     return `${base.pathname}${base.search}${base.hash}`
   }
   const url = new URL(resolvedPath.replace(/^\//, ''), base)
-  url.searchParams.set('__unplugin-pageflow_preview', '1')
-  if (role) url.searchParams.set('__unplugin-pageflow_role', role)
+  url.searchParams.set(PAGEFLOW_PREVIEW_PARAM, '1')
+  if (role) url.searchParams.set(PAGEFLOW_ROLE_PARAM, role)
   return `${url.pathname}${url.search}`
 }

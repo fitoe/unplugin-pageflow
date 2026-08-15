@@ -19,4 +19,4 @@ export function parsePreviewSize(value: string | null): PreviewSize | undefined 
 export function detectScaledPreviewSize(document: Document, viewport: PreviewSize): PreviewSize {
   return detectPageFlowPreviewSize(document, viewport)
 }
-import { detectPageFlowPreviewSize } from '../../packages/pageflow-runtime/src'
+import { detectPageFlowPreviewSize } from '@pageflow/runtime'

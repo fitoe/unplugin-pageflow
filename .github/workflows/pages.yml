@@ -28,15 +28,15 @@ jobs:
   build:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         with:
           fetch-depth: 0
       - uses: pnpm/action-setup@v4
         with:
           version: 10
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v6
         with:
-          node-version: 22
+          node-version: 24
           cache: pnpm
       - uses: actions/configure-pages@v5
       - run: pnpm install --frozen-lockfile
@@ -68,3 +68,13 @@ jobs:
       - name: Deploy
         id: deployment
         uses: actions/deploy-pages@v4
+      - name: Probe deployed Chrome distribution
+        shell: bash
+        run: |
+          base="${{ steps.deployment.outputs.page_url }}"
+          base="${base%/}"
+          curl --fail --location --retry 8 --retry-delay 5 --retry-all-errors "$base/chrome/pageflow.crx" --output "$RUNNER_TEMP/pageflow.crx"
+          test "$(wc -c < "$RUNNER_TEMP/pageflow.crx")" -gt 100000
+          curl --fail --location --retry 8 --retry-delay 5 --retry-all-errors "$base/chrome/updates.xml" --output "$RUNNER_TEMP/updates.xml"
+          grep -q '<updatecheck ' "$RUNNER_TEMP/updates.xml"
+          grep -q 'pageflow-v[0-9].*\.crx' "$RUNNER_TEMP/updates.xml"

@@ -1,6 +1,6 @@
 import type { PageFlowApiResult, ResolvedPageFlowApiDiagnosticOptions } from '../shared/types'
-import { apiRequestKey } from '../../packages/pageflow-core/src/api'
-export { apiRequestKey, mergeApiResult } from '../../packages/pageflow-core/src/api'
+import { apiRequestKey } from '@pageflow/core/api'
+export { apiRequestKey, mergeApiResult } from '@pageflow/core/api'
 
 export interface PageFlowApiIssue {
   resultId: string

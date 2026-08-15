@@ -1,6 +1,6 @@
-import type { PageFlowApiField, PageFlowApiResult, PageFlowDiagnostic, PageFlowDiagnosticCategory, PageFlowDiagnosticSeverity } from '../../packages/pageflow-core/src/types'
+import type { PageFlowDiagnostic } from '@pageflow/core/types'
 
-export type { PageFlowApiField, PageFlowApiResult, PageFlowDiagnostic, PageFlowDiagnosticCategory, PageFlowDiagnosticSeverity }
+export type { PageFlowApiField, PageFlowApiResult, PageFlowDiagnostic, PageFlowDiagnosticCategory, PageFlowDiagnosticSeverity } from '@pageflow/core/types'
 
 export type PageFlowDynamicParamValues = Record<string, string | number>
 

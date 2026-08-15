@@ -65,6 +65,11 @@ header {
 .page-user-label span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .page-user-label svg { width: 10px; height: 10px; flex: none; fill: none; stroke: currentColor; stroke-linecap: round; stroke-linejoin: round; stroke-width: 1.5px; }
 .page-user-overlay { position: absolute; z-index: 4; width: 240px; height: 0; overflow: visible; pointer-events: none; }
+.focused-page-meta-actions { position: absolute; z-index: 4; width: 240px; height: 56px; pointer-events: none; }
+.focused-page-meta-actions button { position: absolute; border: 0; padding: 0; opacity: 0; pointer-events: auto; }
+.focused-page-meta-actions button:focus-visible { opacity: 1; outline: 2px solid var(--ui-primary); outline-offset: 1px; }
+.focused-page-open-action { top: 6px; right: 0; width: 30px; height: 26px; cursor: pointer; }
+.focused-page-copy-action { top: 32px; left: 0; width: 240px; height: 24px; cursor: copy; }
 .viewport-switch-layout { margin-left: 0; }
 
 .workspace { position: absolute; inset: 46px 0 28px; overflow: hidden; overscroll-behavior: none; touch-action: none; }

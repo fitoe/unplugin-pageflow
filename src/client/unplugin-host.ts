@@ -1,5 +1,5 @@
-import type { PageFlowHost, PageFlowHostState } from '../../packages/pageflow-core/src/host'
-import type { PageFlowApiRequest, PageFlowBrowserRuntimeEvent, PageFlowNavigationEdge, PageFlowPageSnapshot } from '../../packages/pageflow-core/src/types'
+import type { PageFlowHost, PageFlowHostState } from '@pageflow/core/host'
+import type { PageFlowApiRequest, PageFlowBrowserRuntimeEvent, PageFlowNavigationEdge, PageFlowPageSnapshot } from '@pageflow/core/types'
 import type { PageFlowGraph, PageFlowPage, ResolvedPageFlowOptions } from '../shared/types'
 import { PAGEFLOW_DIAGNOSTIC_HIGHLIGHT_MESSAGE, PAGEFLOW_DIAGNOSTICS_SCAN_MESSAGE } from '../shared/protocol'
 import { fetchPageFlowGraph, subscribeToPageFlowUpdates } from './graph'

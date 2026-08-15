@@ -4,7 +4,7 @@ import {
   isPageFlowInfiniteListDocument,
   pageFlowContentHeight,
   pageFlowDocumentHeight,
-} from '../../packages/pageflow-runtime/src'
+} from '@pageflow/runtime'
 
 interface PageFlowWindow extends Window {
   __UNPLUGIN_PAGEFLOW_PENDING_REQUESTS__?: () => number
