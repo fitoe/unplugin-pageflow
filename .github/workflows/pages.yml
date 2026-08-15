@@ -13,6 +13,8 @@ on:
       - package.json
       - pnpm-lock.yaml
       - .github/workflows/pages.yml
+  release:
+    types: [published]
   workflow_dispatch:
 
 permissions:
