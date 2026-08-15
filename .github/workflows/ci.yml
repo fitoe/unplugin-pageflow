@@ -27,6 +27,7 @@ jobs:
     needs: check
     runs-on: ubuntu-latest
     permissions:
+      actions: write
       contents: write
       issues: write
       pull-requests: write
@@ -50,3 +51,7 @@ jobs:
         run: "$RUNNER_TEMP/semantic-release/node_modules/.bin/semantic-release"
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Redeploy versioned Chrome distribution
+        run: gh workflow run pages.yml --ref master
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
