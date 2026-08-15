@@ -39,12 +39,12 @@
       .product.focus-neighbor.drag-second { animation: secondNeighborMove 24s cubic-bezier(.22,1,.36,1) infinite, focusNeighborOpacity 24s ease-in-out infinite; }
       .focus-source > use { animation: sourceFocusShadow 24s ease-in-out infinite; }
       .focus-target > use { animation: targetFocusShadow 24s ease-in-out infinite; }
-      .label { fill: #4a504b; font-size: 7px; }
+      .label { fill: #303b34; font-size: 10px; font-weight: 600; }
       .deck-label { animation: deckLabel 24s ease-in-out infinite; }
       .nested-label { animation: nestedLabel 24s ease-in-out infinite; }
-      .path { fill: #969c97; font-size: 5px; }
+      .path { fill: #6f7972; font-size: 7px; }
       .hotspot { opacity: 0; animation: hotspot 24s ease-in-out infinite; }
-      .link { fill: none; stroke: #ff4f9a; stroke-width: 2.2; stroke-linecap: round; stroke-dasharray: 1; stroke-dashoffset: 1; animation: links 24s ease-in-out infinite; }
+      .link { fill: none; stroke: #ff2f89; stroke-width: 3.2; stroke-linecap: round; stroke-dasharray: 1; stroke-dashoffset: 1; animation: links 24s ease-in-out infinite; }
       .drag-link { fill: none; stroke: #ff4f9a; stroke-width: 2.2; stroke-linecap: round; opacity: 0; animation: dragLink 24s ease-in-out infinite; }
       .new-link { fill: none; stroke: #ff4f9a; stroke-width: 2.2; stroke-linecap: round; opacity: 0; animation: newLinks 24s ease-in-out infinite; }
       .new-hotspot { opacity: 0; animation: newHotspots 24s ease-in-out infinite; }

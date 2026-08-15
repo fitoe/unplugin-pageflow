@@ -15,6 +15,7 @@ export interface PageCardOptions {
   orphan?: boolean
   hideMeta?: boolean
   dark?: boolean
+  previewStatus?: string
 }
 
 export function pageCardMetaHit(localX: number, localY: number, previewHeight: number) {
@@ -69,8 +70,8 @@ export function createPageCardGroup(options: PageCardOptions) {
     }))
   })
   if (!hasThumbnail) {
-    group.add(new Text({ x: 16, y: Math.max(16, previewHeight - 54), width: PAGE_CARD_WIDTH - 32, text: page.title, fill: primary, fontSize: 18, fontWeight: 700, textWrap: 'none', textOverflow: 'ellipsis' }))
-    group.add(new Text({ x: 16, y: Math.max(38, previewHeight - 29), width: PAGE_CARD_WIDTH - 32, text: page.path, fill: secondary, fontFamily: 'DM Mono', fontSize: 10, textWrap: 'none', textOverflow: 'ellipsis' }))
+    group.add(new Text({ x: 16, y: Math.max(16, previewHeight / 2 - 34), width: PAGE_CARD_WIDTH - 32, text: options.previewStatus ?? page.title, fill: primary, fontSize: options.previewStatus ? 12 : 18, fontWeight: 700, textAlign: options.previewStatus ? 'center' : 'left', textWrap: 'none', textOverflow: 'ellipsis' }))
+    group.add(new Text({ x: 16, y: Math.max(38, previewHeight / 2 - 8), width: PAGE_CARD_WIDTH - 32, text: options.previewStatus ? '聚焦页面后可查看实时预览' : page.path, fill: secondary, fontFamily: 'DM Mono', fontSize: 9, textAlign: options.previewStatus ? 'center' : 'left', textWrap: 'none', textOverflow: 'ellipsis' }))
   }
   if (!options.hideMeta) {
     group.add(new Text({ x: 0, y: previewHeight + 12, width: PAGE_CARD_WIDTH - 28, text: page.title, fill: primary, fontSize: 13, fontWeight: 700, textWrap: 'none', textOverflow: 'ellipsis', cursor: 'default' }))

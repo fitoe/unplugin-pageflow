@@ -21,6 +21,7 @@
 | 快照生成 | 截取真实页面根节点；生成 compact；高清切片倒序保存；释放临时 Canvas | `snapshot-capture.test.mjs` |
 | iframe 生命周期 | iframe 替换、移除和销毁时释放 window 索引、图片观察器与延迟重拍任务 | `preview-frame-registry.test.mjs` |
 | 预览消息 | API、页面上报、热点悬停、扫描结果与带参数跳转消息被稳定解码；畸形消息被忽略 | `preview-message.test.mjs` |
+| 页面健康与深链 | 标签统一显示总量和风险，运行时链接参与结构检查；页面、组、用户、视口、详情标签和树表视图可通过 URL 恢复 | `page-health.test.mjs`、`page-checks.test.mjs`、`workbench-location.test.mjs`、`vite-workbench.e2e.mjs` |
 | 页面热更新 | 单页更新保留已扫描聚焦链接；目标变化触发重排；仅内容变化只重绘 | `page-update.test.mjs` |
 | 整图同步 | 路由模式切换重置预览；删页裁剪缓存并退出失效焦点；元数据更新不触发布局 | `graph-update.test.mjs` |
 | Leafer 渲染 | 官方 Node Canvas 可布局、拾取、导出 PNG，并同步清理资源 | `leafer-node.test.mjs` |

@@ -43,10 +43,19 @@ pnpm dev
 The terminal prints the preview URL:
 
 ```text
-unplugin-pageflow  http://localhost:5173/__unplugin-pageflow/
+PageFlow: http://localhost:5173/__unplugin-pageflow/
 ```
 
 Open that URL to explore the route map. Scroll to zoom, drag the canvas to move, and select a page to inspect its relationships.
+
+You are ready when:
+
+- the host terminal shows the `PageFlow:` URL;
+- the canvas footer reports `Routes synced`;
+- search finds the application home page;
+- focusing a page promotes it to a live iframe rather than a cached card.
+
+If any item is missing, first confirm you opened the URL from the host application's terminal and restart the host dev server after changing plugin or route configuration.
 
 ## Next steps
 

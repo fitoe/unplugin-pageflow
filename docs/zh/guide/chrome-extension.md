@@ -1,6 +1,6 @@
 # Chrome 插件
 
-[下载 PageFlow Chrome 插件](/chrome/pageflow.crx)
+[下载已解压扩展 ZIP](/chrome/pageflow.zip) · [Linux 下载签名 CRX](/chrome/pageflow.crx)
 
 插件不经过 Chrome 应用商店，安装后会定期从 PageFlow 官网检查并自动更新。
 
@@ -8,9 +8,12 @@
 
 ## 安装限制
 
-- Linux：可下载 CRX，并按 Chrome 的自托管扩展方式安装。
-- Windows、macOS：Chrome 不允许普通用户直接安装站外 CRX，只能由组织管理员通过 `ExtensionInstallForcelist` 等企业策略部署。
-- 个人开发调试：可下载源码构建产物，在 `chrome://extensions` 开启开发者模式后“加载已解压的扩展程序”；这种方式不会使用在线自动更新。
+- Windows、macOS：下载并解压 ZIP，打开 `chrome://extensions`，开启“开发者模式”，点击“加载已解压的扩展程序”并选择解压后的目录。下载新 ZIP 后需要手动重新加载。
+- Linux：下载 CRX，并按 Chrome 的自托管扩展方式安装；签名版本支持在线自动更新。
+- 企业用户：通过 `ExtensionInstallForcelist` 或同类浏览器策略部署签名 CRX 与更新地址。
+- 本地开发：构建源码后，直接加载 `packages/chrome-extension/.output/chrome-mv3`。
+
+插件只读取你主动用 PageFlow 打开的当前标签页。`debugger` 权限用于查看页面请求和后台高清截图；除非你主动导出，否则捕获的页面状态保留在浏览器本地。
 
 ## 更新
 

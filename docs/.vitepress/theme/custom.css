@@ -9,20 +9,47 @@
     width: 100%;
     max-width: none;
     max-height: none;
+    filter: contrast(1.12) saturate(1.18);
   }
 }
 
-.VPHomeHero .actions .action:has(a[href$="/chrome/pageflow.crx"]) {
+.VPHero.has-image .image-container {
+  overflow: hidden;
+  border: 1px solid var(--vp-c-divider);
+  border-radius: 20px;
+  background: linear-gradient(145deg, color-mix(in srgb, var(--vp-c-bg-soft) 94%, #7c6cff 6%), var(--vp-c-bg));
+  box-shadow: 0 24px 70px color-mix(in srgb, #202334 16%, transparent);
+}
+
+.VPHomeHero .actions .action:has(a[href$="/chrome/pageflow.zip"]) {
   display: flex;
   flex-direction: column;
   align-items: center;
 }
 
-.VPHomeHero .actions .action:has(a[href$="/chrome/pageflow.crx"])::after {
+.VPHomeHero .actions .action:has(a[href$="/chrome/pageflow.zip"])::after {
   margin-top: 6px;
   color: var(--vp-c-text-3);
   content: var(--pageflow-chrome-updated-label);
   font-size: 11px;
   line-height: 1;
   white-space: nowrap;
+}
+
+.VPFeatures .VPFeature { position: relative; overflow: hidden; }
+.VPFeatures .VPFeature::before { display: block; width: 20px; height: 3px; margin-bottom: 18px; border-radius: 999px; background: linear-gradient(90deg, #7c6cff, #ff4f9a); content: ''; }
+
+.chrome-install { display: flex; max-width: 1152px; margin: 42px auto 28px; align-items: center; justify-content: space-between; gap: 30px; border: 1px solid var(--vp-c-divider); border-radius: 18px; padding: 24px 26px; background: linear-gradient(135deg, color-mix(in srgb, var(--vp-c-bg-soft) 92%, #7c6cff 8%), var(--vp-c-bg-soft)); }
+.chrome-install span { color: var(--vp-c-brand-1); font-size: 11px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; }
+.chrome-install h2 { margin: 4px 0 0; border: 0; padding: 0; font-size: 21px; }
+.chrome-install p { max-width: 680px; margin: 6px 0 0; color: var(--vp-c-text-2); font-size: 13px; line-height: 1.65; }
+.chrome-install nav { display: flex; flex: none; align-items: center; gap: 14px; }
+.chrome-install a { color: var(--vp-c-text-2); font-size: 12px; font-weight: 600; text-decoration: none; white-space: nowrap; }
+.chrome-install a.primary { display: inline-flex; height: 40px; align-items: center; border-radius: 20px; background: var(--vp-c-brand-1); padding: 0 18px; color: #fff; }
+.chrome-install a:hover { color: var(--vp-c-brand-1); }
+.chrome-install a.primary:hover { color: #fff; background: var(--vp-c-brand-2); }
+
+@media (max-width: 760px) {
+  .chrome-install { margin: 28px 24px 20px; align-items: stretch; flex-direction: column; }
+  .chrome-install nav { align-items: flex-start; flex-direction: column; }
 }

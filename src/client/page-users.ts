@@ -17,6 +17,14 @@ interface PageDeck {
   representative: PageFlowPage
 }
 
+export type PageUserSource = 'page' | 'group' | 'route' | 'global'
+
+export interface PageUserResolution {
+  user: string | undefined
+  source: PageUserSource
+  groupKey?: string
+}
+
 export function usePageUsers(
   pages: Ref<PageFlowPage[]>,
   config: ResolvedPageFlowOptions,
@@ -30,6 +38,20 @@ export function usePageUsers(
     Object.entries(initial.pageUsers).filter(([, user]) => users.value.includes(user)),
   ))
   const groupUsers = ref<Record<string, string>>(initial.groupUsers)
+  let groupPathPages: PageFlowPage[] | undefined
+  let groupPathsByPage = new Map<string, string[]>()
+
+  function pageGroupPath(page: PageFlowPage) {
+    if (groupPathPages !== pages.value) {
+      groupPathPages = pages.value
+      groupPathsByPage = new Map()
+    }
+    const cached = groupPathsByPage.get(page.id)
+    if (cached) return cached
+    const path = routeDeckPathForPage(pages.value, page.id)
+    groupPathsByPage.set(page.id, path)
+    return path
+  }
 
   function save(selectedUser = activeUser.value) {
     const configured = new Set(configuredUsers(config.previewRoles))
@@ -49,21 +71,28 @@ export function usePageUsers(
     if (!users.value.includes(activeUser.value ?? '')) activeUser.value = users.value[0]
   }
 
-  function pageUser(page: PageFlowPage) {
+  function pageUserResolution(page: PageFlowPage): PageUserResolution {
     const explicitUser = pageUsers.value[page.id]
-    if (explicitUser) return explicitUser
-    const groupPath = routeDeckPathForPage(pages.value, page.id)
+    if (explicitUser) return { user: explicitUser, source: 'page' }
+    const groupPath = pageGroupPath(page)
     for (let depth = groupPath.length; depth > 0; depth--) {
       const groupKey = groupPath.slice(0, depth).join('/')
       const configuredGroupUser = groupUsers.value[groupKey]
-      if (configuredGroupUser) return configuredGroupUser
+      if (configuredGroupUser) return { user: configuredGroupUser, source: 'group', groupKey }
       const parentPath = groupPath.slice(0, depth - 1)
       const representative = createRouteDeckView(pages.value, parentPath).decks
         .find(deck => deck.key === groupKey)?.representative
       const inheritedUser = representative && pageUsers.value[representative.id]
-      if (inheritedUser) return inheritedUser
+      if (inheritedUser) return { user: inheritedUser, source: 'group', groupKey }
     }
-    return previewRole(page.path, config) || activeUser.value
+    const routeUser = previewRole(page.path, config)
+    return routeUser
+      ? { user: routeUser, source: 'route' }
+      : { user: activeUser.value, source: 'global' }
+  }
+
+  function pageUser(page: PageFlowPage) {
+    return pageUserResolution(page).user
   }
 
   function selectActiveUser(user: string) {
@@ -79,6 +108,18 @@ export function usePageUsers(
       pageUsers.value = Object.fromEntries(Object.entries(pageUsers.value).filter(([id]) => !pageIds.has(id)))
     } else {
       pageUsers.value = { ...pageUsers.value, [pageId]: user }
+    }
+    save()
+  }
+
+  function restorePageUser(pageId: string) {
+    const deck = deckForPage(pageId)
+    if (deck) {
+      const { [deck.key]: _removed, ...nextGroupUsers } = groupUsers.value
+      groupUsers.value = nextGroupUsers
+    } else {
+      const { [pageId]: _removed, ...nextPageUsers } = pageUsers.value
+      pageUsers.value = nextPageUsers
     }
     save()
   }
@@ -116,8 +157,11 @@ export function usePageUsers(
     users,
     userNotes,
     migrateLegacyGroups,
+    pageGroupPath,
     pageUser,
+    pageUserResolution,
     refresh,
+    restorePageUser,
     save,
     selectActiveUser,
     selectPageUser,

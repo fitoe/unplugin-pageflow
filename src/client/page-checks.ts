@@ -1,4 +1,4 @@
-import type { PageFlowPage, PageFlowPageTest } from '../shared/types'
+import type { PageFlowLink, PageFlowPage, PageFlowPageTest } from '../shared/types'
 
 export type PageFlowPageCheckStatus = 'passed' | 'failed' | 'uncovered'
 
@@ -7,6 +7,13 @@ export interface PageFlowPageCheck {
   title: string
   description: string
   status: PageFlowPageCheckStatus
+}
+
+export function mergePageLinks(...sources: Array<PageFlowLink[] | undefined>) {
+  return [...new Map(sources.flatMap(source => source ?? []).map(link => [
+    `${link.to}\u0000${link.label}\u0000${link.kind ?? 'link'}`,
+    link,
+  ])).values()]
 }
 
 function internalTarget(target: string) {
@@ -28,10 +35,15 @@ export function isOrphanPage(page: PageFlowPage, pages: PageFlowPage[]) {
     && source.links.some(link => targetPageId(link.to, pages) === page.id))
 }
 
-export function createPageChecks(page: PageFlowPage, pages: PageFlowPage[], tests: PageFlowPageTest[]): PageFlowPageCheck[] {
+export function createPageChecks(
+  page: PageFlowPage,
+  pages: PageFlowPage[],
+  tests: PageFlowPageTest[],
+  effectiveLinks: PageFlowLink[] = page.links,
+): PageFlowPageCheck[] {
   const incoming = pages.filter(source => source.id !== page.id)
     .flatMap(source => source.links.filter(link => targetPageId(link.to, pages) === page.id))
-  const internalLinks = page.links.flatMap(link => internalTarget(link.to) ? [link] : [])
+  const internalLinks = effectiveLinks.flatMap(link => internalTarget(link.to) ? [link] : [])
   const invalidLinks = internalLinks.filter(link => !targetPageId(link.to, pages))
   const selfLinks = internalLinks.filter(link => targetPageId(link.to, pages) === page.id)
   const isHome = pages[0]?.id === page.id || page.path === '/'

@@ -12,7 +12,7 @@ export default defineConfig({
   description: 'See every application page and navigation path on one infinite canvas.',
   base: process.env.VITEPRESS_BASE || '/unplugin-pageflow/',
   cleanUrls: true,
-  ignoreDeadLinks: [/^\/chrome\/pageflow\.crx$/],
+  ignoreDeadLinks: [/^\/chrome\/pageflow\.(?:crx|zip)$/],
   lastUpdated: true,
   srcExclude: ['smoke-test-plan.md'],
   rewrites(id) {

@@ -43,10 +43,19 @@ pnpm dev
 终端会输出预览地址：
 
 ```text
-unplugin-pageflow  http://localhost:5173/__unplugin-pageflow/
+PageFlow: http://localhost:5173/__unplugin-pageflow/
 ```
 
 打开该地址即可浏览路由地图。滚动缩放画布，拖动画布移动视野，选择页面可查看它与其他页面的关系。
+
+看到以下结果即表示接入成功：
+
+- 宿主项目终端输出 `PageFlow:` 画板地址；
+- 画布底部显示 `Routes synced`；
+- 搜索可以找到应用首页；
+- 聚焦页面后，缓存卡片会切换为真实 iframe。
+
+如果其中一项缺失，先确认打开的是宿主项目终端输出的地址；修改插件或路由配置后，请重启宿主开发服务器。
 
 ## 本地开发插件
 

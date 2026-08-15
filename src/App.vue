@@ -46,13 +46,15 @@ import { decodePreviewMessage } from './client/preview-message'
 import { confirmReportedPreviewRedirect, detectUnexpectedPreviewRedirect } from './client/preview-redirect'
 import { writeClipboardText } from './client/clipboard'
 import { createPageFlowAIContext, createPageFlowAIPrompt } from './client/ai-context'
-import { createPageChecks, isOrphanPage, type PageFlowPageCheckStatus } from './client/page-checks'
+import { createPageChecks, isOrphanPage, mergePageLinks, type PageFlowPageCheckStatus } from './client/page-checks'
+import { createPageHealth, previewStatusLabels, type PageFlowPreviewStatus } from './client/page-health'
 import { buildApiFieldTree } from './client/api-field-tree'
 
 const pageFlowVersion = __PAGEFLOW_VERSION__
 import { createApiIssues, mergeApiResult, type PageFlowApiIssue } from './client/api-diagnostics'
 import { isPreviewUserStorageKey } from './client/user-sessions'
 import { usePageUsers } from './client/page-users'
+import { buildWorkbenchHash, parseWorkbenchHash } from './client/workbench-location'
 import LayoutWorker from './client/layout.worker?worker&inline'
 import { focusTargetSetKey, planPageUpdate } from './client/page-update'
 import { pageUpdateEffectTarget } from './client/page-update-effect'
@@ -132,6 +134,7 @@ const viewportTabs: Array<Record<string, unknown>> = [
 ]
 const PREVIEW_MODE_STORAGE_KEY = 'unplugin-pageflow:preview-mode'
 const PANEL_COLLAPSED_STORAGE_KEY = 'unplugin-pageflow:panel-collapsed'
+const PANEL_WIDTH_STORAGE_KEY = 'unplugin-pageflow:panel-width'
 const VIRTUAL_PAGES_STORAGE_KEY = 'unplugin-pageflow:virtual-pages'
 
 function storedVirtualPages(): PageFlowPage[] {
@@ -158,6 +161,15 @@ function storedPanelCollapsed() {
     return localStorage.getItem(PANEL_COLLAPSED_STORAGE_KEY) === 'true'
   } catch {
     return false
+  }
+}
+
+function storedPanelWidth() {
+  try {
+    const value = Number(localStorage.getItem(PANEL_WIDTH_STORAGE_KEY))
+    return Number.isFinite(value) ? Math.min(560, Math.max(300, value)) : 340
+  } catch {
+    return 340
   }
 }
 
@@ -201,8 +213,11 @@ const {
   users,
   userNotes,
   migrateLegacyGroups,
+  pageGroupPath,
   pageUser,
+  pageUserResolution,
   refresh: refreshSessionUsers,
+  restorePageUser,
   save: saveCurrentUserSessions,
   selectActiveUser,
   selectPageUser,
@@ -223,6 +238,7 @@ const openApiResultId = ref<string>()
 const openApiIssueResultId = ref<string>()
 const panelTab = ref<'api' | 'tests' | 'diagnostics' | 'todos'>('api')
 const panelCollapsed = ref(storedPanelCollapsed())
+const panelWidth = ref(storedPanelWidth())
 const editorInfo = ref<PageFlowEditorInfo>({ id: 'system', name: '默认编辑器' })
 const editorOpening = ref(false)
 const editorOpenError = ref('')
@@ -255,7 +271,15 @@ const copiedPath = ref<string>()
 const darkMode = ref(document.documentElement.classList.contains('dark'))
 const searchOpen = ref(false)
 const searchSelection = ref<string>()
+const searchTerm = ref('')
+const searchResetKey = ref(0)
 const searchRoot = ref<HTMLDivElement>()
+const searchShortcutLabel = /Mac|iPhone|iPad/.test(navigator.userAgent) ? '⌘K' : 'Ctrl K'
+const workbenchView = ref<'canvas' | 'table'>('canvas')
+const canvasFilter = ref<'all' | 'linked' | 'orphan' | 'issues' | 'current-user'>('all')
+const tableFilter = ref('')
+const tableSort = ref<'group' | 'title' | 'path' | 'user' | 'health'>('group')
+const navigationEvents = ref<Array<{ id: number, from: string, to: string, reason: string, at: number }>>([])
 const virtualPageMenu = ref<{ pageId: string, x: number, y: number }>()
 const canvas = ref<HTMLDivElement>()
 const connectionCanvas = ref<HTMLDivElement>()
@@ -264,19 +288,38 @@ const apiResponseOrigin = ref(window.location.origin)
 const focusedPageChecks = computed(() => {
   const page = pages.value.find(item => item.id === focusedPageId.value)
   if (!page) return []
-  const checks = createPageChecks(page, pages.value, focusedPageTests.value)
+  const effectiveLinks = mergePageLinks(page.links, focusedLinks.value)
+  const checks = createPageChecks(page, pages.value, focusedPageTests.value, effectiveLinks)
   return focusedTestsLoading.value || focusedTestsFailed.value ? checks.filter(item => item.id !== 'tests') : checks
 })
-const focusedTestIssueCount = computed(() => focusedPageChecks.value.filter(item => item.status !== 'passed').length
-  + focusedPageTests.value.filter(test => test.status === 'failed').length)
 const focusedTodos = computed(() => focusedPageId.value ? pageTodos.value[focusedPageId.value] ?? [] : [])
-const focusedOpenTodoCount = computed(() => focusedTodos.value.filter(todo => !todo.done).length)
+
+const focusedPreviewStatus = computed<PageFlowPreviewStatus>(() => {
+  const page = pages.value.find(item => item.id === focusedPageId.value)
+  if (!page) return 'missing'
+  if (page.virtual) return 'virtual'
+  if (failedPreviewIds.has(page.id)) return 'failed'
+  if (capturePreviewId.value === page.id || capturesInProgress.has(page.id)) return 'capturing'
+  if (livePreviewId.value === page.id && loadedPreviewIds.value.has(page.id)) return 'live'
+  if (!pageHasStoredThumbnail(page)) return 'missing'
+  return thumbnailIsCurrent(page) ? 'cached' : 'stale'
+})
+
+const focusedHealth = computed(() => createPageHealth({
+  apiTotal: focusedApiResults.value.length,
+  apiIssues: focusedApiIssues.value.length,
+  checks: focusedPageChecks.value,
+  tests: focusedPageTests.value,
+  diagnostics: focusedDiagnostics.value,
+  todos: focusedTodos.value,
+  preview: focusedPreviewStatus.value,
+}))
 
 const panelTabs = computed(() => [
-  { value: 'api', label: '接口', badge: focusedApiResults.value.length, slot: 'api' },
-  { value: 'tests', label: '测试', badge: focusedTestIssueCount.value, slot: 'tests' },
-  { value: 'diagnostics', label: '诊断', badge: focusedDiagnostics.value.filter(item => item.severity === 'error').length, slot: 'diagnostics' },
-  { value: 'todos', label: '待办', badge: focusedOpenTodoCount.value, slot: 'todos' },
+  { value: 'api', label: '接口', badge: focusedHealth.value.api.badge, slot: 'api' },
+  { value: 'tests', label: '测试', badge: focusedHealth.value.tests.badge, slot: 'tests' },
+  { value: 'diagnostics', label: '诊断', badge: focusedHealth.value.diagnostics.badge, slot: 'diagnostics' },
+  { value: 'todos', label: '待办', badge: focusedHealth.value.todos.badge, slot: 'todos' },
 ])
 const editorIcon = computed(() => ({
   cursor: 'i-lucide-square-mouse-pointer',
@@ -323,11 +366,54 @@ function menuItemUser(item: unknown) {
 }
 
 function pageUserMenuItems(pageId: string) {
-  return users.value.map(user => ({
+  const page = pages.value.find(item => item.id === pageId)
+  const resolution = page && pageUserResolution(page)
+  const choices = users.value.map(user => ({
     label: userNotes.value[user] || user,
     onSelect: () => selectPageUser(pageId, user),
   }))
+  if (!resolution || !['page', 'group'].includes(resolution.source)) return choices
+  return [
+    choices,
+    [{
+      label: '恢复继承',
+      icon: 'i-lucide-undo-2',
+      onSelect: () => restorePageUser(pageId),
+    }],
+  ]
 }
+
+function pageUserResolutionSourceLabel(resolution: ReturnType<typeof pageUserResolution>) {
+  if (resolution.source === 'page') return '本页覆盖'
+  if (resolution.source === 'group') return `${groupNames.value[resolution.groupKey ?? ''] ?? resolution.groupKey ?? '路由组'}继承`
+  if (resolution.source === 'route') return '路由默认'
+  return '全局'
+}
+
+function pageUserSourceLabel(page: PageFlowPage) {
+  return pageUserResolutionSourceLabel(pageUserResolution(page))
+}
+
+const healthSeverityLabels = {
+  healthy: '状态正常',
+  suggestion: '有待处理项',
+  warning: '需要关注',
+  error: '存在错误',
+} as const
+
+const canvasFilterLabels = {
+  all: '全部页面',
+  linked: '有导航关系',
+  orphan: '孤立页面',
+  issues: '问题页面',
+  'current-user': '当前用户',
+} as const
+
+const canvasFilterItems = computed(() => Object.entries(canvasFilterLabels).map(([value, label]) => ({
+  label,
+  icon: canvasFilter.value === value ? 'i-lucide-check' : undefined,
+  onSelect: () => { canvasFilter.value = value as typeof canvasFilter.value },
+})))
 
 function savePageTodos() {
   void savePageFlowTodos(pageFlowHost, pageTodos.value)
@@ -483,6 +569,73 @@ const cardHeights = computed(() => new Map(pages.value.map(page => [page.id, pag
 const routeDeckView = computed(() => createRouteDeckView(pages.value, routeGroupPath.value))
 const canvasPages = computed(() => [...routeDeckView.value.directPages, ...routeDeckView.value.decks.map(deck => deck.representative)])
 const routeDeckByPageId = computed(() => new Map(routeDeckView.value.decks.map(deck => [deck.representative.id, deck])))
+const focusedPage = computed(() => pages.value.find(page => page.id === focusedPageId.value))
+const breadcrumbItems = computed(() => [
+  { label: '全部页面', path: [] as string[] },
+  ...routeGroupPath.value.map((segment, index) => {
+    const path = routeGroupPath.value.slice(0, index + 1)
+    const key = path.join('/')
+    return { label: groupNames.value[key] ?? segment, path }
+  }),
+])
+const searchItems = computed(() => pages.value.map((page) => {
+  const groups = pageGroupPath(page)
+  const resolution = pageUserResolution(page)
+  return {
+    ...page,
+    label: pageDisplayName(page),
+    description: `${groups.length ? `${groups.map((segment, index) => groupNames.value[groups.slice(0, index + 1).join('/')] ?? segment).join(' / ')} · ` : ''}${page.path}`,
+    user: resolution.user,
+    userSource: pageUserResolutionSourceLabel(resolution),
+  }
+}))
+
+function searchItemPreviewStatus(page: PageFlowPage) {
+  return previewStatusLabels[pagePreviewStatus(page)]
+}
+
+const pageTableRows = computed(() => {
+  const query = tableFilter.value.trim().toLocaleLowerCase()
+  const rows = pages.value.map((page) => {
+    const groupPath = routeDeckPathForPage(pages.value, page.id)
+    const effectiveLinks = mergePageLinks(page.links, page.id === focusedPageId.value ? focusedLinks.value : undefined)
+    const incoming = pages.value.reduce((count, source) => count + source.links.filter(link => link.to === page.id || link.to.split(/[?#]/, 1)[0] === page.path).length, 0)
+    const diagnostics = diagnosticsByPage.get(page.id)?.diagnostics ?? page.diagnostics ?? []
+    const preview = pagePreviewStatus(page)
+    const health = preview === 'failed' || diagnostics.some(item => item.severity === 'error')
+      ? '错误'
+      : isOrphanPage(page, pages.value) || preview === 'missing' || diagnostics.some(item => item.severity === 'warning')
+        ? '关注'
+        : '正常'
+    return {
+      page,
+      title: pageDisplayName(page),
+      group: groupPath.map((segment, index) => groupNames.value[groupPath.slice(0, index + 1).join('/')] ?? segment).join(' / ') || '根目录',
+      user: pageUser(page),
+      userSource: pageUserSourceLabel(page),
+      incoming,
+      outgoing: effectiveLinks.length,
+      preview: previewStatusLabels[preview],
+      health,
+    }
+  }).filter(row => !query || [row.title, row.page.path, row.group, row.user, row.health].some(value => String(value ?? '').toLocaleLowerCase().includes(query)))
+  const collator = new Intl.Collator('zh-CN', { numeric: true })
+  return rows.sort((left, right) => {
+    const leftValue = tableSort.value === 'path' ? left.page.path : left[tableSort.value]
+    const rightValue = tableSort.value === 'path' ? right.page.path : right[tableSort.value]
+    return collator.compare(String(leftValue ?? ''), String(rightValue ?? ''))
+  })
+})
+
+const recentNavigationEvent = computed(() => navigationEvents.value.at(-1))
+const focusedSnapshotAge = computed(() => {
+  const pageId = focusedPageId.value
+  if (!pageId || focusedPreviewStatus.value === 'live') return
+  const record = compactThumbnailRecord(pageId) ?? fullThumbnailRecords(pageId)[0]
+  if (!record?.updatedAt) return
+  const minutes = Math.max(0, Math.round((Date.now() - record.updatedAt) / 60_000))
+  return minutes < 1 ? '刚刚更新' : minutes < 60 ? `${minutes} 分钟前` : `${Math.round(minutes / 60)} 小时前`
+})
 function deckLayerPages(pageId: string) {
   const deck = routeDeckByPageId.value.get(pageId)
   if (!deck) return []
@@ -978,6 +1131,15 @@ function fullThumbnailRecords(pageId: string) {
 
 function pageHasStoredThumbnail(page: PageFlowPage) {
   return Boolean(compactThumbnailRecord(page.id) || fullThumbnailRecords(page.id).length)
+}
+
+function pagePreviewStatus(page: PageFlowPage): PageFlowPreviewStatus {
+  if (page.virtual) return 'virtual'
+  if (failedPreviewIds.has(page.id)) return 'failed'
+  if (capturePreviewId.value === page.id || capturesInProgress.has(page.id)) return 'capturing'
+  if (livePreviewId.value === page.id && loadedPreviewIds.value.has(page.id)) return 'live'
+  if (!pageHasStoredThumbnail(page)) return 'missing'
+  return thumbnailIsCurrent(page) ? 'cached' : 'stale'
 }
 
 function thumbnailIsCurrent(page: PageFlowPage, allowStale = true) {
@@ -1599,15 +1761,55 @@ function handleVisibilityChange() {
   else cancelScheduledCapture()
 }
 
-function activatePreviewNavigation(to: string, location = to, animate = true) {
+function recordNavigation(from: string, to: string, reason: string) {
+  navigationEvents.value = [...navigationEvents.value.slice(-19), { id: Date.now(), from, to, reason, at: Date.now() }]
+}
+
+function activatePreviewNavigation(to: string, location = to, animate = true, reason = '应用导航') {
   const locationPath = location.split(/[?#]/, 1)[0]
   const target = pages.value.find(page => page.id === to || page.path === to || page.path === locationPath)
   if (!target) return false
+  const source = pages.value.find(page => page.id === focusedPageId.value)
+  if (source && source.id !== target.id) recordNavigation(source.path, location, reason)
   readyPreviewIds.value = new Set([...readyPreviewIds.value].filter(id => id !== target.id))
   navigationLocations.value = { ...navigationLocations.value, [target.path]: location }
   failedPreviewIds.delete(target.id)
   activatePreview(target.id, animate, true)
   return true
+}
+
+async function copyWorkbenchLink() {
+  window.clearTimeout(workbenchLocationTimer)
+  const hash = currentWorkbenchHash()
+  if (window.location.hash !== hash) history.replaceState({ pageflow: true }, '', hash)
+  if (await writeClipboardText(window.location.href)) status.value = '已复制当前画板链接'
+  else status.value = '画板链接复制失败'
+}
+
+function openTablePage(pageId: string) {
+  workbenchView.value = 'canvas'
+  activatePreview(pageId)
+}
+
+function resizePanelBy(delta: number) {
+  panelWidth.value = Math.min(560, Math.max(300, panelWidth.value + delta))
+  localStorage.setItem(PANEL_WIDTH_STORAGE_KEY, String(panelWidth.value))
+}
+
+function startPanelResize(event: PointerEvent) {
+  event.preventDefault()
+  const startX = event.clientX
+  const startWidth = panelWidth.value
+  const move = (moveEvent: PointerEvent) => {
+    panelWidth.value = Math.min(560, Math.max(300, startWidth + startX - moveEvent.clientX))
+  }
+  const stop = () => {
+    window.removeEventListener('pointermove', move)
+    window.removeEventListener('pointerup', stop)
+    localStorage.setItem(PANEL_WIDTH_STORAGE_KEY, String(panelWidth.value))
+  }
+  window.addEventListener('pointermove', move)
+  window.addEventListener('pointerup', stop, { once: true })
 }
 
 function editUserNote(user: string) {
@@ -1827,7 +2029,7 @@ function activatePreview(pageId: string, animate = true, preserveNavigation = fa
     if (focusedPageId.value !== pageId) return
     livePreviewId.value = pageId
     livePreviewCacheIds.value = touchPreviewCache(livePreviewCacheIds.value, pageId)
-    if (!cachedLinks) void nextTick(() => requestFocusedPageScan(pageId))
+    if (!props.host) void nextTick(() => requestFocusedPageScan(pageId))
   }
   const apply = () => {
     pauseAutomaticCapture()
@@ -1871,9 +2073,55 @@ function activatePreview(pageId: string, animate = true, preserveNavigation = fa
 }
 
 function selectSearchPage(pageId: string) {
-  searchSelection.value = undefined
   searchOpen.value = false
   activatePreview(pageId)
+  window.setTimeout(() => {
+    searchSelection.value = undefined
+    searchTerm.value = ''
+    searchResetKey.value++
+  }, 0)
+}
+
+let workbenchLocationReady = false
+let applyingWorkbenchLocation = false
+let workbenchLocationTimer: number | undefined
+
+function currentWorkbenchHash() {
+  return buildWorkbenchHash({
+    pagePath: focusedPage.value?.path,
+    groupPath: focusedPage.value ? [] : routeGroupPath.value,
+    viewport: previewMode.value,
+    user: activeUser.value,
+    panel: focusedPage.value ? panelTab.value : undefined,
+    view: workbenchView.value,
+  })
+}
+
+function scheduleWorkbenchLocationSync() {
+  if (!workbenchLocationReady || applyingWorkbenchLocation) return
+  window.clearTimeout(workbenchLocationTimer)
+  workbenchLocationTimer = window.setTimeout(() => {
+    const hash = currentWorkbenchHash()
+    if (window.location.hash !== hash) history.pushState({ pageflow: true }, '', hash)
+  }, 1100)
+}
+
+function applyWorkbenchLocation() {
+  if (!pages.value.length) return
+  applyingWorkbenchLocation = true
+  const location = parseWorkbenchHash(window.location.hash)
+  if (location.viewport) setPreviewMode(location.viewport)
+  if (location.user && users.value.includes(location.user)) selectActiveUser(location.user)
+  if (location.panel) panelTab.value = location.panel
+  workbenchView.value = location.view ?? 'canvas'
+  const page = location.pagePath && pages.value.find(page => page.path === location.pagePath)
+  if (page) activatePreview(page.id, false, true)
+  else if (location.groupPath.length) enterRouteGroup(location.groupPath, false)
+  else if (focusedPageId.value) exitFocus(false)
+  void nextTick(() => {
+    applyingWorkbenchLocation = false
+    workbenchLocationReady = true
+  })
 }
 
 function handleEscape() {
@@ -2124,6 +2372,44 @@ function fitCurrentRouteGroup() {
   })
 }
 
+async function resetCurrentLayout() {
+  const key = canvasLayoutKey()
+  canvasLayouts.value = { ...canvasLayouts.value, [key]: {} }
+  const next = layoutRouteGroup(routeGroupPath.value)
+  positions.value = next.positions
+  visiblePageIds.value = new Set(next.pages.map(page => page.id))
+  scheduleCanvasRender()
+  fitCurrentRouteGroup()
+  try {
+    if (props.host) await persistHostCanvas({ canvasLayouts: canvasLayouts.value })
+    else {
+      const response = await fetch(`${props.config.previewPath}api/canvas-layout`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ key, positions: {} }),
+      })
+      if (!response.ok) throw new Error('保存失败')
+    }
+    status.value = '已恢复自动布局'
+  } catch {
+    status.value = '自动布局已恢复，但保存失败'
+  }
+}
+
+function pageMatchesCanvasFilter(page: PageFlowPage) {
+  if (canvasFilter.value === 'all') return true
+  if (canvasFilter.value === 'orphan') return isOrphanPage(page, pages.value)
+  if (canvasFilter.value === 'linked') return page.links.length > 0 || pages.value.some(source => source.id !== page.id && source.links.some(link => link.to === page.id || link.to === page.path))
+  if (canvasFilter.value === 'current-user') return pageUser(page) === activeUser.value
+  const diagnostics = diagnosticsByPage.get(page.id)?.diagnostics ?? page.diagnostics ?? []
+  return diagnostics.some(item => item.severity !== 'suggestion') || failedPreviewIds.has(page.id)
+}
+
+function canvasItemMatchesFilter(page: PageFlowPage) {
+  const deck = routeDeckByPageId.value.get(page.id)
+  return deck ? deck.pages.some(pageMatchesCanvasFilter) : pageMatchesCanvasFilter(page)
+}
+
 function exitFocusedPage() {
   exitFocusAfterSnapshot(fitCurrentRouteGroup)
 }
@@ -2231,6 +2517,7 @@ function handleCanvasClick(event: MouseEvent) {
       && worldY >= item.y
       && worldY <= item.y + pageCardHeight(item.page.id) * item.scale)
     if (target) {
+      recordNavigation(focus.source.path, target.page.path, '画布连线')
       activatePreview(target.page.id)
       return
     }
@@ -2687,7 +2974,7 @@ async function handlePreviewLoad(pageId: string, frame: HTMLIFrameElement) {
       : undefined
     if (redirect) {
       if (pageId === focusedPageId.value && pageId === livePreviewId.value)
-        activatePreviewNavigation(redirect.actualPath)
+        activatePreviewNavigation(redirect.actualPath, redirect.actualPath, true, '应用重定向')
       return
     }
     loadedPreviewIds.value = new Set(loadedPreviewIds.value).add(pageId)
@@ -2771,8 +3058,11 @@ async function capturePreview(pageId: string, frame: HTMLIFrameElement, ready = 
 function resetPreviewRendering() {
   cancelScheduledCapture()
   previewGeneration++
-  livePreviewId.value = undefined
-  livePreviewCacheIds.value = []
+  const focusedId = focusedPageId.value
+  livePreviewId.value = focusedId
+  livePreviewCacheIds.value = focusedId
+    ? touchPreviewCache(livePreviewCacheIds.value, focusedId)
+    : []
   capturePreviewId.value = undefined
   captureBatchIds.clear()
   manualCaptureIds.clear()
@@ -2971,7 +3261,7 @@ function handlePreviewMessage(event: MessageEvent) {
 
 function createCardGroup(page: PageFlowPage, x: number, y: number, scale = 1, highlighted = false, compactOnly = false, hideMeta = false) {
   const compact = compactThumbnailRecord(page.id)
-  return createPageCardGroup({
+  const group = createPageCardGroup({
     page: { ...page, title: pageDisplayName(page) },
     x,
     y,
@@ -2984,12 +3274,15 @@ function createCardGroup(page: PageFlowPage, x: number, y: number, scale = 1, hi
     thumbnailSource,
     copied: copiedPath.value === page.path,
     dark: darkMode.value,
+    previewStatus: previewStatusLabels[pagePreviewStatus(page)],
   })
+  if (!pageMatchesCanvasFilter(page)) group.opacity = 0.13
+  return group
 }
 
 function createDeckGroup(page: PageFlowPage, x: number, y: number) {
   const deck = routeDeckByPageId.value.get(page.id)!
-  return createPageDeckGroup({
+  const group = createPageDeckGroup({
     x,
     y,
     previewHeight: pagePreviewHeight(page.id),
@@ -2999,6 +3292,8 @@ function createDeckGroup(page: PageFlowPage, x: number, y: number) {
     createLayer: (deckPage, layerX, layerY) => createCardGroup(deckPage, layerX, layerY, 1, false, true, true),
     dark: darkMode.value,
   })
+  if (!canvasItemMatchesFilter(page)) group.opacity = 0.13
+  return group
 }
 
 function toggleColorMode() {
@@ -3285,6 +3580,7 @@ function applyGraph(nextPages: PageFlowPage[], nextRouteMode: PageFlowRouteMode)
   if (plan.layoutChanged) requestLayout(nextPages)
   else scheduleCanvasRender()
   scheduleNextCapture()
+  if (!workbenchLocationReady) void nextTick(applyWorkbenchLocation)
 }
 
 function applyPageUpdate(nextPage: PageFlowPage) {
@@ -3421,6 +3717,8 @@ watch(requiredThumbnailRecords, records => {
 }, { immediate: true })
 
 watch([active, copiedPath], scheduleCanvasRender)
+watch(canvasFilter, scheduleCanvasRender)
+watch([focusedPageId, routeGroupPath, previewMode, activeUser, panelTab, workbenchView], scheduleWorkbenchLocationSync, { deep: true })
 watch(panelCollapsed, (collapsed) => {
   try {
     localStorage.setItem(PANEL_COLLAPSED_STORAGE_KEY, String(collapsed))
@@ -3491,6 +3789,7 @@ onMounted(async () => {
   document.addEventListener('visibilitychange', handleVisibilityChange)
   window.addEventListener('message', handlePreviewMessage)
   window.addEventListener('keydown', handleSearchShortcut)
+  window.addEventListener('popstate', applyWorkbenchLocation)
   window.addEventListener('resize', handlePcViewportResize)
   layoutWorker = new LayoutWorker()
   layoutWorker.addEventListener('message', event => {
@@ -3531,6 +3830,7 @@ onMounted(async () => {
   }, { once: true })
   positions.value = centerLayoutHorizontally(positions.value, canvasPages.value)
   draw()
+  if (props.config.previewPath === '/') applyWorkbenchLocation()
   if (props.host) {
     thumbnailManifestLoaded.value = true
     try {
@@ -3640,6 +3940,8 @@ onUnmounted(() => {
   removePageUpdateEffects()
   window.removeEventListener('message', handlePreviewMessage)
   window.removeEventListener('keydown', handleSearchShortcut)
+  window.removeEventListener('popstate', applyWorkbenchLocation)
+  window.clearTimeout(workbenchLocationTimer)
   window.removeEventListener('resize', handlePcViewportResize)
   window.clearTimeout(pcViewportResizeTimer)
   canvas.value?.removeEventListener('click', handleCanvasClick)
@@ -3704,20 +4006,29 @@ onUnmounted(() => {
       </template>
       <div ref="searchRoot" class="quick-search">
         <UInputMenu
+          :key="searchResetKey"
           v-model:open="searchOpen"
           v-model="searchSelection"
-          :items="pages"
+          v-model:search-term="searchTerm"
+          :items="searchItems"
           value-key="id"
-          label-key="title"
-          description-key="path"
-          :filter-fields="['title', 'path']"
+          label-key="label"
+          description-key="description"
+          :filter-fields="['label', 'path', 'description', 'user']"
           icon="i-lucide-search"
           placeholder="搜索页面…"
           open-on-focus
           open-on-click
-          @update:model-value="selectSearchPage"
+          @update:model-value="value => value && selectSearchPage(value)"
         >
-          <template #trailing><kbd>⌘K</kbd></template>
+          <template #trailing><kbd>{{ searchShortcutLabel }}</kbd></template>
+          <template #item="{ item }">
+            <div class="search-result-item">
+              <div><strong>{{ item.label }}</strong><span>{{ item.user }} · {{ item.userSource }}</span></div>
+              <small :title="item.path">{{ item.description }}</small>
+              <em>{{ searchItemPreviewStatus(item) }}</em>
+            </div>
+          </template>
           <template #empty>没有匹配页面</template>
         </UInputMenu>
       </div>
@@ -3772,7 +4083,17 @@ onUnmounted(() => {
         </div>
       </template>
     </UHeader>
-    <section class="workspace" :class="{ 'scene-ready': initialSceneReady }">
+    <section class="workspace" :class="{ 'scene-ready': initialSceneReady, 'is-table-view': workbenchView === 'table' }">
+      <nav class="canvas-breadcrumb" aria-label="当前位置">
+        <template v-for="(item, index) in breadcrumbItems" :key="item.path.join('/')">
+          <span v-if="index" aria-hidden="true">/</span>
+          <button type="button" :aria-current="!focusedPage && index === breadcrumbItems.length - 1 ? 'page' : undefined" @click="enterRouteGroup(item.path)">{{ item.label }}</button>
+        </template>
+        <template v-if="focusedPage">
+          <span aria-hidden="true">/</span>
+          <strong>{{ pageDisplayName(focusedPage) }}</strong>
+        </template>
+      </nav>
       <nav class="canvas-toolbar" aria-label="画布工具栏">
         <UButton
           type="button"
@@ -3784,6 +4105,12 @@ onUnmounted(() => {
           aria-label="新建页面"
           @click="createVirtualPage"
         />
+        <UButton type="button" class="canvas-tool" icon="i-lucide-scan" color="neutral" variant="ghost" title="适应当前层级" aria-label="适应全图" @click="fitCurrentRouteGroup" />
+        <UButton type="button" class="canvas-tool" icon="i-lucide-layout-grid" color="neutral" variant="ghost" title="恢复自动布局" aria-label="恢复自动布局" @click="resetCurrentLayout" />
+        <UDropdownMenu :items="canvasFilterItems" :content="{ align: 'start', side: 'right', sideOffset: 8 }">
+          <UButton type="button" class="canvas-tool" icon="i-lucide-list-filter" color="neutral" :variant="canvasFilter === 'all' ? 'ghost' : 'soft'" :title="`过滤：${canvasFilterLabels[canvasFilter]}`" aria-label="过滤页面" />
+        </UDropdownMenu>
+        <UButton type="button" class="canvas-tool" :icon="workbenchView === 'table' ? 'i-lucide-workflow' : 'i-lucide-table-2'" color="neutral" :variant="workbenchView === 'table' ? 'soft' : 'ghost'" :title="workbenchView === 'table' ? '返回画布视图' : '打开页面表格'" aria-label="切换画布和表格视图" @click="workbenchView = workbenchView === 'canvas' ? 'table' : 'canvas'" />
       </nav>
       <div
         v-if="virtualPageMenu"
@@ -3801,6 +4128,53 @@ onUnmounted(() => {
           @click="deleteVirtualPage(virtualPageMenu.pageId)"
         />
       </div>
+      <section v-if="workbenchView === 'table'" class="page-table-view" aria-labelledby="page-table-title">
+        <header class="page-table-header">
+          <div>
+            <h1 id="page-table-title">页面树表</h1>
+            <p>与画布使用同一份页面、用户、导航和预览状态；选择一行可回到对应页面。</p>
+          </div>
+          <label>
+            <span class="sr-only">筛选页面</span>
+            <input v-model="tableFilter" type="search" placeholder="筛选标题、路径、组或用户…">
+          </label>
+        </header>
+        <div class="page-table-scroll">
+          <table>
+            <thead>
+              <tr>
+                <th><button type="button" @click="tableSort = 'title'">页面</button></th>
+                <th><button type="button" @click="tableSort = 'group'">路由组</button></th>
+                <th><button type="button" @click="tableSort = 'path'">路径</button></th>
+                <th><button type="button" @click="tableSort = 'user'">有效用户</button></th>
+                <th>入口 / 出口</th>
+                <th>预览</th>
+                <th><button type="button" @click="tableSort = 'health'">健康</button></th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr
+                v-for="row in pageTableRows"
+                :key="row.page.id"
+                :class="{ selected: row.page.id === focusedPageId }"
+                tabindex="0"
+                @click="openTablePage(row.page.id)"
+                @keydown.enter="openTablePage(row.page.id)"
+                @keydown.space.prevent="openTablePage(row.page.id)"
+              >
+                <td><strong>{{ row.title }}</strong></td>
+                <td>{{ row.group }}</td>
+                <td><code :title="row.page.path">{{ row.page.path }}</code></td>
+                <td>{{ row.user }}<small>{{ row.userSource }}</small></td>
+                <td>{{ row.incoming }} / {{ row.outgoing }}</td>
+                <td>{{ row.preview }}</td>
+                <td><span class="table-health" :data-health="row.health">{{ row.health }}</span></td>
+              </tr>
+            </tbody>
+          </table>
+          <div v-if="!pageTableRows.length" class="page-table-empty">没有匹配页面</div>
+        </div>
+      </section>
       <div ref="canvas" class="canvas"></div>
       <div class="preview-overlay" @wheel="handleOverlayWheel">
         <div ref="overlayWorld" class="preview-world">
@@ -3833,7 +4207,7 @@ onUnmounted(() => {
                   transformOrigin: 'bottom right',
                 }"
               >
-                <span>{{ userNotes[pageUser(page) ?? ''] || pageUser(page) }}</span>
+                <span>{{ userNotes[pageUser(page) ?? ''] || pageUser(page) }} · {{ pageUserSourceLabel(page) }}</span>
                 <svg viewBox="0 0 12 12" aria-hidden="true"><path d="m3 4.5 3 3 3-3" /></svg>
               </button>
             </UDropdownMenu>
@@ -3908,7 +4282,18 @@ onUnmounted(() => {
         tabindex="-1"
         @load="handleCaptureFrameLoad($event.currentTarget as HTMLIFrameElement)"
       ></iframe>
-      <aside v-if="focusedPageId" class="api-panel" :class="{ 'is-collapsed': panelCollapsed }">
+      <aside v-if="focusedPageId && workbenchView === 'canvas'" class="api-panel" :class="{ 'is-collapsed': panelCollapsed }" :style="{ width: panelCollapsed ? undefined : `${panelWidth}px` }">
+      <div
+        v-if="!panelCollapsed"
+        class="api-panel-resizer"
+        role="separator"
+        aria-label="调整右侧面板宽度"
+        aria-orientation="vertical"
+        tabindex="0"
+        @pointerdown="startPanelResize"
+        @keydown.left.prevent="resizePanelBy(16)"
+        @keydown.right.prevent="resizePanelBy(-16)"
+      ></div>
       <button
         type="button"
         class="api-panel-toggle"
@@ -3921,6 +4306,26 @@ onUnmounted(() => {
         </svg>
       </button>
       <div v-show="!panelCollapsed" class="api-panel-content">
+      <section class="page-health-summary" :data-severity="focusedHealth.severity" aria-label="页面健康摘要">
+        <div class="page-health-heading">
+          <span class="page-health-indicator"></span>
+          <strong>{{ healthSeverityLabels[focusedHealth.severity] }}</strong>
+          <span class="page-health-preview">{{ previewStatusLabels[focusedHealth.preview] }}<template v-if="focusedSnapshotAge"> · {{ focusedSnapshotAge }}</template></span>
+          <UButton class="page-health-share" icon="i-lucide-link" color="neutral" variant="ghost" size="xs" aria-label="复制当前画板链接" title="复制可分享的当前上下文" @click="copyWorkbenchLink" />
+        </div>
+        <div class="page-health-metrics">
+          <span>结构 {{ focusedHealth.structure.passed }}/{{ focusedHealth.structure.total }}</span>
+          <span>接口异常 {{ focusedHealth.api.issues }}</span>
+          <span>诊断 {{ focusedHealth.diagnostics.total }}</span>
+          <span>待办 {{ focusedHealth.todos.open }}</span>
+        </div>
+        <div v-if="recentNavigationEvent" class="page-navigation-event" :title="`${recentNavigationEvent.from} → ${recentNavigationEvent.to}`">
+          <span>{{ recentNavigationEvent.reason }}</span>
+          <code>{{ recentNavigationEvent.from }}</code>
+          <b>→</b>
+          <code>{{ recentNavigationEvent.to }}</code>
+        </div>
+      </section>
       <UTabs v-model="panelTab" class="api-panel-tabs" :items="panelTabs" variant="link" aria-label="页面详情">
         <template #api>
           <div v-if="focusedApiResults.length" class="api-panel-list">
@@ -3999,7 +4404,8 @@ onUnmounted(() => {
         <template #tests>
           <div class="api-panel-list">
             <div class="border-b border-default py-3">
-              <div class="text-sm font-medium text-highlighted">页面检查</div>
+              <div class="text-sm font-medium text-highlighted">页面结构</div>
+              <div class="mt-0.5 text-xs text-muted">{{ focusedHealth.structure.passed }} 通过 · {{ focusedHealth.structure.issues }} 风险</div>
               <div class="mt-2 divide-y divide-default">
                 <div
                   v-for="check in focusedPageChecks"
@@ -4024,7 +4430,7 @@ onUnmounted(() => {
             <div v-else-if="focusedPageTests.length">
             <div class="sticky top-0 z-10 flex items-center gap-2 border-b border-default bg-default py-2">
               <div class="min-w-0 flex-1">
-                <div class="text-sm font-medium text-highlighted">页面测试</div>
+                <div class="text-sm font-medium text-highlighted">关联测试</div>
                 <div class="mt-0.5 text-xs text-muted">
                   {{ focusedPageTests.length }} 项 · {{ focusedTestSummary.passed }} 通过 · {{ focusedTestSummary.failed }} 失败 · {{ focusedTestSummary.unknown }} 未运行
                 </div>
@@ -4279,7 +4685,7 @@ onUnmounted(() => {
       </div>
       </aside>
     </section>
-    <div class="zoom"><button type="button" @click="zoomCanvas('in')">+</button><span>{{ zoomPercent }}%</span><button type="button" @click="zoomCanvas('out')">−</button></div>
+    <div v-if="workbenchView === 'canvas'" class="zoom"><button type="button" @click="zoomCanvas('in')">+</button><span>{{ zoomPercent }}%</span><button type="button" @click="zoomCanvas('out')">−</button></div>
     <div v-if="configPopoverOpen" class="config-popover" role="dialog" aria-label="PageFlow 配置状态">
       <div class="config-popover-status">
         <i :class="{ loaded: configFileStatus.loaded, failed: configFileStatus.error }"></i>
