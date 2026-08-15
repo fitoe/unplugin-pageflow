@@ -103,7 +103,7 @@
     "build:demo": "tsc -b && vite build",
     "build:playground": "vite build --config playground/basic/vite.config.ts",
     "check": "pnpm typecheck && pnpm test:smoke:core",
-    "check:full": "pnpm typecheck && pnpm test && pnpm build:plugin && pnpm test:chrome && pnpm check:chrome-output && pnpm build:demo && pnpm check:package && pnpm build:playground && pnpm check:production && pnpm pack:check",
+    "check:full": "pnpm typecheck && pnpm build:plugin && pnpm test && pnpm test:chrome && pnpm check:chrome-output && pnpm build:demo && pnpm check:package && pnpm build:playground && pnpm check:production && pnpm pack:check",
     "check:package": "node tests/package-output.mjs",
     "check:chrome-output": "node tests/chrome-output.mjs",
     "check:production": "node tests/production-output.mjs",

@@ -194,7 +194,7 @@ test('serves the unplugin-pageflow client from the configured development route'
     assert.doesNotMatch(html, /@vite\/client/)
     assert.equal(client.status, 200)
     assert.match(clientCode, /mountPageFlow/)
-    assert.match(clientCode, /mount\.js\?v=\d+(?:\.\d+)?/)
+    assert.match(clientCode, /mount\.(?:js|ts)\?v=\d+(?:\.\d+)?/)
     assert.equal(runtime.status, 200)
     assert.match(runtimeCode, /startPageFlowRuntime/)
     assert.equal(runtimeClient.status, 200)
