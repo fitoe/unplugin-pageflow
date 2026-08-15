@@ -313,7 +313,7 @@ function addHotspot(layer: HTMLElement, element: Element, type: 'link' | 'event'
   if (!isRectInViewport(rect)) return false
   if (!rect.width || !rect.height) return false
   if (!hotspotRect && !isElementExposed(element, rect)) return false
-  const overlay = document.createElement(targets.length ? 'a' : 'div')
+  const overlay = document.createElement(targets.length && type === 'link' ? 'a' : 'div')
   overlay.setAttribute('data-unplugin-pageflow-hotspot', type)
   overlay.setAttribute('data-unplugin-pageflow-targets', targets.join('\n'))
   if (overlay instanceof window.HTMLAnchorElement) {
@@ -363,7 +363,10 @@ function addHotspot(layer: HTMLElement, element: Element, type: 'link' | 'event'
       if (forwardStaleInteraction(event)) return
       event.preventDefault()
       event.stopImmediatePropagation()
-      notifyNavigation(targets[0], locations[0] ?? targets[0], 'hotspot')
+      overlay.style.pointerEvents = 'none'
+      if (element instanceof window.HTMLElement) element.click()
+      else element.dispatchEvent(new window.MouseEvent('click', { bubbles: true, cancelable: true }))
+      queueMicrotask(() => { overlay.style.pointerEvents = 'auto' })
     }
     overlay.addEventListener('pointerdown', event => {
       pointerNavigationAt = performance.now()
@@ -620,6 +623,7 @@ function protectPreviewInteractions(router: PageFlowRouterAdapter, config: Resol
   const uni = (window as Window & { uni?: UniNavigationApi }).uni
   ;(['navigateTo', 'redirectTo', 'switchTab', 'reLaunch'] as const).forEach(method => {
     if (!uni?.[method]) return
+    const navigate = uni[method].bind(uni)
     uni[method] = (options: UniNavigationOptions) => {
       const location = options?.url
       const target = location && router.resolve(location)?.path
@@ -638,12 +642,7 @@ function protectPreviewInteractions(router: PageFlowRouterAdapter, config: Resol
         notifyNavigation(target, location)
         void publishPage(router, config)
       }
-      const result = { errMsg: `${method}:ok` }
-      queueMicrotask(() => {
-        options?.success?.(result)
-        options?.complete?.(result)
-      })
-      return Promise.resolve(result)
+      return navigate(options)
     }
   })
 }

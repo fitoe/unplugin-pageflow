@@ -11,6 +11,7 @@ test('adapts Vue Router discovery, routes, locations, and intercepted navigation
     { name: 'detail', path: '/detail/:id', components: { default: () => import('../src/App.vue') } },
     { name: 'not-found', path: '/:pathMatch(.*)*' },
   ]
+  const originalNavigations = []
   const router = {
     options: { history: { base: '/app', createHref: path => path } },
     currentRoute: { value: { path: '/home', fullPath: '/home', matched: [routes[0]] } },
@@ -21,8 +22,8 @@ test('adapts Vue Router discovery, routes, locations, and intercepted navigation
       const matched = routes.filter(route => route.path === path)
       return { path, fullPath: location, matched: matched.length ? matched : [routes[2]] }
     },
-    push: () => Promise.resolve(),
-    replace: () => Promise.resolve(),
+    push: to => { originalNavigations.push(['push', to]); return Promise.resolve('pushed') },
+    replace: to => { originalNavigations.push(['replace', to]); return Promise.resolve('replaced') },
     afterEach: callback => { router.afterEachCallback = callback; return () => {} },
   }
   const container = window.document.createElement('div')
@@ -44,8 +45,9 @@ test('adapts Vue Router discovery, routes, locations, and intercepted navigation
 
     const navigations = []
     adapter.interceptNavigation((navigation, method) => navigations.push({ navigation, method }))
-    await router.push('/detail/9')
+    assert.equal(await router.push('/detail/9'), 'pushed')
     assert.deepEqual(navigations, [{ navigation: { path: '/detail/:id', location: '/detail/9' }, method: 'push' }])
+    assert.deepEqual(originalNavigations, [['push', '/detail/9']])
   } finally {
     await server.close()
     await window.happyDOM.close()

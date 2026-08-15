@@ -101,10 +101,11 @@ export class VueRouterAdapter implements PageFlowRouterAdapter {
   interceptNavigation(callback: (navigation: PageFlowResolvedNavigation, method: string) => void) {
     ;(['push', 'replace'] as const).forEach(method => {
       if (!this.router[method]) return
+      const navigate = this.router[method].bind(this.router)
       this.router[method] = (to: unknown) => {
         const navigation = this.resolve(to)
         if (navigation) callback(navigation, method)
-        return Promise.resolve()
+        return navigate(to)
       }
     })
   }

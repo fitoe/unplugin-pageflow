@@ -21,9 +21,12 @@ test('discovers Vue Router routes and reports rendered navigation hotspots', asy
   const parentMessages = []
   let resolvePreviewRequest
   window.fetch = () => new Promise(resolve => { resolvePreviewRequest = resolve })
-  let originalUniNavigationCalls = 0
+  const originalUniNavigations = []
   window.uni = {
-    navigateTo: () => { originalUniNavigationCalls++ },
+    navigateTo: (options) => {
+      originalUniNavigations.push(options.url)
+      return Promise.resolve({ errMsg: 'navigateTo:ok', original: true })
+    },
   }
   Object.defineProperty(window, 'parent', {
     configurable: true,
@@ -298,23 +301,43 @@ test('discovers Vue Router routes and reports rendered navigation hotspots', asy
 
     const uniButton = window.document.createElement('button')
     uniButton.textContent = 'Open about with uni'
+    uniButton.getBoundingClientRect = () => ({ left: 20, top: 260, width: 140, height: 32 })
     uniButton.addEventListener('click', () => window.uni.navigateTo({ url: '/about?from=uni' }))
     container.append(uniButton)
     uniButton.click()
     await new Promise(resolve => setTimeout(resolve, 20))
-    assert.equal(originalUniNavigationCalls, 0)
+    assert.deepEqual(originalUniNavigations, ['/about?from=uni'])
     assert(parentMessages.some(item => item.message.type === 'unplugin-pageflow:navigate'
       && item.message.to === '/about'
       && item.message.location === '/about?from=uni'))
 
     const detachedNavigationCount = parentMessages.filter(item => item.message.type === 'unplugin-pageflow:navigate').length
-    await window.uni.navigateTo({ url: '/about?from=login-success' })
+    const navigationResult = await window.uni.navigateTo({ url: '/about?from=login-success' })
+    assert.deepEqual(navigationResult, { errMsg: 'navigateTo:ok', original: true })
+    assert.deepEqual(originalUniNavigations, ['/about?from=uni', '/about?from=login-success'])
     assert.equal(parentMessages.filter(item => item.message.type === 'unplugin-pageflow:navigate').length, detachedNavigationCount + 1)
     assert.deepEqual(parentMessages.findLast(item => item.message.type === 'unplugin-pageflow:navigate').message, {
       type: 'unplugin-pageflow:navigate',
       to: '/about',
       location: '/about?from=login-success',
     })
+
+    await waitFor(() => [...window.document.querySelectorAll('[data-unplugin-pageflow-hotspot="event"]')]
+      .some(element => element.style.top === '260px'))
+    const uniNavigationHotspot = [...window.document.querySelectorAll('[data-unplugin-pageflow-hotspot="event"]')]
+      .find(element => element.style.top === '260px')
+    assert.equal(uniNavigationHotspot.tagName, 'DIV')
+    uniNavigationHotspot.dispatchEvent(new window.PointerEvent('pointerdown', {
+      bubbles: true,
+      cancelable: true,
+      clientX: 40,
+      clientY: 276,
+    }))
+    assert.deepEqual(originalUniNavigations, [
+      '/about?from=uni',
+      '/about?from=login-success',
+      '/about?from=uni',
+    ])
 
     const wheel = new window.WheelEvent('wheel', { cancelable: true, clientX: 40, clientY: 50, deltaY: 120 })
     window.dispatchEvent(wheel)

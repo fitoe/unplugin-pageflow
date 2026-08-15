@@ -227,6 +227,7 @@ const {
 const hasUserSystem = computed(() => props.config.previewRoles.length > 0)
 const settledTransform = ref<CanvasTransform>({ x: 0, y: 0, scaleX: 1, scaleY: 1 })
 const livePreviewId = ref<string>()
+const livePreviewFrameId = ref<string>()
 const focusedPageId = ref<string>()
 const hoveredUserPageId = ref<string>()
 const openUserMenuPageId = ref<string>()
@@ -301,7 +302,7 @@ const focusedPreviewStatus = computed<PageFlowPreviewStatus>(() => {
   if (page.virtual) return 'virtual'
   if (failedPreviewIds.has(page.id)) return 'failed'
   if (capturePreviewId.value === page.id || capturesInProgress.has(page.id)) return 'capturing'
-  if (livePreviewId.value === page.id && loadedPreviewIds.value.has(page.id)) return 'live'
+  if (livePreviewLoaded(page.id)) return 'live'
   if (!pageHasStoredThumbnail(page)) return 'missing'
   return thumbnailIsCurrent(page) ? 'cached' : 'stale'
 })
@@ -666,7 +667,22 @@ const captureOnlyPage = computed(() => pages.value.find(page => page.id === capt
   && !focusedPageId.value
   && page.id !== focusedPageId.value
   && !livePreviewCacheIds.value.includes(page.id)))
-const previewPages = computed(() => renderedPages.value.filter(page => shouldRenderPreview(page.id) && page.id !== captureOnlyPage.value?.id))
+function previewDisplayPageId(framePageId: string) {
+  return framePageId === livePreviewFrameId.value ? livePreviewId.value ?? framePageId : framePageId
+}
+function livePreviewLoaded(pageId: string) {
+  return livePreviewId.value === pageId
+    && Boolean(livePreviewFrameId.value)
+    && loadedPreviewIds.value.has(livePreviewFrameId.value!)
+}
+function livePreviewFrameVisible(framePageId: string) {
+  return livePreviewFrameId.value === framePageId && livePreviewLoaded(previewDisplayPageId(framePageId))
+}
+const previewPages = computed(() => renderedPages.value.filter(page => shouldRenderPreview(page.id)
+  && page.id !== captureOnlyPage.value?.id
+  && !(livePreviewFrameId.value && livePreviewId.value
+    && livePreviewFrameId.value !== livePreviewId.value
+    && page.id === livePreviewId.value)))
 const userLabelPages = computed(() => {
   if (focusScene.value) return [focusScene.value.source]
   const pageIds = new Set([focusedPageId.value, hoveredUserPageId.value, openUserMenuPageId.value].filter(Boolean))
@@ -1138,7 +1154,7 @@ function pagePreviewStatus(page: PageFlowPage): PageFlowPreviewStatus {
   if (page.virtual) return 'virtual'
   if (failedPreviewIds.has(page.id)) return 'failed'
   if (capturePreviewId.value === page.id || capturesInProgress.has(page.id)) return 'capturing'
-  if (livePreviewId.value === page.id && loadedPreviewIds.value.has(page.id)) return 'live'
+  if (livePreviewLoaded(page.id)) return 'live'
   if (!pageHasStoredThumbnail(page)) return 'missing'
   return thumbnailIsCurrent(page) ? 'cached' : 'stale'
 }
@@ -1764,16 +1780,20 @@ function recordNavigation(from: string, to: string, reason: string) {
   navigationEvents.value = [...navigationEvents.value.slice(-19), { id: Date.now(), from, to, reason, at: Date.now() }]
 }
 
-function activatePreviewNavigation(to: string, location = to, animate = true, reason = '应用导航') {
+function activatePreviewNavigation(to: string, location = to, animate = true, reason = '应用导航', framePageId = livePreviewFrameId.value) {
   const locationPath = location.split(/[?#]/, 1)[0]
   const target = pages.value.find(page => page.id === to || page.path === to || page.path === locationPath)
   if (!target) return false
   const source = pages.value.find(page => page.id === focusedPageId.value)
   if (source && source.id !== target.id) recordNavigation(source.path, location, reason)
+  if (framePageId && previewFrames.reassign(framePageId, target.id)) {
+    livePreviewFrameId.value = framePageId
+    livePreviewId.value = target.id
+  }
   readyPreviewIds.value = new Set([...readyPreviewIds.value].filter(id => id !== target.id))
   navigationLocations.value = { ...navigationLocations.value, [target.path]: location }
   failedPreviewIds.delete(target.id)
-  activatePreview(target.id, animate, true)
+  activatePreview(target.id, animate, true, framePageId)
   return true
 }
 
@@ -1988,7 +2008,7 @@ function cacheCurrentFocusedLinks() {
   )
 }
 
-function activatePreview(pageId: string, animate = true, preserveNavigation = false) {
+function activatePreview(pageId: string, animate = true, preserveNavigation = false, navigationFramePageId?: string) {
   if (animate && focusedPageId.value && focusedPageId.value !== pageId) {
     if (focusTransitionTargetId) {
       focusTransitionTargetId = pageId
@@ -1997,9 +2017,9 @@ function activatePreview(pageId: string, animate = true, preserveNavigation = fa
     focusTransitionTargetId = pageId
     animateFocusLayout(0, () => {
       const targetId = focusTransitionTargetId ?? pageId
-      clearFocus()
+      clearFocus(Boolean(navigationFramePageId))
       focusTransitionTargetId = undefined
-      activatePreview(targetId, true, preserveNavigation)
+      activatePreview(targetId, true, preserveNavigation, navigationFramePageId)
     })
     return
   }
@@ -2019,13 +2039,17 @@ function activatePreview(pageId: string, animate = true, preserveNavigation = fa
     animateToRouteGroup(targetGroupPath, () => {
       const targetId = routeTransitionTargetId ?? pageId
       routeTransitionTargetId = undefined
-      activatePreview(targetId, true, preserveNavigation)
+      activatePreview(targetId, true, preserveNavigation, navigationFramePageId)
     })
     return
   }
   const targetPosition = next?.positions.get(pageId) ?? positions.value.get(pageId)
   const mountLivePreview = () => {
     if (focusedPageId.value !== pageId) return
+    const framePageId = navigationFramePageId ?? pageId
+    if (navigationFramePageId) previewFrames.reassign(framePageId, pageId)
+    else previewFrames.restore(framePageId)
+    livePreviewFrameId.value = framePageId
     livePreviewId.value = pageId
     livePreviewCacheIds.value = touchPreviewCache(livePreviewCacheIds.value, pageId)
     if (!props.host) void nextTick(() => requestFocusedPageScan(pageId))
@@ -2245,14 +2269,32 @@ function requestFocusedLayout() {
   animateFocusLayout(1)
 }
 
-function clearFocus() {
+function restoreHandedOffPreviewFrame() {
+  const framePageId = livePreviewFrameId.value
+  const logicalPageId = livePreviewId.value
+  if (!framePageId || !logicalPageId || framePageId === logicalPageId) return
+  const frame = previewFrames.get(logicalPageId)
+  const framePage = pages.value.find(page => page.id === framePageId)
+  previewFrames.restore(framePageId)
+  if (frame && framePage) {
+    loadedPreviewIds.value = new Set([...loadedPreviewIds.value].filter(id => id !== framePageId))
+    readyPreviewIds.value = new Set([...readyPreviewIds.value].filter(id => id !== framePageId))
+    frame.src = previewUrl(framePage.path)
+  }
+}
+
+function clearFocus(preserveLiveFrame = false) {
   cacheCurrentFocusedLinks()
+  if (!preserveLiveFrame) restoreHandedOffPreviewFrame()
   focusedLinksScannedPageId = undefined
   focusedPageId.value = undefined
   focusedLinks.value = []
   focusedTargetPositions.value = {}
   setHoveredHotspot(undefined, false)
-  livePreviewId.value = undefined
+  if (!preserveLiveFrame) {
+    livePreviewId.value = undefined
+    livePreviewFrameId.value = undefined
+  }
   focusLayoutProgress = 0
   scheduleCanvasRender()
   scheduleNextCapture()
@@ -2888,6 +2930,8 @@ function setPreviewFrame(pageId: string, element: Element | null) {
       loadedPreviewIds.value = new Set([...loadedPreviewIds.value].filter(id => id !== pageId))
       readyPreviewIds.value = new Set([...readyPreviewIds.value].filter(id => id !== pageId))
     }
+    if (pageId === livePreviewFrameId.value && livePreviewId.value && livePreviewId.value !== pageId)
+      previewFrames.reassign(pageId, livePreviewId.value)
   } else {
     previewFrames.remove(pageId)
   }
@@ -2918,16 +2962,16 @@ function syncPreviewHotspots(pageId: string) {
   const navigateFromHotspot = (event: Event) => {
     const hotspot = (event.target as Element | null)?.closest<HTMLElement>('[data-unplugin-pageflow-hotspot]')
     const target = hotspot?.dataset.unpluginPageflowTargets?.split('\n').find(Boolean)
-    if (!target) return
+    if (!target || hotspot?.dataset.unpluginPageflowHotspot === 'event') return false
     event.preventDefault()
     event.stopImmediatePropagation()
     const href = hotspot.tagName === 'A' ? hotspot.getAttribute('href') : undefined
     const location = href?.startsWith('#/') ? href.slice(1) : href || target
     activatePreviewNavigation(target, location, false)
+    return true
   }
   layer.addEventListener('pointerdown', (event) => {
-    pointerNavigationAt = performance.now()
-    navigateFromHotspot(event)
+    if (navigateFromHotspot(event)) pointerNavigationAt = performance.now()
   }, true)
   layer.addEventListener('click', (event) => {
     if (performance.now() - pointerNavigationAt < 500) {
@@ -2965,30 +3009,31 @@ function schedulePcPreviewSizeDetection(pageId: string, frame: HTMLIFrameElement
 
 async function handlePreviewLoad(pageId: string, frame: HTMLIFrameElement) {
   try {
-    const page = pages.value.find(item => item.id === pageId)
+    const logicalPageId = pageId === livePreviewFrameId.value ? livePreviewId.value ?? pageId : pageId
+    const page = pages.value.find(item => item.id === logicalPageId)
     if (!page) return
     const actualUrl = frame.contentWindow?.location.href
     const redirect = actualUrl
       ? detectUnexpectedPreviewRedirect(previewUrl(page.path), actualUrl, routeMode.value, window.location.origin)
       : undefined
     if (redirect) {
-      if (pageId === focusedPageId.value && pageId === livePreviewId.value)
-        activatePreviewNavigation(redirect.actualPath, redirect.actualPath, true, '应用重定向')
+      if (logicalPageId === focusedPageId.value && logicalPageId === livePreviewId.value)
+        activatePreviewNavigation(redirect.actualPath, redirect.actualPath, true, '应用重定向', pageId)
       return
     }
     loadedPreviewIds.value = new Set(loadedPreviewIds.value).add(pageId)
-    syncPreviewHotspots(pageId)
-    requestFocusedPageScan(pageId)
-    if (!applyDetectedPcPreviewSize(frame)) schedulePcPreviewSizeDetection(pageId, frame)
+    syncPreviewHotspots(logicalPageId)
+    requestFocusedPageScan(logicalPageId)
+    if (!applyDetectedPcPreviewSize(frame)) schedulePcPreviewSizeDetection(logicalPageId, frame)
     else return
     await waitForPreviewReady(frame, PREVIEW_READY_QUIET_MS)
-    syncPreviewHotspots(pageId)
+    syncPreviewHotspots(logicalPageId)
     readyPreviewIds.value = new Set(readyPreviewIds.value).add(pageId)
-    requestFocusedPageScan(pageId)
-    if (pageId === focusedPageId.value && !cachedPageDiagnostics(page)) requestFocusedDiagnostics()
+    requestFocusedPageScan(logicalPageId)
+    if (logicalPageId === focusedPageId.value && !cachedPageDiagnostics(page)) requestFocusedDiagnostics()
     const title = frame.contentDocument?.title.trim()
     if (page && title && title !== page.title) await reportPageTitle(props.config, page.path, title)
-    await capturePreview(pageId, frame, true)
+    await capturePreview(logicalPageId, frame, true)
   } catch {}
 }
 
@@ -3059,6 +3104,7 @@ function resetPreviewRendering() {
   previewGeneration++
   const focusedId = focusedPageId.value
   livePreviewId.value = focusedId
+  livePreviewFrameId.value = focusedId
   livePreviewCacheIds.value = focusedId
     ? touchPreviewCache(livePreviewCacheIds.value, focusedId)
     : []
@@ -3205,7 +3251,7 @@ function handlePreviewMessage(event: MessageEvent) {
         ? confirmReportedPreviewRedirect(previewUrl(page.path), actualUrl, message.path, routeMode.value, window.location.origin)
         : undefined
       if (redirect && sourcePageId === focusedPageId.value && sourcePageId === livePreviewId.value)
-        activatePreviewNavigation(redirect.actualPath)
+        activatePreviewNavigation(redirect.actualPath, redirect.actualPath, true, '应用重定向', livePreviewFrameId.value)
       return
     }
     if (sourcePageId === focusedPageId.value) {
@@ -3255,7 +3301,7 @@ function handlePreviewMessage(event: MessageEvent) {
     return
   }
   if (!sourcePageId || sourcePageId !== focusedPageId.value || sourcePageId !== livePreviewId.value) return
-  activatePreviewNavigation(message.to, message.location)
+  activatePreviewNavigation(message.to, message.location, true, '应用导航', livePreviewFrameId.value)
 }
 
 function createCardGroup(page: PageFlowPage, x: number, y: number, scale = 1, highlighted = false, compactOnly = false, hideMeta = false) {
@@ -4239,29 +4285,29 @@ onUnmounted(() => {
             :key="page.id"
             class="page-preview"
             :style="{
-              left: `${pagePosition(page.id)[0] + PAGE_PREVIEW_INSET}px`,
-              top: `${pagePosition(page.id)[1] + PAGE_PREVIEW_INSET}px`,
-              height: `${pagePreviewHeight(page.id)}px`,
-              transform: page.id === active ? `scale(${SELECTED_PAGE_SCALE})` : undefined,
+              left: `${pagePosition(previewDisplayPageId(page.id))[0] + PAGE_PREVIEW_INSET}px`,
+              top: `${pagePosition(previewDisplayPageId(page.id))[1] + PAGE_PREVIEW_INSET}px`,
+              height: `${pagePreviewHeight(previewDisplayPageId(page.id))}px`,
+              transform: previewDisplayPageId(page.id) === active ? `scale(${SELECTED_PAGE_SCALE})` : undefined,
               transformOrigin: 'center center',
-              pointerEvents: livePreviewId === page.id && loadedPreviewIds.has(page.id) && !viewportInteracting ? 'auto' : 'none',
+              pointerEvents: livePreviewFrameVisible(page.id) && !viewportInteracting ? 'auto' : 'none',
             }"
-            :data-page-id="page.id"
+            :data-page-id="previewDisplayPageId(page.id)"
           >
             <iframe
               :ref="element => setPreviewFrame(page.id, element as Element | null)"
               :key="`${previewMode}:${currentPreviewMode.width}x${currentPreviewMode.height}:${page.id}:${pageUser(page)}`"
               :src="previewUrl(page.path)"
-              :title="`${page.title} preview`"
+              :title="`${pages.find(item => item.id === previewDisplayPageId(page.id))?.title ?? page.title} preview`"
               :style="{
                 position: 'absolute',
                 inset: 0,
                 width: `${currentPreviewMode.width}px`,
                 height: `${currentPreviewMode.height}px`,
                  transform: `scale(${PAGE_CARD_WIDTH / currentPreviewMode.width})`,
-                 visibility: livePreviewId === page.id && loadedPreviewIds.has(page.id) && !viewportInteracting ? 'visible' : 'hidden',
-                 opacity: livePreviewId === page.id && loadedPreviewIds.has(page.id) && !viewportInteracting ? 1 : 0,
-                pointerEvents: livePreviewId === page.id && loadedPreviewIds.has(page.id) && !viewportInteracting ? 'auto' : 'none',
+                 visibility: livePreviewFrameVisible(page.id) && !viewportInteracting ? 'visible' : 'hidden',
+                 opacity: livePreviewFrameVisible(page.id) && !viewportInteracting ? 1 : 0,
+                pointerEvents: livePreviewFrameVisible(page.id) && !viewportInteracting ? 'auto' : 'none',
               }"
               tabindex="-1"
               @load="handlePreviewLoad(page.id, $event.currentTarget as HTMLIFrameElement)"
