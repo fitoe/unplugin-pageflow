@@ -17,6 +17,20 @@ export function previewFrameDisplayPageId(framePageId: string, liveFramePageId?:
   return framePageId === liveFramePageId ? livePageId ?? framePageId : framePageId
 }
 
+export function shouldInspectPreviewFrame(
+  framePageId: string,
+  focusedPageId?: string,
+  liveFramePageId?: string,
+  livePageId?: string,
+) {
+  // A navigation handoff updates the physical frame's live page before the
+  // focus flight reaches its midpoint. Keep inspection enabled throughout the
+  // flight so Vue does not rewrite the externally navigated iframe `src` back
+  // to its original card route.
+  if (framePageId === liveFramePageId && livePageId) return true
+  return previewFrameDisplayPageId(framePageId, liveFramePageId, livePageId) === focusedPageId
+}
+
 export function shouldMountPreviewFrame(
   framePageId: string,
   options: {
@@ -38,6 +52,22 @@ export function shouldMountPreviewFrame(
     return previewFrameDisplayPageId(framePageId, options.liveFramePageId, options.livePageId) === options.focusedPageId
   }
   return framePageId === options.capturePageId || options.cachedPageIds.includes(framePageId)
+}
+
+export function syncPreviewHotspotLayerVisibility(layer: HTMLElement, visible: boolean) {
+  // Link hotspots must navigate inside the live iframe so the router, query,
+  // and rendered page stay authoritative. PageFlow synchronizes afterward.
+  layer.style.display = visible ? 'block' : 'none'
+}
+
+export function navigatePreviewFrame(frame: HTMLIFrameElement, url: string, origin = window.location.origin) {
+  const target = new URL(url, origin).href
+  try {
+    if (frame.contentWindow?.location.href === target) return false
+  }
+  catch {}
+  frame.src = target
+  return true
 }
 
 export function resolvePreviewUrl(

@@ -8,7 +8,7 @@ test('lays out linked pages in layers and limits previews to the viewport', asyn
     const { assignOrderedFocusSides, centerPageTransform, collapseRepeatedListLinks, createPageSpatialIndex, createRouteDeckView, expandedRouteGroupPath, fitFocusedPreviewTransform, fitPageBoundsTransform, getRenderablePages, getVisiblePageIds, layoutPageGrid, layoutPagesByRoute, promotedRouteGroupPath, queryPageSpatialIndex, responsivePageGridColumns, restoreCanvasLayoutPositions, routeDeckPathForPage } = await server.ssrLoadModule('/src/client/layout.ts')
     const { forwardWheelToCanvas, PAGEFLOW_CANVAS_CONFIG } = await server.ssrLoadModule('/src/client/canvas.ts')
     const { expandDynamicRoutes } = await server.ssrLoadModule('/src/shared/dynamic-routes.ts')
-    const { previewFrameDisplayPageId, previewRole, resolvePreviewUrl, shouldMountPreviewFrame, touchPreviewCache } = await server.ssrLoadModule('/src/client/preview.ts')
+    const { previewFrameDisplayPageId, previewRole, resolvePreviewUrl, shouldInspectPreviewFrame, shouldMountPreviewFrame, touchPreviewCache } = await server.ssrLoadModule('/src/client/preview.ts')
     const { fullThumbnailTiles, loadedThumbnailTilesOrCompact, thumbnailPageKey, thumbnailRecordsAreCurrent, thumbnailRevision, thumbnailSlot, thumbnailTierForZoom, thumbnailUrl, visibleThumbnailTiles, visibleThumbnailTilesOrCompact } = await server.ssrLoadModule('/src/client/thumbnails.ts')
     const { boundedPreviewDocumentHeight, isInfiniteListDocument, maskedIconBackground, materializeMaskedIcons, previewDocumentHeight } = await server.ssrLoadModule('/src/client/snapshot.ts')
     const { FocusedPageStateCache, preserveScannedFocusedLinks } = await server.ssrLoadModule('/src/client/focus-cache.ts')
@@ -75,6 +75,9 @@ test('lays out linked pages in layers and limits previews to the viewport', asyn
     assert.deepEqual(touchPreviewCache([], 'home'), ['home'])
     assert.deepEqual(touchPreviewCache(['home', 'about', 'contact'], 'home'), ['about', 'contact', 'home'])
     assert.equal(previewFrameDisplayPageId('login', 'login', 'role-select'), 'role-select')
+    assert.equal(shouldInspectPreviewFrame('login', 'role-select', 'login', 'role-select'), true)
+    assert.equal(shouldInspectPreviewFrame('login', 'login', 'login', 'role-select'), true)
+    assert.equal(shouldInspectPreviewFrame('home', 'login', 'login', 'role-select'), false)
     const redirectedPreviewOptions = {
       focusedPageId: 'role-select',
       liveFramePageId: 'login',

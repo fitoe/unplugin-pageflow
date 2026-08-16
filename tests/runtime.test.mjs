@@ -298,6 +298,16 @@ test('discovers Vue Router routes and reports rendered navigation hotspots', asy
     const semanticHotspot = window.document.querySelector('[data-unplugin-pageflow-hotspot="link"]')
     assert.equal(semanticHotspot.tagName, 'A')
     assert.equal(semanticHotspot.getAttribute('href'), '/about?from=hotspot')
+    const semanticNavigationCount = parentMessages.filter(item => item.message.type === 'unplugin-pageflow:navigate').length
+    semanticHotspot.addEventListener('click', event => event.preventDefault(), { once: true })
+    semanticHotspot.click()
+    assert.equal(parentMessages.filter(item => item.message.type === 'unplugin-pageflow:navigate').length, semanticNavigationCount + 1)
+    assert.deepEqual(parentMessages.findLast(item => item.message.type === 'unplugin-pageflow:navigate').message, {
+      type: 'unplugin-pageflow:navigate',
+      to: '/about',
+      location: '/about?from=hotspot',
+      interaction: 'hotspot',
+    })
 
     const uniButton = window.document.createElement('button')
     uniButton.textContent = 'Open about with uni'

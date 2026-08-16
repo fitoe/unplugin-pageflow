@@ -6,15 +6,13 @@ interface PreviewFrameTimerHost {
 export class PreviewFrameRegistry {
   private readonly frames = new Map<string, HTMLIFrameElement>()
   private pageIdsByWindow = new WeakMap<object, string>()
-  private readonly physicalPageIdsByLogical = new Map<string, string>()
-  private readonly logicalPageIdsByPhysical = new Map<string, string>()
   private readonly cleanups = new Map<string, () => void>()
   private readonly timers = new Map<string, ReturnType<typeof setTimeout>>()
 
   constructor(private readonly timerHost: PreviewFrameTimerHost = globalThis) {}
 
   get(pageId: string) {
-    return this.frames.get(this.physicalPageIdsByLogical.get(pageId) ?? pageId)
+    return this.frames.get(pageId)
   }
 
   forEach(callback: (frame: HTMLIFrameElement, pageId: string) => void) {
@@ -23,7 +21,6 @@ export class PreviewFrameRegistry {
 
   set(pageId: string, frame: HTMLIFrameElement) {
     if (this.frames.get(pageId) === frame) return false
-    this.clearReassignment(pageId)
     this.releasePageResources(pageId)
     const previousWindow = this.frames.get(pageId)?.contentWindow
     if (previousWindow) this.pageIdsByWindow.delete(previousWindow)
@@ -36,31 +33,7 @@ export class PreviewFrameRegistry {
     const frame = this.frames.get(pageId)
     if (frame?.contentWindow) this.pageIdsByWindow.delete(frame.contentWindow)
     this.frames.delete(pageId)
-    this.clearReassignment(pageId)
     this.releasePageResources(pageId)
-  }
-
-  reassign(physicalPageId: string, logicalPageId: string) {
-    const frame = this.frames.get(physicalPageId)
-    if (!frame) return false
-    this.clearReassignment(physicalPageId)
-    const previousPhysicalPageId = this.physicalPageIdsByLogical.get(logicalPageId)
-    if (previousPhysicalPageId && previousPhysicalPageId !== physicalPageId)
-      this.clearReassignment(previousPhysicalPageId)
-    if (physicalPageId !== logicalPageId) {
-      this.logicalPageIdsByPhysical.set(physicalPageId, logicalPageId)
-      this.physicalPageIdsByLogical.set(logicalPageId, physicalPageId)
-    }
-    if (frame.contentWindow) this.pageIdsByWindow.set(frame.contentWindow, logicalPageId)
-    return true
-  }
-
-  restore(physicalPageId: string) {
-    const frame = this.frames.get(physicalPageId)
-    if (!frame) return false
-    this.clearReassignment(physicalPageId)
-    if (frame.contentWindow) this.pageIdsByWindow.set(frame.contentWindow, physicalPageId)
-    return true
   }
 
   pageIdForSource(source: MessageEventSource | null) {
@@ -91,17 +64,7 @@ export class PreviewFrameRegistry {
     const pageIds = new Set([...this.frames.keys(), ...this.cleanups.keys(), ...this.timers.keys()])
     pageIds.forEach(pageId => this.releasePageResources(pageId))
     this.frames.clear()
-    this.physicalPageIdsByLogical.clear()
-    this.logicalPageIdsByPhysical.clear()
     this.pageIdsByWindow = new WeakMap()
-  }
-
-  private clearReassignment(physicalPageId: string) {
-    const logicalPageId = this.logicalPageIdsByPhysical.get(physicalPageId)
-    if (!logicalPageId) return
-    this.logicalPageIdsByPhysical.delete(physicalPageId)
-    if (this.physicalPageIdsByLogical.get(logicalPageId) === physicalPageId)
-      this.physicalPageIdsByLogical.delete(logicalPageId)
   }
 
   private releasePageResources(pageId: string) {

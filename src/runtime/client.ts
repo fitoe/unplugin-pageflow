@@ -320,6 +320,7 @@ function addHotspot(layer: HTMLElement, element: Element, type: 'link' | 'event'
     const location = locations[0] ?? targets[0]
     overlay.href = window.location.hash.startsWith('#/') ? `#${location.startsWith('/') ? location : `/${location}`}` : location
     overlay.setAttribute('aria-label', `Open ${targets[0]}`)
+    overlay.addEventListener('click', () => notifyNavigation(targets[0], location, 'hotspot'))
   }
   const background = type === 'link' ? 'rgba(255, 92, 168, 0.2)' : 'rgba(101, 191, 255, 0.2)'
   const border = type === 'link' ? 'rgba(255, 92, 168, 0.2)' : 'rgba(101, 191, 255, 0.2)'
