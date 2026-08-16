@@ -274,13 +274,15 @@ test('discovers Vue Router routes and reports rendered navigation hotspots', asy
     assert.equal(JSON.parse(titledPage.init.body).title, 'Rendered home')
     assert.equal(requests.some(request => request.url.endsWith('/api/routes')), false)
     assert(parentMessages.some(item => item.message.type === 'unplugin-pageflow:page-reported' && item.message.path === '/'))
-    assert.equal(window.document.querySelectorAll('[data-unplugin-pageflow-hotspot]').length, 8)
+    assert.equal(window.document.querySelectorAll('[data-unplugin-pageflow-hotspot]').length, 7)
+    assert.equal([...window.document.querySelectorAll('[data-unplugin-pageflow-hotspot]')]
+      .some(element => !element.dataset.unpluginPageflowTargets), false)
     const nestedHotspot = [...window.document.querySelectorAll('[data-unplugin-pageflow-hotspot="link"]')]
       .find(element => element.dataset.unpluginPageflowTargets === '/screen/legacy/yanzhengzhongxin')
     assert.equal(nestedHotspot.style.left, '300px')
     assert.equal(nestedHotspot.style.top, '150px')
     assert.equal([...window.document.querySelectorAll('[data-unplugin-pageflow-hotspot="event"]')]
-      .some(element => element.style.top === '140px'), true)
+      .some(element => element.style.top === '140px'), false)
     assert.equal([...window.document.querySelectorAll('[data-unplugin-pageflow-hotspot="event"]')]
       .some(element => element.style.top === '215px'), false)
     assert.equal(window.document.querySelector('[data-unplugin-pageflow-hotspot="link"]').style.background, 'rgba(255, 92, 168, 0.2)')

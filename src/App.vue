@@ -4937,7 +4937,7 @@ onUnmounted(() => {
         {{ configRefreshing ? '正在刷新…' : '刷新并重建布局' }}
       </button>
     </div>
-    <footer>
+    <footer class="app-statusbar">
       <button type="button" class="route-sync-status" :aria-expanded="configPopoverOpen" @click="configPopoverOpen = !configPopoverOpen"><i></i> {{ status }}</button>
       <span>{{ routeDeckView.decks.length }} 组 / {{ pages.length }} 页 · v{{ pageFlowVersion }}</span>
     </footer>

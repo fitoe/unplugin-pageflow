@@ -498,7 +498,7 @@ function collectLinks(router: PageFlowRouterAdapter, visibleOnly = false) {
     if (element.hasAttribute('data-pageflow-to')) return
     const label = element.getAttribute('aria-label')?.trim() || element.textContent?.trim() || 'Navigation'
     const targets = router.renderedNavigationTargets?.(element) ?? []
-    if (!addHotspot(layer!, element, 'event', targets) || !targets.length) return
+    if (!targets.length || !addHotspot(layer!, element, 'event', targets)) return
     const hotspot = hotspotCenter(element)
     targets.forEach(to => links.push({ label, to, kind: 'event', hotspot }))
   })

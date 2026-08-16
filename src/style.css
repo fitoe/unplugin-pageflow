@@ -312,7 +312,7 @@ header {
 .zoom button:active { transform: translateY(1px); }
 .zoom span { min-width: 34px; text-align: center; }
 
-footer {
+.app-statusbar {
   position: absolute;
   right: 0;
   bottom: 0;
