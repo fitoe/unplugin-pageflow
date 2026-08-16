@@ -13,6 +13,33 @@ export function touchPreviewCache(ids: string[], pageId: string, limit = PAGEFLO
   return [...ids.filter(id => id !== pageId), pageId].slice(-limit)
 }
 
+export function previewFrameDisplayPageId(framePageId: string, liveFramePageId?: string, livePageId?: string) {
+  return framePageId === liveFramePageId ? livePageId ?? framePageId : framePageId
+}
+
+export function shouldMountPreviewFrame(
+  framePageId: string,
+  options: {
+    focusedPageId?: string
+    liveFramePageId?: string
+    livePageId?: string
+    capturePageId?: string
+    cachedPageIds: string[]
+  },
+) {
+  if (options.focusedPageId) {
+    const handedOff = options.liveFramePageId
+      && options.livePageId
+      && options.liveFramePageId !== options.livePageId
+    if (handedOff) {
+      if (framePageId === options.liveFramePageId) return true
+      if (framePageId === options.livePageId) return false
+    }
+    return previewFrameDisplayPageId(framePageId, options.liveFramePageId, options.livePageId) === options.focusedPageId
+  }
+  return framePageId === options.capturePageId || options.cachedPageIds.includes(framePageId)
+}
+
 export function resolvePreviewUrl(
   path: string,
   config: ResolvedPageFlowOptions,

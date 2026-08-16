@@ -28,7 +28,7 @@ import type {
 } from './shared/types'
 import { cancelPageFlowTest, fetchPageFlowEditor, fetchPageFlowGraph, fetchPageFlowTests, openPageFlowEditor, publishPageFlowAIContext, refreshPageFlowConfig, reportPageTitle, runPageFlowLighthouse, runPageFlowTest, startRouteDiscovery, subscribeToPageFlowUpdates, type PageFlowEditorInfo } from './client/graph'
 import { planGraphUpdate } from './client/graph-update'
-import { resolvePreviewUrl, touchPreviewCache } from './client/preview'
+import { previewFrameDisplayPageId, resolvePreviewUrl, shouldMountPreviewFrame, touchPreviewCache } from './client/preview'
 import { deletePageFlowInternalParams, hasPageFlowPreview, PAGEFLOW_INSPECT_PARAM, PAGEFLOW_SCAN_MESSAGE } from './shared/protocol'
 import { forwardWheelToCanvas, PAGEFLOW_CANVAS_CONFIG, type PageFlowWheelInteraction } from './client/canvas'
 import { CaptureQueue } from './client/capture-queue'
@@ -660,7 +660,7 @@ const focusedTargetPageIds = computed(() => {
 const renderedPages = computed(() => getRenderablePages(
   pages.value,
   visiblePageIds.value,
-  [...livePreviewCacheIds.value, capturePreviewId.value, focusedPageId.value, ...focusedTargetPageIds.value],
+  [...livePreviewCacheIds.value, livePreviewFrameId.value, capturePreviewId.value, focusedPageId.value, ...focusedTargetPageIds.value],
   maximumMountedPreviews.value,
 ))
 const captureOnlyPage = computed(() => pages.value.find(page => page.id === capturePreviewId.value
@@ -668,7 +668,7 @@ const captureOnlyPage = computed(() => pages.value.find(page => page.id === capt
   && page.id !== focusedPageId.value
   && !livePreviewCacheIds.value.includes(page.id)))
 function previewDisplayPageId(framePageId: string) {
-  return framePageId === livePreviewFrameId.value ? livePreviewId.value ?? framePageId : framePageId
+  return previewFrameDisplayPageId(framePageId, livePreviewFrameId.value, livePreviewId.value)
 }
 function livePreviewLoaded(pageId: string) {
   return livePreviewId.value === pageId
@@ -1900,9 +1900,13 @@ function handleViewportTransform() {
 function shouldRenderPreview(pageId: string) {
   if (pages.value.find(page => page.id === pageId)?.virtual) return false
   if (props.config.previewPath === '/') return false
-  if (focusedPageId.value) return pageId === focusedPageId.value
-  if (capturePreviewId.value === pageId) return true
-  return livePreviewCacheIds.value.includes(pageId)
+  return shouldMountPreviewFrame(pageId, {
+    focusedPageId: focusedPageId.value,
+    liveFramePageId: livePreviewFrameId.value,
+    livePageId: livePreviewId.value,
+    capturePageId: capturePreviewId.value,
+    cachedPageIds: livePreviewCacheIds.value,
+  })
 }
 
 function createVirtualPage() {
@@ -3017,8 +3021,10 @@ async function handlePreviewLoad(pageId: string, frame: HTMLIFrameElement) {
       ? detectUnexpectedPreviewRedirect(previewUrl(page.path), actualUrl, routeMode.value, window.location.origin)
       : undefined
     if (redirect) {
-      if (logicalPageId === focusedPageId.value && logicalPageId === livePreviewId.value)
-        activatePreviewNavigation(redirect.actualPath, redirect.actualPath, true, '应用重定向', pageId)
+      if (logicalPageId === focusedPageId.value
+        && logicalPageId === livePreviewId.value
+        && activatePreviewNavigation(redirect.actualPath, redirect.actualPath, true, '应用重定向', pageId))
+        loadedPreviewIds.value = new Set(loadedPreviewIds.value).add(pageId)
       return
     }
     loadedPreviewIds.value = new Set(loadedPreviewIds.value).add(pageId)
