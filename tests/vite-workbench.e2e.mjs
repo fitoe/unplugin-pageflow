@@ -5,7 +5,7 @@ import { fileURLToPath } from 'node:url'
 import { chromium } from '@playwright/test'
 import { createServer } from 'vite'
 
-test('Vite workbench smoke covers navigation, focus, viewport, theme, hotspots, diagnostics, and todos', { timeout: 60_000 }, async () => {
+test('Vite workbench smoke covers navigation, focus, viewport, theme, hotspots, diagnostics, todos, and the page tree', { timeout: 90_000 }, async () => {
   const canvasConfigFile = fileURLToPath(new URL('../playground/basic/.pageflow', import.meta.url))
   const originalCanvasConfig = await readFile(canvasConfigFile, 'utf8').catch(() => undefined)
   if (originalCanvasConfig == null) await writeFile(canvasConfigFile, '{}\n')
@@ -32,6 +32,13 @@ test('Vite workbench smoke covers navigation, focus, viewport, theme, hotspots, 
     page.on('pageerror', error => errors.push(error.message))
     await page.goto(`${origin}/__unplugin-pageflow/`, { waitUntil: 'networkidle' })
     await page.getByText('0 组 / 5 页').waitFor()
+    const persistentPanel = page.locator('.api-panel')
+    const persistentTree = page.getByRole('tree', { name: '项目页面' })
+    await persistentTree.waitFor()
+    const initialTreeBox = await persistentTree.boundingBox()
+    assert(initialTreeBox)
+    assert.equal(await page.locator('.page-tree-header, .page-tree-search').count(), 0)
+    assert.equal(await page.locator('[aria-label="页面详情"] [role="tab"]:disabled').count(), 4)
     assert.equal(await page.locator('.canvas').getAttribute('data-rendered-pages'), '5')
     await page.waitForFunction(() => Number.parseInt(document.querySelector('.zoom span')?.textContent ?? '100', 10) <= 90)
     await page.locator('.zoom button').first().click()
@@ -45,7 +52,11 @@ test('Vite workbench smoke covers navigation, focus, viewport, theme, hotspots, 
     await page.waitForFunction(() => document.querySelector('input[placeholder="搜索页面…"]')?.value === '')
     await page.waitForFunction(() => location.hash.includes('#/page/%2Fcheckout'))
     assert.match(page.url(), /#\/page\/%2Fcheckout/)
-    await page.getByRole('region', { name: '页面健康摘要' }).waitFor()
+    const focusedTreeBox = await persistentTree.boundingBox()
+    assert(focusedTreeBox)
+    assert.equal(focusedTreeBox.x, initialTreeBox.x)
+    assert.equal(focusedTreeBox.y, initialTreeBox.y)
+    assert.equal(await persistentPanel.isVisible(), true)
     assert.equal(await page.locator('.page-user-label').count(), 0)
 
     await page.getByRole('button', { name: '切换画布和表格视图' }).click()
@@ -63,6 +74,34 @@ test('Vite workbench smoke covers navigation, focus, viewport, theme, hotspots, 
     assert.equal(await viewportButtons.count(), 3)
     await viewportButtons.nth(0).click()
     await viewportButtons.nth(2).click()
+
+    await search.fill('Sign in')
+    await page.getByRole('option', { name: /Sign in/ }).click()
+    await page.waitForFunction(() => location.hash.includes('#/page/%2Fsign-in'))
+    const signInFrame = page.frameLocator('iframe[title="Sign in preview"]')
+    const signInEmail = signInFrame.locator('input[type="email"]')
+    await signInEmail.waitFor()
+    assert.equal(await page.locator('.canvas-toolbar [aria-label*="填充"]').count(), 0)
+    await page.getByRole('button', { name: '自动填充当前页面' }).click()
+    await signInEmail.evaluate(element => new Promise((resolve, reject) => {
+      const startedAt = Date.now()
+      const timer = setInterval(() => {
+        if (element.value) {
+          clearInterval(timer)
+          resolve()
+        } else if (Date.now() - startedAt > 5_000) {
+          clearInterval(timer)
+          reject(new Error('smart fill did not update the email input'))
+        }
+      }, 20)
+    }))
+    assert.match(await signInEmail.inputValue(), /^contact\d{4}@outlook\.com$/)
+    assert.equal(await page.getByRole('complementary', { name: '页面测试数据' }).count(), 0)
+    await page.getByText(/已自动填入 1 个字段/).waitFor()
+
+    await search.fill('Checkout')
+    await page.getByRole('option', { name: /Checkout/ }).click()
+    await page.waitForFunction(() => location.hash.includes('#/page/%2Fcheckout'))
 
     await page.locator('iframe[src*="__unplugin-pageflow_preview=1"]').waitFor({ state: 'attached' })
     assert.equal(await page.locator('iframe[title="Capture preview"]').getAttribute('src'), 'about:blank')
@@ -84,15 +123,17 @@ test('Vite workbench smoke covers navigation, focus, viewport, theme, hotspots, 
     await page.waitForTimeout(250)
     assert.equal(await frame.locator('[data-unplugin-pageflow-hotspot]').evaluateAll(items => items.some(item => Number.parseFloat(item.style.top) >= 100)), true)
 
-    await frame.evaluate(() => fetch('/api/smoke').then(response => response.json()))
     const detailTabs = page.locator('[aria-label="页面详情"] button')
+    await detailTabs.filter({ hasText: '接口' }).click()
+    await page.getByRole('region', { name: '页面健康摘要' }).waitFor()
+    await frame.evaluate(() => fetch('/api/smoke').then(response => response.json()))
+    const requestItem = page.getByRole('button', { name: /GET.*\/smoke.*200.*ms/ })
+    await requestItem.waitFor()
     await page.getByRole('button', { name: '收起右侧面板' }).click()
     await page.getByRole('button', { name: '展开右侧面板' }).click()
     await detailTabs.filter({ hasText: '测试' }).click()
     await page.getByText('页面结构').waitFor()
     await detailTabs.filter({ hasText: '接口' }).click()
-    const requestItem = page.getByRole('button', { name: /GET.*\/smoke.*200.*ms/ })
-    await requestItem.waitFor()
     await requestItem.click()
     await page.getByRole('button', { name: /显示未使用字段/ }).click()
     await page.locator('.api-fields').waitFor()
@@ -111,6 +152,14 @@ test('Vite workbench smoke covers navigation, focus, viewport, theme, hotspots, 
     const deletedTodo = page.locator('.todo-item', { hasText: 'Delete smoke todo' })
     await deletedTodo.getByRole('button', { name: '删除待办' }).click()
     assert.equal(await deletedTodo.count(), 0)
+
+    await detailTabs.filter({ hasText: '页面' }).click()
+    assert.match(await page.locator('.page-tree-row.is-page[aria-current="page"]').innerText(), /Checkout/)
+    await page.locator('.page-tree-row.is-page', { hasText: 'Explore' }).click()
+    await page.waitForFunction(() => location.hash.includes('#/page/%2Fexplore'))
+    assert.match(await page.locator('.page-tree-row.is-page[aria-current="page"]').innerText(), /Explore/)
+    await page.locator('.page-tree-row.is-page', { hasText: 'Checkout' }).click()
+    await page.waitForFunction(() => location.hash.includes('#/page/%2Fcheckout'))
     await page.keyboard.press('Escape')
     await page.waitForFunction(() => [...document.querySelectorAll('.page-preview')].every(element => getComputedStyle(element).pointerEvents === 'none'))
     await page.waitForTimeout(1_000)
@@ -156,6 +205,7 @@ test('Vite workbench smoke covers navigation, focus, viewport, theme, hotspots, 
     const restoredCheckoutPreview = page.locator('.page-preview[data-page-id="checkout"]')
     const restoredWorldPosition = await restoredCheckoutPreview.evaluate(element => [Number.parseFloat(element.style.left), Number.parseFloat(element.style.top)])
     assert.deepEqual(restoredWorldPosition, checkoutWorldPosition)
+
     assert.deepEqual(errors, [])
   } finally {
     await browser?.close()

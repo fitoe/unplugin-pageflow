@@ -71,6 +71,7 @@ header {
 .page-user-label span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .page-user-label svg { width: 10px; height: 10px; flex: none; fill: none; stroke: currentColor; stroke-linecap: round; stroke-linejoin: round; stroke-width: 1.5px; }
 .page-user-overlay { position: absolute; z-index: 4; width: 240px; height: 0; overflow: visible; pointer-events: none; }
+.page-form-fill-action { position: absolute; height: 26px; pointer-events: auto; white-space: nowrap; box-shadow: 0 2px 7px var(--pageflow-shadow); }
 .focused-page-meta-actions { position: absolute; z-index: 4; width: 240px; height: 56px; pointer-events: none; }
 .focused-page-meta-actions button { position: absolute; border: 0; padding: 0; opacity: 0; pointer-events: auto; }
 .focused-page-meta-actions button:focus-visible { opacity: 1; outline: 2px solid var(--ui-primary); outline-offset: 1px; }
@@ -93,7 +94,7 @@ header {
 .canvas-context-menu button:hover, .canvas-context-menu button:focus-visible { background: color-mix(in srgb, #dc2626 10%, transparent); outline: none; }
 .workspace > .canvas,
 .workspace > .preview-overlay,
-.workspace > .connection-canvas { opacity: 0; }
+.workspace > .connection-canvas { right: var(--pageflow-panel-space, 0); opacity: 0; transition: right 160ms ease; }
 .workspace.scene-ready > .canvas,
 .workspace.scene-ready > .preview-overlay,
 .workspace.scene-ready > .connection-canvas { opacity: 1; transition: opacity 120ms ease-out; }
@@ -159,6 +160,7 @@ header {
   color: var(--pageflow-text);
   background: var(--pageflow-surface);
   box-shadow: 0 18px 48px var(--pageflow-shadow);
+  container-type: inline-size;
   transition: width 160ms ease, border-color 160ms ease, box-shadow 160ms ease;
 }
 .api-panel.is-collapsed { right: 0; width: 0; border: 0; background: transparent; box-shadow: none; }
@@ -201,10 +203,35 @@ header {
 .page-navigation-event code { overflow: hidden; font: 8px 'DM Mono'; text-overflow: ellipsis; white-space: nowrap; }
 .page-navigation-event b { font-weight: 400; }
 .api-panel-tabs { min-height: 0; flex: 1; }
+.api-panel-tabs [data-slot='trigger'] { min-width: max-content; flex: none; gap: 4px; padding-right: 8px; padding-left: 8px; font-size: 12px; }
 .api-panel-tabs > [data-slot='content'] { min-height: 0; flex: 1; overflow: hidden; }
+@container (max-width: 320px) {
+  .api-panel-tabs [data-slot='trailingBadge'] { display: none; }
+}
 .api-panel-statusbar { display: flex; min-height: 34px; flex: 0 0 34px; align-items: center; border-top: 1px solid var(--pageflow-border); padding: 0 8px; background: var(--pageflow-surface-muted); }
 .api-panel-list { height: 100%; overflow: auto; padding: 10px; }
 .api-panel-waiting { padding: 18px 14px; color: var(--pageflow-muted); font-size: 11px; }
+.page-tree-panel { display: flex; height: 100%; min-height: 0; flex-direction: column; }
+.page-tree-list { min-height: 0; flex: 1; overflow: auto; padding: 8px 7px 10px; }
+.page-tree-row { --tree-indent: calc(var(--tree-depth) * 16px); display: flex; width: 100%; min-width: 0; cursor: pointer; align-items: center; border: 0; border-radius: 5px; color: var(--pageflow-muted); background: transparent; padding-right: 7px; padding-left: calc(5px + var(--tree-indent)); text-align: left; }
+.page-tree-row:hover, .page-tree-row:focus-visible { color: var(--pageflow-text); background: var(--pageflow-surface-muted); outline: none; }
+.page-tree-row.is-group { height: 29px; gap: 4px; font: 11px 'DM Sans'; }
+.page-tree-row.is-group > span { min-width: 0; flex: 1; overflow: hidden; color: var(--pageflow-text); font-weight: 500; text-overflow: ellipsis; white-space: nowrap; }
+.page-tree-row.is-group > small { flex: none; color: var(--pageflow-muted); font: 8px 'DM Mono'; }
+.page-tree-chevron { width: 11px; height: 11px; flex: none; fill: none; stroke: currentColor; stroke-linecap: round; stroke-linejoin: round; stroke-width: 1.6; transition: transform 100ms ease; }
+.page-tree-row.is-group[aria-expanded='true'] .page-tree-chevron { transform: rotate(90deg); }
+.page-tree-node-icon { width: 14px; height: 14px; flex: none; fill: none; stroke: currentColor; stroke-linecap: round; stroke-linejoin: round; stroke-width: 1.25; }
+.page-tree-row.is-page { position: relative; min-height: 39px; gap: 7px; padding-top: 4px; padding-bottom: 4px; }
+.page-tree-row.is-page > span:not(.page-tree-guide) { display: grid; min-width: 0; flex: 1; gap: 1px; }
+.page-tree-row.is-page strong { overflow: hidden; color: var(--pageflow-text); font-size: 11px; font-weight: 500; text-overflow: ellipsis; white-space: nowrap; }
+.page-tree-row.is-page small { overflow: hidden; color: var(--pageflow-muted); font: 8px 'DM Mono'; text-overflow: ellipsis; white-space: nowrap; }
+.page-tree-row.is-page em { flex: none; border: 1px solid var(--pageflow-border); border-radius: 3px; padding: 1px 3px; color: var(--pageflow-muted); font: normal 7px 'DM Mono'; }
+.page-tree-row.is-page.is-active { color: #2563eb; background: color-mix(in srgb, #3b82f6 9%, var(--pageflow-surface)); }
+.dark .page-tree-row.is-page.is-active { color: #60a5fa; }
+.page-tree-row.is-page.is-active::before { position: absolute; top: 6px; bottom: 6px; left: calc(2px + var(--tree-indent)); width: 2px; border-radius: 999px; background: currentColor; content: ''; }
+.page-tree-row.is-page.is-active strong { color: currentColor; }
+.page-tree-guide { width: 11px; flex: none; }
+.page-tree-empty { padding: 30px 12px; color: var(--pageflow-muted); font-size: 11px; text-align: center; }
 .todo-panel { height: 100%; overflow: auto; padding: 12px; }
 .todo-entry { display: flex; gap: 8px; padding-bottom: 12px; border-bottom: 1px solid var(--pageflow-border); }
 .todo-entry input { min-width: 0; flex: 1; height: 32px; padding: 0 10px; border: 1px solid var(--pageflow-border); border-radius: 6px; color: var(--pageflow-text); background: var(--pageflow-surface-muted); font: 12px 'DM Sans'; outline: none; }
@@ -270,6 +297,7 @@ header {
   background: var(--pageflow-surface);
   box-shadow: 0 6px 18px var(--pageflow-shadow);
   font: 10px 'DM Mono';
+  transition: right 160ms ease;
 }
 .zoom button {
   width: 24px;

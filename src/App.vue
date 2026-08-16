@@ -49,6 +49,7 @@ import { createPageFlowAIContext, createPageFlowAIPrompt } from './client/ai-con
 import { createPageChecks, isOrphanPage, mergePageLinks, type PageFlowPageCheckStatus } from './client/page-checks'
 import { createPageHealth, previewStatusLabels, type PageFlowPreviewStatus } from './client/page-health'
 import { buildApiFieldTree } from './client/api-field-tree'
+import { createPageTree } from './client/page-tree'
 
 const pageFlowVersion = __PAGEFLOW_VERSION__
 import { createApiIssues, mergeApiResult, type PageFlowApiIssue } from './client/api-diagnostics'
@@ -112,6 +113,7 @@ const props = defineProps<{ config: ResolvedPageFlowOptions, host?: PageFlowHost
 const ACCENTS = ['#3b82f6', '#8b5cf6', '#06b6d4', '#10b981', '#f59e0b', '#ef4444']
 const MAX_HOST_AUTO_THUMBNAILS = 50
 const ApiFieldTree = defineAsyncComponent(() => import('./components/ApiFieldTree.vue'))
+const PageTreePanel = defineAsyncComponent(() => import('./components/PageTreePanel.vue'))
 
 const previewModes = {
   mobile: { label: '手机', width: 393, height: 852 },
@@ -240,7 +242,7 @@ let apiResultFrame = 0
 const expandedApiResults = ref(new Set<string>())
 const openApiResultId = ref<string>()
 const openApiIssueResultId = ref<string>()
-const panelTab = ref<'api' | 'tests' | 'diagnostics' | 'todos'>('api')
+const panelTab = ref<'tree' | 'api' | 'tests' | 'diagnostics' | 'todos'>('tree')
 const panelCollapsed = ref(storedPanelCollapsed())
 const panelWidth = ref(storedPanelWidth())
 const editorInfo = ref<PageFlowEditorInfo>({ id: 'system', name: '默认编辑器' })
@@ -285,6 +287,7 @@ const tableFilter = ref('')
 const tableSort = ref<'group' | 'title' | 'path' | 'user' | 'health'>('group')
 const navigationEvents = ref<Array<{ id: number, from: string, to: string, reason: string, at: number }>>([])
 const virtualPageMenu = ref<{ pageId: string, x: number, y: number }>()
+const formLoading = ref(false)
 const canvas = ref<HTMLDivElement>()
 const connectionCanvas = ref<HTMLDivElement>()
 const overlayWorld = ref<HTMLDivElement>()
@@ -320,10 +323,11 @@ const focusedHealth = computed(() => createPageHealth({
 }))
 
 const panelTabs = computed(() => [
-  { value: 'api', label: '接口', badge: focusedHealth.value.api.badge, slot: 'api' },
-  { value: 'tests', label: '测试', badge: focusedHealth.value.tests.badge, slot: 'tests' },
-  { value: 'diagnostics', label: '诊断', badge: focusedHealth.value.diagnostics.badge, slot: 'diagnostics' },
-  { value: 'todos', label: '待办', badge: focusedHealth.value.todos.badge, slot: 'todos' },
+  { value: 'tree', label: '页面', slot: 'tree' },
+  { value: 'api', label: '接口', badge: focusedHealth.value.api.badge, slot: 'api', disabled: !focusedPageId.value },
+  { value: 'tests', label: '测试', badge: focusedHealth.value.tests.badge, slot: 'tests', disabled: !focusedPageId.value },
+  { value: 'diagnostics', label: '诊断', badge: focusedHealth.value.diagnostics.badge, slot: 'diagnostics', disabled: !focusedPageId.value },
+  { value: 'todos', label: '待办', badge: focusedHealth.value.todos.badge, slot: 'todos', disabled: !focusedPageId.value },
 ])
 const editorIcon = computed(() => ({
   cursor: 'i-lucide-square-mouse-pointer',
@@ -573,6 +577,11 @@ const maximumMountedPreviews = computed(() => {
 })
 const cardHeights = computed(() => new Map(pages.value.map(page => [page.id, pageCardHeight(page.id)])))
 const routeDeckView = computed(() => createRouteDeckView(pages.value, routeGroupPath.value))
+const pageTreeNodes = computed(() => createPageTree(pages.value, {
+  groupNames: groupNames.value,
+  pageNames: pageNames.value,
+  groupPath: page => routeDeckPathForPage(pages.value, page.id),
+}))
 const canvasPages = computed(() => [...routeDeckView.value.directPages, ...routeDeckView.value.decks.map(deck => deck.representative)])
 const routeDeckByPageId = computed(() => new Map(routeDeckView.value.decks.map(deck => [deck.representative.id, deck])))
 const focusedPage = computed(() => pages.value.find(page => page.id === focusedPageId.value))
@@ -751,6 +760,43 @@ const pageFlowHost: PageFlowHost = props.host ?? new UnpluginPageFlowHost({
   getRequests: () => focusedApiResults.value,
   capture: captureFocusedPageForHost,
 })
+async function smartFillFocusedForm() {
+  if (!focusedPageId.value || formLoading.value) return
+  const pageId = focusedPageId.value
+  formLoading.value = true
+  try {
+    if (!pageFlowHost.scanForm || !pageFlowHost.fillForm) throw new Error('当前运行环境不支持表单填充')
+    const attempted = new Set<string>()
+    let applied = 0
+    let errors = 0
+    let skipped = 0
+    for (let pass = 0; pass < 4; pass++) {
+      const scan = await pageFlowHost.scanForm()
+      if (focusedPageId.value !== pageId) return
+      skipped = scan.skipped.sensitive + scan.skipped.unavailable + scan.skipped.unsupported
+      const controls = scan.controls.filter(control => !attempted.has(control.id))
+      if (!controls.length) break
+      controls.forEach(control => attempted.add(control.id))
+      const values = Object.fromEntries(controls.map(control => [control.id, control.suggestedValue]))
+      const result = await pageFlowHost.fillForm(values)
+      if (focusedPageId.value !== pageId) return
+      applied += result.applied.length
+      errors += result.errors.length
+      await new Promise(resolve => window.setTimeout(resolve, 0))
+    }
+    if (!attempted.size) {
+      status.value = skipped ? `当前页面没有可自动填充的字段，已安全跳过 ${skipped} 个字段` : '当前页面没有可自动填充的字段'
+      return
+    }
+    status.value = errors
+      ? `已自动填入 ${applied} 个字段，${errors} 个字段失败`
+      : `已自动填入 ${applied} 个字段${skipped ? `，安全跳过 ${skipped} 个字段` : ''}`
+  } catch (error) {
+    status.value = error instanceof Error ? error.message : '表单填充失败'
+  } finally {
+    formLoading.value = false
+  }
+}
 const focusedApiIssues = computed(() => createApiIssues(focusedApiResults.value, props.config.apiDiagnostics))
 interface FocusedDiagnosticGroup {
   value: string
@@ -1917,6 +1963,27 @@ function openTablePage(pageId: string) {
   activatePreview(pageId)
 }
 
+async function selectPageTreePage(pageId: string) {
+  try {
+    if (props.host) {
+      if (props.host.refreshProjectConfig) await props.host.refreshProjectConfig()
+      applyHostState(await props.host.loadState())
+    } else {
+      const graph = await fetchPageFlowGraph(props.config)
+      applyGraph(graph.pages, graph.routeMode)
+    }
+  } catch {
+    status.value = '页面路由同步失败'
+    return
+  }
+  if (!pages.value.some(page => page.id === pageId)) {
+    status.value = '页面已失效，页面树已更新'
+    return
+  }
+  if (pageId === focusedPageId.value) locateFocusedPage()
+  else activatePreview(pageId)
+}
+
 function resizePanelBy(delta: number) {
   panelWidth.value = Math.min(560, Math.max(300, panelWidth.value + delta))
   localStorage.setItem(PANEL_WIDTH_STORAGE_KEY, String(panelWidth.value))
@@ -2678,7 +2745,22 @@ function handleCanvasClick(event: MouseEvent) {
     const metaHit = pageCardMetaHit(sourceLocalX, sourceLocalY, sourcePreviewH)
     if (metaHit === 'open') openPage(focus.source.path)
     else if (metaHit === 'path') void copyPagePath(focus.source.path)
-    else if (!(sourceLocalX >= 0 && sourceLocalX <= PAGE_CARD_WIDTH && sourceLocalY >= 0 && sourceLocalY <= sourcePreviewH)) exitFocusedPage()
+    else if (!(sourceLocalX >= 0 && sourceLocalX <= PAGE_CARD_WIDTH && sourceLocalY >= 0 && sourceLocalY <= sourcePreviewH)) {
+      const focusTargetIds = new Set(focus.targets.map(item => item.page.id))
+      const otherPage = [...pages.value].reverse().find((page) => {
+        if (page.id === focus.source.id || focusTargetIds.has(page.id)) return false
+        const node = cardNodes?.get(page.id)
+        if (!node || Number(node.opacity ?? 1) <= 0) return false
+        const x = Number(node.x ?? 0)
+        const y = Number(node.y ?? 0)
+        const scaleX = Math.abs(Number(node.scaleX ?? 1))
+        const scaleY = Math.abs(Number(node.scaleY ?? 1))
+        return worldX >= x && worldX <= x + PAGE_CARD_WIDTH * scaleX
+          && worldY >= y && worldY <= y + pageCardHeight(page.id) * scaleY
+      })
+      if (otherPage) activatePreview(otherPage.id)
+      else exitFocusedPage()
+    }
     return
   }
   const page = [...pages.value].reverse().find(item => {
@@ -3849,6 +3931,9 @@ watch(panelCollapsed, (collapsed) => {
     localStorage.setItem(PANEL_COLLAPSED_STORAGE_KEY, String(collapsed))
   } catch {}
 })
+watch([panelWidth, panelCollapsed, workbenchView], () => {
+  void nextTick(handlePcViewportResize)
+})
 watch(capturePreviewId, (pageId) => {
   cancelAnimationFrame(capturePulseFrame)
   capturePulseFrame = 0
@@ -3874,7 +3959,8 @@ watch(capturePreviewId, (pageId) => {
   })
 })
 watch([focusedPageId, focusedDiagnostics, focusedApiResults, focusedPageTests, focusedLinks, lighthouseReport], scheduleAIContextSync, { deep: true })
-watch(focusedPageId, () => {
+watch(focusedPageId, (pageId) => {
+  if (!pageId) panelTab.value = 'tree'
   editorOpenError.value = ''
   window.clearTimeout(diagnosticsRequestTimer)
   window.clearTimeout(diagnosticsTimer)
@@ -4209,7 +4295,11 @@ onUnmounted(() => {
         </div>
       </template>
     </UHeader>
-    <section class="workspace" :class="{ 'scene-ready': initialSceneReady, 'is-table-view': workbenchView === 'table' }">
+    <section
+      class="workspace"
+      :class="{ 'scene-ready': initialSceneReady, 'is-table-view': workbenchView === 'table' }"
+      :style="{ '--pageflow-panel-space': workbenchView === 'canvas' && !panelCollapsed ? `${panelWidth + 36}px` : '0px' }"
+    >
       <nav class="canvas-breadcrumb" aria-label="当前位置">
         <template v-for="(item, index) in breadcrumbItems" :key="item.path.join('/')">
           <span v-if="index" aria-hidden="true">/</span>
@@ -4337,6 +4427,26 @@ onUnmounted(() => {
                 <svg viewBox="0 0 12 12" aria-hidden="true"><path d="m3 4.5 3 3 3-3" /></svg>
               </button>
             </UDropdownMenu>
+            <UButton
+              v-if="page.id === focusedPageId"
+              type="button"
+              class="page-form-fill-action"
+              icon="i-lucide-wand-sparkles"
+              label="自动填充"
+              color="neutral"
+              variant="soft"
+              size="xs"
+              :loading="formLoading"
+              :disabled="formLoading"
+              aria-label="自动填充当前页面"
+              :style="{
+                left: `${PAGE_CARD_WIDTH + 8 / Math.max(settledTransform.scaleX, 0.01)}px`,
+                top: `${8 / Math.max(settledTransform.scaleY, 0.01)}px`,
+                transform: `scale(${1 / Math.max(settledTransform.scaleX, 0.01)}, ${1 / Math.max(settledTransform.scaleY, 0.01)})`,
+                transformOrigin: 'top left',
+              }"
+              @click.stop="smartFillFocusedForm"
+            />
           </div>
           <div
             v-if="focusedEditorPage && focusScene"
@@ -4408,7 +4518,7 @@ onUnmounted(() => {
         tabindex="-1"
         @load="handleCaptureFrameLoad($event.currentTarget as HTMLIFrameElement)"
       ></iframe>
-      <aside v-if="focusedPageId && workbenchView === 'canvas'" class="api-panel" :class="{ 'is-collapsed': panelCollapsed }" :style="{ width: panelCollapsed ? undefined : `${panelWidth}px` }">
+      <aside v-if="workbenchView === 'canvas'" class="api-panel" :class="{ 'is-collapsed': panelCollapsed }" :style="{ width: panelCollapsed ? undefined : `${panelWidth}px` }">
       <div
         v-if="!panelCollapsed"
         class="api-panel-resizer"
@@ -4432,7 +4542,7 @@ onUnmounted(() => {
         </svg>
       </button>
       <div v-show="!panelCollapsed" class="api-panel-content">
-      <section class="page-health-summary" :data-severity="focusedHealth.severity" aria-label="页面健康摘要">
+      <section v-if="focusedPageId && panelTab !== 'tree'" class="page-health-summary" :data-severity="focusedHealth.severity" aria-label="页面健康摘要">
         <div class="page-health-heading">
           <span class="page-health-indicator"></span>
           <strong>{{ healthSeverityLabels[focusedHealth.severity] }}</strong>
@@ -4453,6 +4563,9 @@ onUnmounted(() => {
         </div>
       </section>
       <UTabs v-model="panelTab" class="api-panel-tabs" :items="panelTabs" variant="link" aria-label="页面详情">
+        <template #tree>
+          <PageTreePanel :nodes="pageTreeNodes" :active-page-id="focusedPageId" @select="selectPageTreePage" />
+        </template>
         <template #api>
           <div v-if="focusedApiResults.length" class="api-panel-list">
             <div v-if="focusedApiIssues.length" class="border-b border-default py-3">
@@ -4811,7 +4924,7 @@ onUnmounted(() => {
       </div>
       </aside>
     </section>
-    <div v-if="workbenchView === 'canvas'" class="zoom"><button type="button" @click="zoomCanvas('in')">+</button><span>{{ zoomPercent }}%</span><button type="button" @click="zoomCanvas('out')">−</button></div>
+    <div v-if="workbenchView === 'canvas'" class="zoom" :style="{ right: panelCollapsed ? '18px' : `${panelWidth + 30}px` }"><button type="button" @click="zoomCanvas('in')">+</button><span>{{ zoomPercent }}%</span><button type="button" @click="zoomCanvas('out')">−</button></div>
     <div v-if="configPopoverOpen" class="config-popover" role="dialog" aria-label="PageFlow 配置状态">
       <div class="config-popover-status">
         <i :class="{ loaded: configFileStatus.loaded, failed: configFileStatus.error }"></i>

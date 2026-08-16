@@ -29,3 +29,15 @@ test('workbench state round-trips through a shareable hash', async () => {
     await server.close()
   }
 })
+
+test('page tree panel is accepted in workbench links', async () => {
+  const server = await createServer({ configFile: false, server: { middlewareMode: true }, appType: 'custom', logLevel: 'silent' })
+  try {
+    const { buildWorkbenchHash, parseWorkbenchHash } = await server.ssrLoadModule('/src/client/workbench-location.ts')
+    const hash = buildWorkbenchHash({ pagePath: '/checkout', groupPath: [], panel: 'tree' })
+    assert.equal(hash, '#/page/%2Fcheckout?panel=tree')
+    assert.equal(parseWorkbenchHash(hash).panel, 'tree')
+  } finally {
+    await server.close()
+  }
+})

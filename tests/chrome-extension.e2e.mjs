@@ -110,6 +110,28 @@ test('Chrome extension smoke covers runtime, capture, diagnostics, workbench, an
     const titledState = await waitForExtensionState(worker, pageTabId, value =>
       value.pages.some(item => new URL(item.url).pathname === '/orders' && item.title === 'Orders asynchronously rendered'))
     assert(titledState.pages.some(item => new URL(item.url).pathname === '/orders' && item.title === 'Orders asynchronously rendered'))
+    await page.evaluate(() => {
+      const label = document.createElement('label')
+      label.textContent = '企业邮箱'
+      const input = document.createElement('input')
+      input.name = 'companyEmail'
+      input.type = 'email'
+      label.append(input)
+      document.body.append(label)
+    })
+    const formScan = await worker.evaluate(async tabId => chrome.tabs.sendMessage(tabId, { type: 'pageflow:form-scan' }), pageTabId)
+    const companyEmail = formScan.controls.find(control => control.identity === 'name:companyEmail')
+    assert(companyEmail)
+    assert.match(companyEmail.suggestedValue, /^contact\d{4}@outlook\.com$/)
+    const formFill = await worker.evaluate(async ({ tabId, id, value }) => chrome.tabs.sendMessage(tabId, {
+      type: 'pageflow:form-fill',
+      values: { [id]: value },
+    }), { tabId: pageTabId, id: companyEmail.id, value: companyEmail.suggestedValue })
+    assert.deepEqual(formFill.applied, [companyEmail.id])
+    assert.equal(await page.locator('input[name="companyEmail"]').inputValue(), companyEmail.suggestedValue)
+    const formUndo = await worker.evaluate(async tabId => chrome.tabs.sendMessage(tabId, { type: 'pageflow:form-undo' }), pageTabId)
+    assert.deepEqual(formUndo.applied, [companyEmail.id])
+    assert.equal(await page.locator('input[name="companyEmail"]').inputValue(), '')
     const screen = await context.newPage()
     await screen.goto(`${origin}/screen`)
     const screenTabId = await worker.evaluate(async url => (await chrome.tabs.query({ url }))[0].id, `${origin}/screen`)
@@ -195,7 +217,8 @@ test('Chrome extension smoke covers runtime, capture, diagnostics, workbench, an
       const rect = element.getBoundingClientRect()
       return { width: rect.width, height: rect.height }
     })
-    assert.deepEqual(canvasBounds, { width: 1_440, height: 826 })
+    const panelWidth = await dashboard.locator('.api-panel').evaluate(element => element.getBoundingClientRect().width)
+    assert.deepEqual(canvasBounds, { width: 1_440 - panelWidth - 36, height: 826 })
     await dashboard.waitForTimeout(1_000)
     const initialZoom = Number.parseInt(await dashboard.locator('.zoom span').innerText(), 10)
     await dashboard.locator('.zoom button').first().click()
@@ -214,9 +237,10 @@ test('Chrome extension smoke covers runtime, capture, diagnostics, workbench, an
     await search.fill('/orders')
     await dashboard.getByRole('option').filter({ hasText: '/orders' }).click()
     await dashboard.waitForFunction(() => document.querySelector('input[placeholder="搜索页面…"]')?.value === '')
+    const detailTabs = dashboard.locator('[aria-label="页面详情"] button')
+    await detailTabs.filter({ hasText: '接口' }).click()
     await dashboard.getByRole('region', { name: '页面健康摘要' }).waitFor()
     await dashboard.locator('iframe[src*="__unplugin-pageflow_preview=1"]').waitFor({ state: 'attached' })
-    const detailTabs = dashboard.locator('[aria-label="页面详情"] button')
     await dashboard.getByRole('button', { name: '收起右侧面板' }).click()
     await dashboard.getByRole('button', { name: '展开右侧面板' }).click()
     await detailTabs.filter({ hasText: '测试' }).click()
@@ -289,6 +313,7 @@ test('Chrome extension smoke covers runtime, capture, diagnostics, workbench, an
     const restoredSearch = dashboard.getByPlaceholder('搜索页面…')
     await restoredSearch.fill('About')
     await restoredSearch.press('Enter')
+    await dashboard.waitForFunction(() => location.hash.includes('#/page/%2Fabout'))
     await dashboard.keyboard.press('Escape')
     await dashboard.waitForTimeout(800)
     const restoredAboutWorldPosition = await dashboard.locator('.page-preview:has(iframe[title="About preview"])')

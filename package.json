@@ -112,7 +112,7 @@
     "typecheck": "tsc -b",
     "test": "node --test --test-concurrency=4 tests/*.test.mjs",
     "pretest": "pnpm --filter pageflow-chrome-extension exec wxt prepare",
-    "test:smoke:core": "node --test --test-concurrency=4 tests/ai-context.test.mjs tests/api-diagnostics.test.mjs tests/api-fields.test.mjs tests/browser-history-adapter.test.mjs tests/capture-planner.test.mjs tests/capture-queue.test.mjs tests/core-todos.test.mjs tests/diagnostics.test.mjs tests/focus-layout.test.mjs tests/framework-integrations.test.mjs tests/graph-update.test.mjs tests/host-session.test.mjs tests/host-storage.test.mjs tests/host-thumbnail-capture.test.mjs tests/host-thumbnails.test.mjs tests/host-workbench.test.mjs tests/launcher.test.mjs tests/layout.test.mjs tests/page-checks.test.mjs tests/page-health.test.mjs tests/page-tests.test.mjs tests/page-update.test.mjs tests/page-users.test.mjs tests/preview-frame-registry.test.mjs tests/preview-hotspots.test.mjs tests/preview-message.test.mjs tests/preview-mode.test.mjs tests/preview-navigation.test.mjs tests/preview-protocol.test.mjs tests/router-adapter.test.mjs tests/runtime.test.mjs tests/scene-cards.test.mjs tests/snapshot-capture.test.mjs tests/state.test.mjs tests/thumbnail-cache.test.mjs tests/thumbnail-resources.test.mjs tests/unplugin-host.test.mjs tests/user-sessions.test.mjs tests/workbench-location.test.mjs",
+    "test:smoke:core": "node --test --test-concurrency=4 tests/ai-context.test.mjs tests/api-diagnostics.test.mjs tests/api-fields.test.mjs tests/browser-history-adapter.test.mjs tests/capture-planner.test.mjs tests/capture-queue.test.mjs tests/core-todos.test.mjs tests/diagnostics.test.mjs tests/focus-layout.test.mjs tests/form-fill.test.mjs tests/framework-integrations.test.mjs tests/graph-update.test.mjs tests/host-session.test.mjs tests/host-storage.test.mjs tests/host-thumbnail-capture.test.mjs tests/host-thumbnails.test.mjs tests/host-workbench.test.mjs tests/launcher.test.mjs tests/layout.test.mjs tests/page-checks.test.mjs tests/page-health.test.mjs tests/page-tests.test.mjs tests/page-tree.test.mjs tests/page-update.test.mjs tests/page-users.test.mjs tests/preview-frame-registry.test.mjs tests/preview-hotspots.test.mjs tests/preview-message.test.mjs tests/preview-mode.test.mjs tests/preview-navigation.test.mjs tests/preview-protocol.test.mjs tests/router-adapter.test.mjs tests/runtime.test.mjs tests/scene-cards.test.mjs tests/snapshot-capture.test.mjs tests/state.test.mjs tests/thumbnail-cache.test.mjs tests/thumbnail-resources.test.mjs tests/unplugin-host.test.mjs tests/user-sessions.test.mjs tests/workbench-location.test.mjs",
     "test:smoke:vite": "node --test tests/vite-workbench.e2e.mjs",
     "test:smoke:chrome": "pnpm --filter pageflow-chrome-extension build && node scripts/run-chrome-smoke.mjs",
     "test:smoke": "pnpm build:plugin && pnpm test:smoke:core && pnpm test:smoke:vite && pnpm test:smoke:chrome",
@@ -121,6 +121,7 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "@faker-js/faker": "^10.6.0",
     "@nuxt/ui": "^4.10.0",
     "axe-core": "^4.12.1",
     "chrome-launcher": "^1.2.1",

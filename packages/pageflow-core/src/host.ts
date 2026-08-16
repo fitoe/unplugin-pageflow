@@ -1,4 +1,4 @@
-import type { PageFlowApiField, PageFlowApiRequest, PageFlowBrowserRuntimeEvent } from './types.ts'
+import type { PageFlowApiField, PageFlowApiRequest, PageFlowBrowserRuntimeEvent, PageFlowFormFillResult, PageFlowFormScanResult, PageFlowFormValue } from './types.ts'
 
 export interface PageFlowHostProjectConfig {
   loaded: boolean
@@ -29,6 +29,9 @@ export interface PageFlowHost {
   navigate(url: string): Promise<void>
   scan(): Promise<void>
   highlight(selector: string): Promise<void>
+  scanForm?(): Promise<PageFlowFormScanResult>
+  fillForm?(values: Record<string, PageFlowFormValue>): Promise<PageFlowFormFillResult>
+  undoFormFill?(): Promise<PageFlowFormFillResult>
   capture(): Promise<string | PageFlowHostCapture>
   previewSize?(): Promise<{ width: number; height: number }>
   capturePage?(url: string, viewport: { width: number; height: number }): Promise<string | PageFlowHostCapture>

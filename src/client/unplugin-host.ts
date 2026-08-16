@@ -1,7 +1,7 @@
 import type { PageFlowHost, PageFlowHostState } from '@pageflow/core/host'
-import type { PageFlowApiRequest, PageFlowBrowserRuntimeEvent, PageFlowNavigationEdge, PageFlowPageSnapshot } from '@pageflow/core/types'
+import type { PageFlowApiRequest, PageFlowBrowserRuntimeEvent, PageFlowFormFillResult, PageFlowFormScanResult, PageFlowFormValue, PageFlowNavigationEdge, PageFlowPageSnapshot } from '@pageflow/core/types'
 import type { PageFlowGraph, PageFlowPage, ResolvedPageFlowOptions } from '../shared/types'
-import { PAGEFLOW_DIAGNOSTIC_HIGHLIGHT_MESSAGE, PAGEFLOW_DIAGNOSTICS_SCAN_MESSAGE } from '../shared/protocol'
+import { PAGEFLOW_DIAGNOSTIC_HIGHLIGHT_MESSAGE, PAGEFLOW_DIAGNOSTICS_SCAN_MESSAGE, PAGEFLOW_FORM_COMMAND_MESSAGE, PAGEFLOW_FORM_RESULT_MESSAGE } from '../shared/protocol'
 import { fetchPageFlowGraph, subscribeToPageFlowUpdates } from './graph'
 import { resolvePreviewUrl } from './preview'
 
@@ -60,6 +60,54 @@ export class UnpluginPageFlowHost implements PageFlowHost {
 
   async highlight(selector: string) {
     this.options.getFrame()?.contentWindow?.postMessage({ type: PAGEFLOW_DIAGNOSTIC_HIGHLIGHT_MESSAGE, selector }, window.location.origin)
+  }
+
+  private requestForm<T>(action: 'scan' | 'fill' | 'undo', values?: Record<string, PageFlowFormValue>) {
+    const frame = this.options.getFrame()
+    if (!frame?.contentWindow) return Promise.reject(new Error('真实页面尚未加载'))
+    const source = frame.contentWindow
+    const requestId = `form:${Date.now()}:${Math.random().toString(36).slice(2)}`
+    return new Promise<T>((resolve, reject) => {
+      const cleanup = () => {
+        window.clearTimeout(timer)
+        window.removeEventListener('message', receive)
+      }
+      const receive = (event: MessageEvent) => {
+        if (event.origin !== window.location.origin || event.source !== source
+          || event.data?.type !== PAGEFLOW_FORM_RESULT_MESSAGE || event.data.requestId !== requestId) return
+        cleanup()
+        if (event.data.error) reject(new Error(String(event.data.error)))
+        else resolve(event.data.result as T)
+      }
+      const timer = window.setTimeout(() => {
+        cleanup()
+        reject(new Error('页面表单响应超时'))
+      }, 5_000)
+      window.addEventListener('message', receive)
+      try {
+        source.postMessage({
+          type: PAGEFLOW_FORM_COMMAND_MESSAGE,
+          requestId,
+          action,
+          values: values ? { ...values } : undefined,
+        }, window.location.origin)
+      } catch (error) {
+        cleanup()
+        reject(error)
+      }
+    })
+  }
+
+  scanForm() {
+    return this.requestForm<PageFlowFormScanResult>('scan')
+  }
+
+  fillForm(values: Record<string, PageFlowFormValue>) {
+    return this.requestForm<PageFlowFormFillResult>('fill', values)
+  }
+
+  undoFormFill() {
+    return this.requestForm<PageFlowFormFillResult>('undo')
   }
 
   capture() {

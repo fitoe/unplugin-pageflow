@@ -1,4 +1,5 @@
 import { deletePageFlowInternalParams, hasPageFlowPreview, pageFlowPreviewRole } from '../shared/protocol.ts'
+import { isPageFlowSensitiveControl, pageFlowFormControlIdentity } from './form-fill.ts'
 
 const STATE_PREFIX = 'unplugin-pageflow:page-state:'
 
@@ -87,33 +88,9 @@ interface DomPageState {
   scrollY: number
 }
 
-function isSensitiveControl(element: HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement) {
-  if (element.localName === 'input' && ['password', 'file'].includes((element as HTMLInputElement).type)) return true
-  const identity = `${element.id} ${element.getAttribute('name') ?? ''} ${element.getAttribute('autocomplete') ?? ''}`
-  return /(?:captcha|verify|verification|one-time-code|验证码)/i.test(identity)
-}
-
-function controlIdentity(element: Element) {
-  const declared = element.getAttribute('data-pageflow-state')
-  if (declared) return `data:${declared}`
-  const name = element.getAttribute('name')
-  if (name) return `name:${name}`
-  if (element.id) return `id:${element.id}`
-  const parts: string[] = []
-  let current: Element | null = element
-  while (current && current !== document.body) {
-    const siblings = current.parentElement
-      ? [...current.parentElement.children].filter(sibling => sibling.tagName === current!.tagName)
-      : []
-    parts.unshift(`${current.tagName.toLowerCase()}:nth-of-type(${Math.max(1, siblings.indexOf(current) + 1)})`)
-    current = current.parentElement
-  }
-  return `path:${parts.join('>')}`
-}
-
 function controls() {
   return [...document.querySelectorAll<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>('input, textarea, select')]
-    .filter(element => !isSensitiveControl(element))
+    .filter(element => !isPageFlowSensitiveControl(element))
 }
 
 /** Persist native form controls and the window scroll position as a safe fallback. */
@@ -128,7 +105,7 @@ export function startPageFlowDomStatePersistence() {
     controls().forEach(element => {
       const item: DomControlState = { value: element.value }
       if (element.localName === 'input' && ['checkbox', 'radio'].includes((element as HTMLInputElement).type)) item.checked = (element as HTMLInputElement).checked
-      state.controls[controlIdentity(element)] = item
+      state.controls[pageFlowFormControlIdentity(element)] = item
     })
     writeState(cacheKey, state)
   }
@@ -140,7 +117,7 @@ export function startPageFlowDomStatePersistence() {
     const state = readState<DomPageState>(cacheKey)
     if (!state || disposed) return
     controls().forEach(element => {
-      const item = state.controls[controlIdentity(element)]
+      const item = state.controls[pageFlowFormControlIdentity(element)]
       if (!item) return
       if (item.value !== undefined) element.value = item.value
       if (element.localName === 'input' && item.checked !== undefined) (element as HTMLInputElement).checked = item.checked

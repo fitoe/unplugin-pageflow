@@ -1,4 +1,4 @@
-import type { PageFlowApiRequest, PageFlowBrowserRuntimeEvent, PageFlowDiagnostic, PageFlowPageSnapshot } from '@pageflow/core/types'
+import type { PageFlowApiRequest, PageFlowBrowserRuntimeEvent, PageFlowDiagnostic, PageFlowFormValue, PageFlowPageSnapshot } from '@pageflow/core/types'
 
 export const SOURCE = 'pageflow-chrome-extension'
 
@@ -13,6 +13,9 @@ export type ExtensionMessage =
   | { type: 'pageflow:get-capture-size'; viewport: { width: number; height: number } }
   | { type: 'pageflow:scan' }
   | { type: 'pageflow:highlight'; selector: string }
+  | { type: 'pageflow:form-scan' }
+  | { type: 'pageflow:form-fill'; values: Record<string, PageFlowFormValue> }
+  | { type: 'pageflow:form-undo' }
   | { type: 'pageflow:capture'; tabId: number }
   | { type: 'pageflow:capture-page'; tabId: number; url: string; viewport: { width: number; height: number } }
   | { type: 'pageflow:start-session'; tabId: number }

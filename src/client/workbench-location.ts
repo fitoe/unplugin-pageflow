@@ -5,12 +5,12 @@ export interface PageFlowWorkbenchLocation {
   groupPath: string[]
   viewport?: PageFlowPreviewMode
   user?: string
-  panel?: 'api' | 'tests' | 'diagnostics' | 'todos'
+  panel?: 'tree' | 'api' | 'tests' | 'diagnostics' | 'todos'
   view?: 'canvas' | 'table'
 }
 
 const previewModes = new Set<PageFlowPreviewMode>(['mobile', 'tablet', 'pc'])
-const panels = new Set<PageFlowWorkbenchLocation['panel']>(['api', 'tests', 'diagnostics', 'todos'])
+const panels = new Set<PageFlowWorkbenchLocation['panel']>(['tree', 'api', 'tests', 'diagnostics', 'todos'])
 
 export function parseWorkbenchHash(hash: string): PageFlowWorkbenchLocation {
   const value = hash.replace(/^#/, '') || '/'

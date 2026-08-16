@@ -42,8 +42,32 @@ export default defineContentScript({
       }, 100)
     }
 
+    const formRequests = new Map<string, { resolve(value: unknown): void, reject(error: Error): void, timer: ReturnType<typeof setTimeout> }>()
+    const requestForm = (action: 'scan' | 'fill' | 'undo', values?: Record<string, unknown>) => {
+      const requestId = `form:${Date.now()}:${Math.random().toString(36).slice(2)}`
+      return new Promise((resolve, reject) => {
+        const timer = setTimeout(() => {
+          formRequests.delete(requestId)
+          reject(new Error('页面表单响应超时'))
+        }, 5_000)
+        formRequests.set(requestId, { resolve, reject, timer })
+        window.postMessage({ source: SOURCE, command: 'form', requestId, action, values }, '*')
+      })
+    }
+
     window.addEventListener('message', (message) => {
-      if (message.source !== window || message.data?.source !== SOURCE || !message.data.event) return
+      if (message.source !== window || message.data?.source !== SOURCE) return
+      if (message.data.formResponse?.requestId) {
+        const response = message.data.formResponse
+        const pending = formRequests.get(response.requestId)
+        if (!pending) return
+        clearTimeout(pending.timer)
+        formRequests.delete(response.requestId)
+        if (response.error) pending.reject(new Error(String(response.error)))
+        else pending.resolve(response.result)
+        return
+      }
+      if (!message.data.event) return
       const event = message.data.event as RuntimeEvent
       if (event.kind === 'page') {
         const key = event.page.routeKey ?? event.page.url
@@ -108,6 +132,18 @@ export default defineContentScript({
       })
       if (message.type === 'pageflow:scan') window.postMessage({ source: SOURCE, command: 'scan' }, '*')
       if (message.type === 'pageflow:highlight') window.postMessage({ source: SOURCE, command: 'highlight', selector: message.selector }, '*')
+      if (message.type === 'pageflow:form-scan') {
+        void requestForm('scan').then(sendResponse, error => sendResponse({ error: error instanceof Error ? error.message : String(error) }))
+        return true
+      }
+      if (message.type === 'pageflow:form-fill') {
+        void requestForm('fill', message.values).then(sendResponse, error => sendResponse({ error: error instanceof Error ? error.message : String(error) }))
+        return true
+      }
+      if (message.type === 'pageflow:form-undo') {
+        void requestForm('undo').then(sendResponse, error => sendResponse({ error: error instanceof Error ? error.message : String(error) }))
+        return true
+      }
       if (message.type === 'pageflow:network-request') {
         void collectApiFields(message.request.body, document.body.innerText).then((fields) => {
           requests = mergeApiResult(requests, { ...message.request, fields })

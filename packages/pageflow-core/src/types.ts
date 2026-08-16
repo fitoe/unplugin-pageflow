@@ -48,6 +48,64 @@ export interface PageFlowPageSnapshot {
   updatedAt: number
 }
 
+export type PageFlowFormControlKind =
+  | 'text'
+  | 'textarea'
+  | 'email'
+  | 'tel'
+  | 'url'
+  | 'search'
+  | 'number'
+  | 'date'
+  | 'datetime-local'
+  | 'time'
+  | 'select'
+  | 'picker'
+  | 'radio'
+  | 'checkbox'
+
+export type PageFlowFormValue = string | boolean
+
+export interface PageFlowFormControlOption {
+  value: string
+  label: string
+  disabled?: boolean
+}
+
+export interface PageFlowFormControlDescriptor {
+  id: string
+  identity: string
+  selector: string
+  label: string
+  kind: PageFlowFormControlKind
+  required: boolean
+  value: PageFlowFormValue
+  suggestedValue: PageFlowFormValue
+  placeholder?: string
+  min?: string
+  max?: string
+  step?: string
+  maxLength?: number
+  options?: PageFlowFormControlOption[]
+}
+
+export interface PageFlowFormScanResult {
+  controls: PageFlowFormControlDescriptor[]
+  skipped: {
+    sensitive: number
+    unavailable: number
+    unsupported: number
+  }
+}
+
+export interface PageFlowFormFillResult {
+  applied: string[]
+  skipped: Array<{ id: string, reason: string }>
+  missing: string[]
+  errors: Array<{ id: string, message: string }>
+  canUndo: boolean
+}
+
 export interface PageFlowNavigationEdge {
   id: string
   from: string

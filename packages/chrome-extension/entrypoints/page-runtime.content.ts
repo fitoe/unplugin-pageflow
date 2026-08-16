@@ -3,6 +3,7 @@ import { isBusinessApiResponse } from '@pageflow/core/api'
 import { highlightPageFlowElement, instrumentPageFlowHistory, instrumentPageFlowNetwork, observePageFlowScroll, pageFlowHotspotBounds, pageFlowInternalLinks, pageFlowLinkLabel } from '@pageflow/runtime'
 import { findVueRouterAdapter } from '../../../src/runtime/adapters/vue-router'
 import type { PageFlowRouterAdapter } from '../../../src/runtime/adapters/types'
+import { applyPageFlowFormValues, scanPageFlowFormControls, undoPageFlowFormFill } from '../../../src/runtime/form-fill'
 
 declare global {
   interface Window { __PAGEFLOW_CHROME_RUNTIME__?: boolean }
@@ -170,6 +171,21 @@ export default defineContentScript({
 
     addEventListener('message', (message) => {
       if (message.source !== window || message.data?.source !== SOURCE) return
+      if (message.data?.command === 'form' && typeof message.data.requestId === 'string') {
+        const action = message.data.action
+        let result: unknown
+        let error: string | undefined
+        try {
+          if (action === 'scan') result = scanPageFlowFormControls()
+          else if (action === 'fill' && message.data.values && typeof message.data.values === 'object') result = applyPageFlowFormValues(message.data.values)
+          else if (action === 'undo') result = undoPageFlowFormFill()
+          else error = '不支持的表单命令'
+        } catch (cause) {
+          error = cause instanceof Error ? cause.message : '表单命令执行失败'
+        }
+        window.postMessage({ source: SOURCE, formResponse: { requestId: message.data.requestId, action, result, error } }, '*')
+        return
+      }
       if (message.data?.command === 'network-mode') {
         if (message.data.mode === 'cdp') {
           networkTracker?.dispose()

@@ -1,4 +1,5 @@
 import type { PageFlowHost, PageFlowHostCapture, PageFlowHostState } from '@pageflow/core/host'
+import type { PageFlowFormFillResult, PageFlowFormScanResult, PageFlowFormValue } from '@pageflow/core/types'
 import type { ExtensionMessage } from './shared'
 import { loadVitePageFlowProject } from './vite-project'
 
@@ -47,6 +48,24 @@ export class ChromePageFlowHost implements PageFlowHost {
 
   async highlight(selector: string) {
     await browser.tabs.sendMessage(this.tabId, { type: 'pageflow:highlight', selector } satisfies ExtensionMessage)
+  }
+
+  private async requestForm<T>(message: ExtensionMessage) {
+    const response = await browser.tabs.sendMessage(this.tabId, message) as T | { error?: string }
+    if (response && typeof response === 'object' && 'error' in response && response.error) throw new Error(response.error)
+    return response as T
+  }
+
+  scanForm() {
+    return this.requestForm<PageFlowFormScanResult>({ type: 'pageflow:form-scan' })
+  }
+
+  fillForm(values: Record<string, PageFlowFormValue>) {
+    return this.requestForm<PageFlowFormFillResult>({ type: 'pageflow:form-fill', values: { ...values } })
+  }
+
+  undoFormFill() {
+    return this.requestForm<PageFlowFormFillResult>({ type: 'pageflow:form-undo' })
   }
 
   capture() {
