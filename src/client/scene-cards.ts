@@ -71,12 +71,12 @@ export function createPageCardGroup(options: PageCardOptions) {
   })
   if (!hasThumbnail) {
     group.add(new Text({ x: 16, y: Math.max(16, previewHeight / 2 - 34), width: PAGE_CARD_WIDTH - 32, text: options.previewStatus ?? page.title, fill: primary, fontSize: options.previewStatus ? 12 : 18, fontWeight: 700, textAlign: options.previewStatus ? 'center' : 'left', textWrap: 'none', textOverflow: 'ellipsis' }))
-    group.add(new Text({ x: 16, y: Math.max(38, previewHeight / 2 - 8), width: PAGE_CARD_WIDTH - 32, text: options.previewStatus ? '聚焦页面后可查看实时预览' : page.path, fill: secondary, fontFamily: 'DM Mono', fontSize: 9, textAlign: options.previewStatus ? 'center' : 'left', textWrap: 'none', textOverflow: 'ellipsis' }))
+    group.add(new Text({ x: 16, y: Math.max(38, previewHeight / 2 - 8), width: PAGE_CARD_WIDTH - 32, text: options.previewStatus ? '聚焦页面后可查看实时预览' : page.path, fill: secondary, fontFamily: 'ui-monospace, Cascadia Code, SFMono-Regular, Consolas, monospace', fontSize: 9, textAlign: options.previewStatus ? 'center' : 'left', textWrap: 'none', textOverflow: 'ellipsis' }))
   }
   if (!options.hideMeta) {
     group.add(new Text({ x: 0, y: previewHeight + 12, width: PAGE_CARD_WIDTH - 28, text: page.title, fill: primary, fontSize: 13, fontWeight: 700, textWrap: 'none', textOverflow: 'ellipsis', cursor: 'default' }))
     group.add(new Text({ x: PAGE_CARD_WIDTH - 20, y: previewHeight + 10, width: 20, text: '→', fill: secondary, fontSize: 15, textAlign: 'right', cursor: 'pointer' }))
-    group.add(new Text({ x: 0, y: previewHeight + 38, width: PAGE_CARD_WIDTH, text: options.copied ? '已复制' : page.path, fill: muted, fontFamily: 'DM Mono', fontSize: 10, textWrap: 'none', textOverflow: 'ellipsis', cursor: 'pointer' }))
+    group.add(new Text({ x: 0, y: previewHeight + 38, width: PAGE_CARD_WIDTH, text: options.copied ? '已复制' : page.path, fill: muted, fontFamily: 'ui-monospace, Cascadia Code, SFMono-Regular, Consolas, monospace', fontSize: 10, textWrap: 'none', textOverflow: 'ellipsis', cursor: 'pointer' }))
   }
   return group
 }

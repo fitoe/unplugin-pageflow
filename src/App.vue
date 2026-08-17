@@ -970,8 +970,8 @@ function locateFocusedPage() {
     pagePreviewHeight(pageId),
     { width: canvas.value.clientWidth, height: canvas.value.clientHeight },
     SELECTED_PAGE_SCALE,
-    32,
-    16,
+    0,
+    0,
     currentPreviewMode.value.width,
   ))
 }
@@ -2356,8 +2356,8 @@ function centerFocusedPage(pageId: string) {
     pagePreviewHeight(pageId),
     { width: canvas.value.clientWidth, height: canvas.value.clientHeight },
     SELECTED_PAGE_SCALE,
-    32,
-    16,
+    0,
+    0,
     currentPreviewMode.value.width,
   )
   leafer.zoomLayer.set(transform)
@@ -2417,8 +2417,8 @@ function highlightDiagnostic(item: PageFlowDiagnostic) {
     pagePreviewHeight(pageId),
     { width: canvas.value.clientWidth, height: canvas.value.clientHeight },
     SELECTED_PAGE_SCALE,
-    32,
-    16,
+    0,
+    0,
     currentPreviewMode.value.width,
   )
   const transform = item.bounds
@@ -2742,10 +2742,7 @@ function handleCanvasClick(event: MouseEvent) {
     const sourcePreviewH = pagePreviewHeight(focus.source.id)
     const sourceLocalX = worldX - sourceX
     const sourceLocalY = worldY - sourceY
-    const metaHit = pageCardMetaHit(sourceLocalX, sourceLocalY, sourcePreviewH)
-    if (metaHit === 'open') openPage(focus.source.path)
-    else if (metaHit === 'path') void copyPagePath(focus.source.path)
-    else if (!(sourceLocalX >= 0 && sourceLocalX <= PAGE_CARD_WIDTH && sourceLocalY >= 0 && sourceLocalY <= sourcePreviewH)) {
+    if (!(sourceLocalX >= 0 && sourceLocalX <= PAGE_CARD_WIDTH && sourceLocalY >= 0 && sourceLocalY <= sourcePreviewH)) {
       const focusTargetIds = new Set(focus.targets.map(item => item.page.id))
       const otherPage = [...pages.value].reverse().find((page) => {
         if (page.id === focus.source.id || focusTargetIds.has(page.id)) return false
@@ -3006,7 +3003,7 @@ function handleCanvasCursor(event: PointerEvent) {
       && localY >= 0 && localY <= pageCardHeight(page.id)
     if (hit) {
       const metaHit = pageCardMetaHit(localX, localY, previewHeight)
-      linkHit = metaHit === 'open' || metaHit === 'path' || (!focusScene.value && metaHit === 'title')
+      linkHit = !focusScene.value && (metaHit === 'open' || metaHit === 'path' || metaHit === 'title')
     }
     return hit
   })
@@ -3377,7 +3374,7 @@ function flyToPage(
       const currentPosition = positions.value.get(pageId)
       if (!finalTransform && currentPosition)
         target = focusedPageId.value === pageId
-          ? fitFocusedPreviewTransform(currentPosition, pagePreviewHeight(pageId), viewport, SELECTED_PAGE_SCALE, 32, 16, currentPreviewMode.value.width)
+          ? fitFocusedPreviewTransform(currentPosition, pagePreviewHeight(pageId), viewport, SELECTED_PAGE_SCALE, 0, 0, currentPreviewMode.value.width)
           : centerPageTransform(currentPosition, pageCardHeight(pageId), viewport, targetScale ?? start.scaleX)
     }
     const transform = progress < 0.5
@@ -3471,7 +3468,7 @@ function createCardGroup(page: PageFlowPage, x: number, y: number, scale = 1, hi
     scale,
     highlighted,
     orphan: isOrphanPage(page, pages.value),
-    hideMeta,
+    hideMeta: hideMeta || focusedPageId.value === page.id,
     previewHeight: pagePreviewHeight(page.id),
     tiles: compactOnly ? (compact ? [compact] : []) : renderablePageThumbnailTiles(page),
     thumbnailSource,
@@ -4210,41 +4207,55 @@ onUnmounted(() => {
       :ui="{
         container: 'h-full max-w-none px-[18px]',
         center: 'flex-1 gap-6',
-        right: 'gap-6',
+        right: 'gap-2',
       }"
     >
       <template #left>
         <div class="brand"><span>✦</span> unplugin-pageflow</div>
       </template>
-      <div ref="searchRoot" class="quick-search">
-        <UInputMenu
-          :key="searchResetKey"
-          v-model:open="searchOpen"
-          v-model="searchSelection"
-          v-model:search-term="searchTerm"
-          :items="searchItems"
-          value-key="id"
-          label-key="label"
-          description-key="description"
-          :filter-fields="['label', 'path', 'description', 'user']"
-          icon="i-lucide-search"
-          placeholder="搜索页面…"
-          open-on-focus
-          open-on-click
-          @update:model-value="value => value && selectSearchPage(value)"
-        >
-          <template #trailing><kbd>{{ searchShortcutLabel }}</kbd></template>
-          <template #item="{ item }">
-            <div class="search-result-item">
-              <div><strong>{{ item.label }}</strong><span>{{ item.user }} · {{ item.userSource }}</span></div>
-              <small :title="item.path">{{ item.description }}</small>
-              <em>{{ searchItemPreviewStatus(item) }}</em>
-            </div>
-          </template>
-          <template #empty>没有匹配页面</template>
-        </UInputMenu>
+      <div v-if="focusedEditorPage" class="header-page-context">
+        <strong class="header-page-title">{{ pageDisplayName(focusedEditorPage) }}</strong>
+        <UButton
+          type="button"
+          icon="i-lucide-external-link"
+          color="neutral"
+          variant="ghost"
+          size="xs"
+          :title="`打开 ${pageDisplayName(focusedEditorPage)} 页面`"
+          :aria-label="`打开 ${pageDisplayName(focusedEditorPage)} 页面`"
+          @click="openPage(focusedEditorPage.path)"
+        />
       </div>
       <template #right>
+        <div ref="searchRoot" class="quick-search">
+          <UInputMenu
+            :key="searchResetKey"
+            class="w-full"
+            v-model:open="searchOpen"
+            v-model="searchSelection"
+            v-model:search-term="searchTerm"
+            :items="searchItems"
+            value-key="id"
+            label-key="label"
+            description-key="description"
+            :filter-fields="['label', 'path', 'description', 'user']"
+            icon="i-lucide-search"
+            placeholder="搜索页面…"
+            open-on-focus
+            open-on-click
+            @update:model-value="value => value && selectSearchPage(value)"
+          >
+            <template #trailing><kbd>{{ searchShortcutLabel }}</kbd></template>
+            <template #item="{ item }">
+              <div class="search-result-item">
+                <div><strong>{{ item.label }}</strong><span>{{ item.user }} · {{ item.userSource }}</span></div>
+                <small :title="item.path">{{ item.description }}</small>
+                <em>{{ searchItemPreviewStatus(item) }}</em>
+              </div>
+            </template>
+            <template #empty>没有匹配页面</template>
+          </UInputMenu>
+        </div>
         <div class="viewport-switch-layout">
           <UTabs
             :model-value="previewMode"
@@ -4414,13 +4425,17 @@ onUnmounted(() => {
               <button
                 type="button"
                 class="page-user-label"
+                :class="{ 'is-focused': page.id === focusedPageId }"
                 :aria-label="`切换 ${page.title} 的用户`"
                 @pointerenter="keepUserLabelVisible(page.id)"
                 @pointerleave="clearHoveredUserPage(120)"
                 :style="{
-                  bottom: `${8 / Math.max(settledTransform.scaleY, 0.01)}px`,
+                  left: page.id === focusedPageId ? `${PAGE_CARD_WIDTH + 16 / Math.max(settledTransform.scaleX, 0.01)}px` : 'auto',
+                  right: page.id === focusedPageId ? 'auto' : '0',
+                  top: page.id === focusedPageId ? `${16 / Math.max(settledTransform.scaleY, 0.01)}px` : 'auto',
+                  bottom: page.id === focusedPageId ? 'auto' : `${8 / Math.max(settledTransform.scaleY, 0.01)}px`,
                   transform: `scale(${1 / Math.max(settledTransform.scaleX, 0.01)}, ${1 / Math.max(settledTransform.scaleY, 0.01)})`,
-                  transformOrigin: 'bottom right',
+                  transformOrigin: page.id === focusedPageId ? 'top left' : 'bottom right',
                 }"
               >
                 <span>{{ userNotes[pageUser(page) ?? ''] || pageUser(page) }} · {{ pageUserSourceLabel(page) }}</span>
@@ -4440,36 +4455,13 @@ onUnmounted(() => {
               :disabled="formLoading"
               aria-label="自动填充当前页面"
               :style="{
-                left: `${PAGE_CARD_WIDTH + 8 / Math.max(settledTransform.scaleX, 0.01)}px`,
-                top: `${8 / Math.max(settledTransform.scaleY, 0.01)}px`,
+                left: `${PAGE_CARD_WIDTH + 16 / Math.max(settledTransform.scaleX, 0.01)}px`,
+                top: `${50 / Math.max(settledTransform.scaleY, 0.01)}px`,
                 transform: `scale(${1 / Math.max(settledTransform.scaleX, 0.01)}, ${1 / Math.max(settledTransform.scaleY, 0.01)})`,
                 transformOrigin: 'top left',
               }"
               @click.stop="smartFillFocusedForm"
             />
-          </div>
-          <div
-            v-if="focusedEditorPage && focusScene"
-            class="focused-page-meta-actions"
-            :style="{
-              left: `${focusScene.sourcePosition[0]}px`,
-              top: `${focusScene.sourcePosition[1] + pagePreviewHeight(focusedEditorPage.id)}px`,
-              transform: focusedEditorPage.id === active ? `scale(${SELECTED_PAGE_SCALE})` : undefined,
-              transformOrigin: 'top center',
-            }"
-          >
-            <button
-              type="button"
-              class="focused-page-open-action"
-              :aria-label="`打开 ${pageDisplayName(focusedEditorPage)} 页面`"
-              @click="openPage(focusedEditorPage.path)"
-            ></button>
-            <button
-              type="button"
-              class="focused-page-copy-action"
-              :aria-label="`复制 ${pageDisplayName(focusedEditorPage)} 页面路径`"
-              @click="copyPagePath(focusedEditorPage.path)"
-            ></button>
           </div>
           <div
             v-for="page in previewPages"
@@ -4939,7 +4931,14 @@ onUnmounted(() => {
     </div>
     <footer class="app-statusbar">
       <button type="button" class="route-sync-status" :aria-expanded="configPopoverOpen" @click="configPopoverOpen = !configPopoverOpen"><i></i> {{ status }}</button>
-      <span>{{ routeDeckView.decks.length }} 组 / {{ pages.length }} 页 · v{{ pageFlowVersion }}</span>
+      <button
+        v-if="focusedEditorPage"
+        type="button"
+        class="statusbar-page-path"
+        :title="`复制 ${focusedEditorPage.path}`"
+        @click="copyPagePath(focusedEditorPage.path)"
+      >{{ copiedPath === focusedEditorPage.path ? '已复制' : focusedEditorPage.path }}</button>
+      <span class="statusbar-summary">{{ routeDeckView.decks.length }} 组 / {{ pages.length }} 页 · v{{ pageFlowVersion }}</span>
     </footer>
   </main>
 </template>

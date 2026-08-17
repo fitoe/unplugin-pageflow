@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue'
+import { computed, nextTick, ref, watch } from 'vue'
 import {
   flattenPageTree,
   pageTreeAncestorKeys,
@@ -30,8 +30,14 @@ watch(groupKeys, (keys, previous = []) => {
   expand(keys.filter(key => !previousKeys.has(key)))
 }, { immediate: true })
 
-watch(() => props.activePageId, (pageId) => {
-  if (pageId) expand(pageTreeAncestorKeys(props.nodes, pageId))
+watch(() => props.activePageId, async (pageId) => {
+  if (!pageId) return
+  expand(pageTreeAncestorKeys(props.nodes, pageId))
+  await nextTick()
+  if (typeof document === 'undefined') return
+  const activeRow = [...document.querySelectorAll<HTMLElement>('.page-tree-panel [data-page-id]')]
+    .find(element => element.dataset.pageId === pageId)
+  activeRow?.scrollIntoView({ block: 'nearest', inline: 'nearest' })
 }, { immediate: true })
 
 function toggleGroup(node: PageTreeGroupNode, expanded?: boolean) {
@@ -82,6 +88,7 @@ function handleGroupKeydown(event: KeyboardEvent, node: PageTreeGroupNode) {
           class="page-tree-row is-page"
           :class="{ 'is-active': row.node.pageId === activePageId }"
           role="treeitem"
+          :data-page-id="row.node.pageId"
           :aria-current="row.node.pageId === activePageId ? 'page' : undefined"
           :style="{ '--tree-depth': row.depth }"
           :title="row.node.path"

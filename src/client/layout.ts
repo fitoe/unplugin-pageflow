@@ -66,8 +66,8 @@ export function fitFocusedPreviewTransform(
   previewHeight: number,
   viewport: ViewportSize,
   selectedScale = 1,
-  topPadding = 32,
-  bottomPadding = 16,
+  topPadding = 0,
+  bottomPadding = 0,
   maxPreviewWidth = viewport.width,
 ): CanvasTransform {
   const availableHeight = Math.max(1, viewport.height - topPadding - bottomPadding)

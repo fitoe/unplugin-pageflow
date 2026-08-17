@@ -92,6 +92,7 @@ test('serves the unplugin-pageflow client from the configured development route'
     const pageflow = await fetch(`${origin}/__unplugin-pageflow/`)
     const html = await pageflow.text()
     const clientVersion = await (await fetch(`${origin}/__unplugin-pageflow/api/client-version`)).text()
+    assert.ok(html.includes(`let pageflowClientVersion = ${JSON.stringify(clientVersion)}`))
     const clientPath = html.match(/src="([^"]*virtual:unplugin-pageflow\/client[^"]*)"/)?.[1]
     assert(clientPath)
     const client = await fetch(`${origin}${clientPath}`)

@@ -61,10 +61,9 @@ test('lays out linked pages in layers and limits previews to the viewport', asyn
       centerPageTransform([100, 200], 500, { width: 1000, height: 800 }, 2),
       { x: 60, y: -500, scaleX: 2, scaleY: 2 },
     )
-    assert.deepEqual(
-      fitFocusedPreviewTransform([100, 200], 500, { width: 1000, height: 800 }, 1.03),
-      { x: 178.75728155339806, y: -249.0873786407767, scaleX: 1.4601941747572815, scaleY: 1.4601941747572815 },
-    )
+    const focusedTransform = fitFocusedPreviewTransform([100, 200], 500, { width: 1000, height: 800 }, 1.03)
+    assert(Math.abs((focusedTransform.y + (200 - 500 * 0.03 / 2) * focusedTransform.scaleY)) < 0.001)
+    assert(Math.abs((focusedTransform.y + (200 + 500 + 500 * 0.03 / 2) * focusedTransform.scaleY) - 800) < 0.001)
     const widthLimitedFocus = fitFocusedPreviewTransform([100, 200], 80, { width: 1000, height: 800 }, 1.03, 32, 16, 500)
     assert(widthLimitedFocus.scaleX * 240 * 1.03 <= 500)
     const fittedBounds = fitPageBoundsTransform({ left: 100, top: 200, right: 1300, bottom: 1000 }, { width: 1000, height: 800 })

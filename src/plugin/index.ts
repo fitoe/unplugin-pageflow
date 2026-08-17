@@ -443,7 +443,7 @@ function pageflowHtml(base = '/', styleUrl?: string, versionUrl?: string, client
     <div id="app"></div>
     <script type="module" src="${clientUrl}"></script>
     ${versionUrl ? `<script>
-      let pageflowClientVersion;
+      let pageflowClientVersion = ${JSON.stringify(clientVersion ?? '')};
       setInterval(async () => {
         try {
           const response = await fetch('${versionUrl}', { cache: 'no-store' });
