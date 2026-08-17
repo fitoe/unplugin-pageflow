@@ -8,6 +8,8 @@ export interface PageFlowOptions {
   enabled?: boolean
   /** Show the development launcher on host pages. */
   launcher?: boolean
+  /** Load the PageFlow UI source through Vite for hot updates during local development. */
+  clientMode?: 'built' | 'source'
   framework?: PageFlowFramework
   /** Framework integrations use this when their Vite root differs from the project root. */
   projectRoot?: string

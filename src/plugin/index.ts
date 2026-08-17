@@ -481,7 +481,7 @@ const factory: UnpluginFactory<PageFlowOptions | undefined> = (options) => {
   const moduleFile = normalizeFile(fileURLToPath(import.meta.url))
   const packaged = moduleFile.includes('/dist/')
   const builtClientEntryFile = resolve(pluginRoot, 'dist/client/mount.js')
-  const useBuiltClient = packaged || existsSync(builtClientEntryFile)
+  const useBuiltClient = options?.clientMode === 'source' ? false : packaged || existsSync(builtClientEntryFile)
   const clientEntryFile = useBuiltClient ? builtClientEntryFile : resolve(pluginRoot, 'src/client/mount.ts')
   const clientEntry = toViteFsPath(pathToFileURL(clientEntryFile))
   const runtimeEntryFile = resolve(pluginRoot, packaged ? 'dist/runtime/client.js' : 'src/runtime/client.ts')
