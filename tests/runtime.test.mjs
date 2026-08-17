@@ -89,6 +89,14 @@ test('discovers Vue Router routes and reports rendered navigation hotspots', asy
   navigator.append(navigatorLink)
   container.append(navigator)
 
+  const dynamicNavigator = window.document.createElement('uni-navigator')
+  dynamicNavigator.textContent = '继续完善'
+  dynamicNavigator.getBoundingClientRect = () => ({ left: 20, top: 350, width: 100, height: 32 })
+  dynamicNavigator.__vueParentComponent = {
+    vnode: { el: dynamicNavigator, props: { url: '/about?archiveId=12', onClick: () => undefined } },
+  }
+  container.append(dynamicNavigator)
+
   const declaredTarget = window.document.createElement('button')
   declaredTarget.textContent = 'Declared target'
   declaredTarget.dataset.pageflowTo = '/about'
@@ -257,6 +265,7 @@ test('discovers Vue Router routes and reports rendered navigation hotspots', asy
         { label: 'About us', to: '/about', location: '/about?from=hotspot', kind: 'link', hotspot: { centerX: 0.068359375, centerY: 0.0546875 } },
         { label: 'Nested service', to: '/about', location: '/about', kind: 'link', hotspot: { centerX: 0.068359375, centerY: 0.30078125 } },
         { label: '概念验证中心', to: '/screen/legacy/yanzhengzhongxin', location: '/screen/legacy/yanzhengzhongxin', kind: 'link', hotspot: { centerX: 0.390625, centerY: 0.22135416666666666 } },
+        { label: '继续完善', to: '/about', location: '/about?archiveId=12', kind: 'link', hotspot: { centerX: 0.068359375, centerY: 0.4765625 } },
         { label: 'Declared target', to: '/about', location: '/about', kind: 'link', hotspot: { centerX: 0.078125, centerY: 0.08984375 } },
         { label: 'Declared action', to: '/about', kind: 'event', hotspot: { centerX: 0.078125, centerY: 0.09895833333333333 } },
         { label: 'Helper action', to: '/about', kind: 'event', hotspot: { centerX: 0.078125, centerY: 0.15104166666666666 } },
@@ -274,7 +283,7 @@ test('discovers Vue Router routes and reports rendered navigation hotspots', asy
     assert.equal(JSON.parse(titledPage.init.body).title, 'Rendered home')
     assert.equal(requests.some(request => request.url.endsWith('/api/routes')), false)
     assert(parentMessages.some(item => item.message.type === 'unplugin-pageflow:page-reported' && item.message.path === '/'))
-    assert.equal(window.document.querySelectorAll('[data-unplugin-pageflow-hotspot]').length, 7)
+    assert.equal(window.document.querySelectorAll('[data-unplugin-pageflow-hotspot]').length, 8)
     assert.equal([...window.document.querySelectorAll('[data-unplugin-pageflow-hotspot]')]
       .some(element => !element.dataset.unpluginPageflowTargets), false)
     const nestedHotspot = [...window.document.querySelectorAll('[data-unplugin-pageflow-hotspot="link"]')]

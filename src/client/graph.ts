@@ -92,9 +92,10 @@ export async function cancelPageFlowTest(config: ResolvedPageFlowOptions, id: st
 
 export function subscribeToPageFlowUpdates(
   config: ResolvedPageFlowOptions,
-  callbacks: { graph: (graph: PageFlowGraph) => void; page: (page: PageFlowPage) => void; tests?: () => void },
+  callbacks: { graph: (graph: PageFlowGraph) => void; page: (page: PageFlowPage) => void; tests?: () => void; connected?: () => void },
 ) {
   const source = new EventSource(`${config.previewPath}api/events`)
+  source.addEventListener('open', () => callbacks.connected?.())
   source.addEventListener(PAGEFLOW_GRAPH_EVENT, event => callbacks.graph(JSON.parse(event.data)))
   source.addEventListener(PAGEFLOW_PAGE_EVENT, event => callbacks.page(JSON.parse(event.data)))
   source.addEventListener(PAGEFLOW_TEST_EVENT, () => callbacks.tests?.())

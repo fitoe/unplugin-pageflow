@@ -484,9 +484,10 @@ const factory: UnpluginFactory<PageFlowOptions | undefined> = (options) => {
   const useBuiltClient = packaged || existsSync(builtClientEntryFile)
   const clientEntryFile = useBuiltClient ? builtClientEntryFile : resolve(pluginRoot, 'src/client/mount.ts')
   const clientEntry = toViteFsPath(pathToFileURL(clientEntryFile))
-  const runtimeEntry = toViteFsPath(pathToFileURL(resolve(pluginRoot, packaged ? 'dist/runtime/client.js' : 'src/runtime/client.ts')))
+  const runtimeEntryFile = resolve(pluginRoot, packaged ? 'dist/runtime/client.js' : 'src/runtime/client.ts')
+  const runtimeEntry = toViteFsPath(pathToFileURL(runtimeEntryFile))
   const clientStyleFile = useBuiltClient ? resolve(pluginRoot, 'dist/style.css') : undefined
-  const clientFiles = [clientEntryFile, clientStyleFile].filter((file): file is string => Boolean(file))
+  const clientFiles = [clientEntryFile, clientStyleFile, runtimeEntryFile].filter((file): file is string => Boolean(file))
   const getClientVersion = async () => {
     const versions = await Promise.all(clientFiles.map(file => stat(file).then(info => info.mtimeMs).catch(() => 0)))
     return String(Math.max(...versions))
@@ -678,6 +679,7 @@ const factory: UnpluginFactory<PageFlowOptions | undefined> = (options) => {
         },
       },
       async configureServer(server) {
+        let servedRuntimeVersion = 0
         projectRoot = resolve(options?.projectRoot ?? server.config.root)
         if (projectRoot !== pluginRoot || packaged) {
           try {
@@ -1079,6 +1081,11 @@ const factory: UnpluginFactory<PageFlowOptions | undefined> = (options) => {
           }
 
           if (pathname === clientVersionPath && request.method === 'GET') {
+            const runtimeVersion = await stat(runtimeEntryFile).then(info => info.mtimeMs).catch(() => 0)
+            if (runtimeVersion !== servedRuntimeVersion) {
+              server.moduleGraph.getModulesByFile(runtimeEntryFile)?.forEach(module => server.moduleGraph.invalidateModule(module))
+              servedRuntimeVersion = runtimeVersion
+            }
             response.setHeader('Content-Type', 'text/plain; charset=utf-8')
             response.setHeader('Cache-Control', 'no-store')
             response.end(await getClientVersion())

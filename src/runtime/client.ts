@@ -449,6 +449,17 @@ function hasClickHandler(element: Element) {
   return (element as HTMLElement).onclick != null
 }
 
+function uniNavigatorLocation(element: Element) {
+  if (!element.matches('uni-navigator')) return
+  const rendered = element as VueRenderedElement
+  const candidates = [
+    element.getAttribute('url'),
+    rendered.__vueParentComponent?.vnode?.props?.url,
+    rendered.__vueParentComponent?.subTree?.props?.url,
+  ]
+  return candidates.find((value): value is string => typeof value === 'string' && value.trim().length > 0)
+}
+
 function collectLinks(router: PageFlowRouterAdapter, visibleOnly = false) {
   let layer = document.querySelector<HTMLElement>('[data-unplugin-pageflow-hotspot-layer]')
   if (!layer) {
@@ -480,6 +491,20 @@ function collectLinks(router: PageFlowRouterAdapter, visibleOnly = false) {
     const navigation = router.resolveAnchor(target)
     if (!addHotspot(layer!, anchor, 'link', [navigation.path], [navigation.location], rect)) return
     links.push({ label, to: navigation.path, location: navigation.location, kind: 'link', hotspot: hotspotCenter(anchor, rect) })
+  })
+  document.querySelectorAll<HTMLElement>('uni-navigator').forEach(element => {
+    if (element.querySelector('a[href]')) return
+    if (visibleOnly && !isElementInViewport(element)) return
+    const location = uniNavigatorLocation(element)
+    const navigation = location && router.resolve(location)
+    if (!navigation || !addHotspot(layer!, element, 'link', [navigation.path], [navigation.location])) return
+    links.push({
+      label: pageFlowLinkLabel(element, navigation.path),
+      to: navigation.path,
+      location: navigation.location,
+      kind: 'link',
+      hotspot: hotspotCenter(element),
+    })
   })
   document.querySelectorAll<HTMLElement>('[data-pageflow-to]').forEach(element => {
     if (element.closest('[data-unplugin-pageflow-launcher]')) return

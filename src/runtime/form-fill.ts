@@ -383,8 +383,16 @@ function setNativeChecked(element: HTMLInputElement, value: boolean) {
 function dispatchFormEvents(element: FormControl) {
   const view = element.ownerDocument.defaultView
   const EventConstructor = view?.Event ?? Event
-  element.dispatchEvent(new EventConstructor('input', { bubbles: true }))
-  element.dispatchEvent(new EventConstructor('change', { bubbles: true }))
+  const CustomEventConstructor = view?.CustomEvent
+  const detail = {
+    value: element.value,
+    checked: element.localName === 'input' ? (element as HTMLInputElement).checked : undefined,
+  }
+  const formEvent = (type: 'input' | 'change') => CustomEventConstructor
+    ? new CustomEventConstructor(type, { bubbles: true, detail })
+    : new EventConstructor(type, { bubbles: true })
+  element.dispatchEvent(formEvent('input'))
+  element.dispatchEvent(formEvent('change'))
 }
 
 function emptyFillResult(): PageFlowFormFillResult {

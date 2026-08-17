@@ -111,6 +111,31 @@ test('generates a visible positive value for an unconstrained uni-app decimal in
   window.close()
 })
 
+test('dispatches uni-app input detail so wrapper listeners update reactive state', () => {
+  const window = new Window({ url: 'http://localhost/pages/farmer/profile/edit' })
+  Object.assign(globalThis, { window, document: window.document })
+  window.document.body.innerHTML = `
+    <label class="profile-row">
+      <uni-text>村庄社区</uni-text>
+      <uni-input><input placeholder="请填写"></uni-input>
+    </label>
+  `
+  const wrapper = window.document.querySelector('uni-input')
+  let villageName = ''
+  wrapper.addEventListener('input', event => {
+    villageName = event.detail?.value ?? ''
+  })
+
+  const scan = formFill.scanPageFlowFormControls(window.document)
+  const control = scan.controls[0]
+  const result = formFill.applyPageFlowFormValues({ [control.id]: '柳青社区' }, window.document)
+
+  assert.deepEqual(result.applied, [control.id])
+  assert.equal(window.document.querySelector('input').value, '柳青社区')
+  assert.equal(villageName, '柳青社区')
+  window.close()
+})
+
 test('keeps generated dates within the past year and respects field bounds', () => {
   faker.seed(20260816)
   const window = new Window({ url: 'http://localhost/pages/farmer/plantings/edit' })

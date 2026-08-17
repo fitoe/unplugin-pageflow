@@ -24,6 +24,7 @@ const pageFlowIcons = [
   'i-lucide-sparkles',
   'i-lucide-square',
   'i-lucide-square-mouse-pointer',
+  'i-lucide-star',
   'i-lucide-sun',
   'i-lucide-tablet',
   'i-lucide-trash-2',

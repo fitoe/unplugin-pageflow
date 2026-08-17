@@ -139,6 +139,7 @@ const PREVIEW_MODE_STORAGE_KEY = 'unplugin-pageflow:preview-mode'
 const PANEL_COLLAPSED_STORAGE_KEY = 'unplugin-pageflow:panel-collapsed'
 const PANEL_WIDTH_STORAGE_KEY = 'unplugin-pageflow:panel-width'
 const VIRTUAL_PAGES_STORAGE_KEY = 'unplugin-pageflow:virtual-pages'
+const FAVORITE_PAGES_STORAGE_KEY = 'unplugin-pageflow:favorite-pages'
 
 function storedVirtualPages(): PageFlowPage[] {
   try {
@@ -173,6 +174,15 @@ function storedPanelWidth() {
     return Number.isFinite(value) ? Math.min(560, Math.max(300, value)) : 340
   } catch {
     return 340
+  }
+}
+
+function storedFavoritePages() {
+  try {
+    const value = JSON.parse(localStorage.getItem(FAVORITE_PAGES_STORAGE_KEY) ?? '[]')
+    return new Set<string>(Array.isArray(value) ? value.filter(pageId => typeof pageId === 'string') : [])
+  } catch {
+    return new Set<string>()
   }
 }
 
@@ -259,6 +269,8 @@ const lighthouseError = ref('')
 const focusedPageTests = ref<PageFlowPageTest[]>([])
 const focusedTestsLoading = ref(false)
 const focusedTestsFailed = ref(false)
+const pageTreeRefreshing = ref(false)
+const favoritePageIds = ref(storedFavoritePages())
 const runningPageTestIds = ref(new Set<string>())
 const runningAllPageTests = ref(false)
 const stopAllPageTestsRequested = ref(false)
@@ -292,6 +304,14 @@ const canvas = ref<HTMLDivElement>()
 const connectionCanvas = ref<HTMLDivElement>()
 const overlayWorld = ref<HTMLDivElement>()
 const apiResponseOrigin = ref(window.location.origin)
+
+function toggleFavoritePage(pageId: string) {
+  const next = new Set(favoritePageIds.value)
+  if (next.has(pageId)) next.delete(pageId)
+  else next.add(pageId)
+  favoritePageIds.value = next
+  localStorage.setItem(FAVORITE_PAGES_STORAGE_KEY, JSON.stringify([...next]))
+}
 const focusedPageChecks = computed(() => {
   const page = pages.value.find(item => item.id === focusedPageId.value)
   if (!page) return []
@@ -400,6 +420,12 @@ function pageUserResolutionSourceLabel(resolution: ReturnType<typeof pageUserRes
 
 function pageUserSourceLabel(page: PageFlowPage) {
   return pageUserResolutionSourceLabel(pageUserResolution(page))
+}
+
+function pageUserButtonLabel(page: PageFlowPage) {
+  const user = userNotes.value[pageUser(page) ?? ''] || pageUser(page)
+  const source = pageUserSourceLabel(page)
+  return source === '路由默认' ? user : `${user} · ${source}`
 }
 
 const healthSeverityLabels = {
@@ -604,10 +630,6 @@ const searchItems = computed(() => pages.value.map((page) => {
     userSource: pageUserResolutionSourceLabel(resolution),
   }
 }))
-
-function searchItemPreviewStatus(page: PageFlowPage) {
-  return previewStatusLabels[pagePreviewStatus(page)]
-}
 
 const pageTableRows = computed(() => {
   const query = tableFilter.value.trim().toLocaleLowerCase()
@@ -1963,7 +1985,9 @@ function openTablePage(pageId: string) {
   activatePreview(pageId)
 }
 
-async function selectPageTreePage(pageId: string) {
+async function refreshPageTree() {
+  if (pageTreeRefreshing.value) return false
+  pageTreeRefreshing.value = true
   try {
     if (props.host) {
       if (props.host.refreshProjectConfig) await props.host.refreshProjectConfig()
@@ -1974,8 +1998,15 @@ async function selectPageTreePage(pageId: string) {
     }
   } catch {
     status.value = '页面路由同步失败'
-    return
+    return false
+  } finally {
+    pageTreeRefreshing.value = false
   }
+  return true
+}
+
+async function selectPageTreePage(pageId: string) {
+  if (!await refreshPageTree()) return
   if (!pages.value.some(page => page.id === pageId)) {
     status.value = '页面已失效，页面树已更新'
     return
@@ -4118,6 +4149,12 @@ onMounted(async () => {
     graph: graph => applyGraph(graph.pages, graph.routeMode),
     page: applyPageUpdate,
     tests: () => void refreshFocusedTests(),
+    connected: () => {
+      if (pages.value.length) return
+      void fetchPageFlowGraph(props.config)
+        .then(graph => applyGraph(graph.pages, graph.routeMode))
+        .catch(() => undefined)
+    },
   })
   try {
     const graph = await fetchPageFlowGraph(props.config)
@@ -4248,9 +4285,7 @@ onUnmounted(() => {
             <template #trailing><kbd>{{ searchShortcutLabel }}</kbd></template>
             <template #item="{ item }">
               <div class="search-result-item">
-                <div><strong>{{ item.label }}</strong><span>{{ item.user }} · {{ item.userSource }}</span></div>
-                <small :title="item.path">{{ item.description }}</small>
-                <em>{{ searchItemPreviewStatus(item) }}</em>
+                <strong>{{ item.label }}</strong>
               </div>
             </template>
             <template #empty>没有匹配页面</template>
@@ -4422,10 +4457,16 @@ onUnmounted(() => {
               :content="{ align: 'end', sideOffset: 4 }"
               @update:open="handleUserMenuOpen(page.id, $event)"
             >
-              <button
+              <UButton
                 type="button"
                 class="page-user-label"
                 :class="{ 'is-focused': page.id === focusedPageId }"
+                icon="i-lucide-user-round"
+                trailing-icon="i-lucide-chevron-down"
+                :label="pageUserButtonLabel(page)"
+                color="neutral"
+                variant="soft"
+                size="xs"
                 :aria-label="`切换 ${page.title} 的用户`"
                 @pointerenter="keepUserLabelVisible(page.id)"
                 @pointerleave="clearHoveredUserPage(120)"
@@ -4437,10 +4478,7 @@ onUnmounted(() => {
                   transform: `scale(${1 / Math.max(settledTransform.scaleX, 0.01)}, ${1 / Math.max(settledTransform.scaleY, 0.01)})`,
                   transformOrigin: page.id === focusedPageId ? 'top left' : 'bottom right',
                 }"
-              >
-                <span>{{ userNotes[pageUser(page) ?? ''] || pageUser(page) }} · {{ pageUserSourceLabel(page) }}</span>
-                <svg viewBox="0 0 12 12" aria-hidden="true"><path d="m3 4.5 3 3 3-3" /></svg>
-              </button>
+              />
             </UDropdownMenu>
             <UButton
               v-if="page.id === focusedPageId"
@@ -4461,6 +4499,25 @@ onUnmounted(() => {
                 transformOrigin: 'top left',
               }"
               @click.stop="smartFillFocusedForm"
+            />
+            <UButton
+              v-if="page.id === focusedPageId"
+              type="button"
+              class="page-favorite-action"
+              icon="i-lucide-star"
+              :label="favoritePageIds.has(page.id) ? '已收藏' : '收藏'"
+              :color="favoritePageIds.has(page.id) ? 'warning' : 'neutral'"
+              variant="soft"
+              size="xs"
+              :aria-pressed="favoritePageIds.has(page.id)"
+              :aria-label="favoritePageIds.has(page.id) ? '取消收藏当前页面' : '收藏当前页面'"
+              :style="{
+                left: `${PAGE_CARD_WIDTH + 16 / Math.max(settledTransform.scaleX, 0.01)}px`,
+                top: `${84 / Math.max(settledTransform.scaleY, 0.01)}px`,
+                transform: `scale(${1 / Math.max(settledTransform.scaleX, 0.01)}, ${1 / Math.max(settledTransform.scaleY, 0.01)})`,
+                transformOrigin: 'top left',
+              }"
+              @click.stop="toggleFavoritePage(page.id)"
             />
           </div>
           <div
@@ -4556,7 +4613,14 @@ onUnmounted(() => {
       </section>
       <UTabs v-model="panelTab" class="api-panel-tabs" :items="panelTabs" variant="link" aria-label="页面详情">
         <template #tree>
-          <PageTreePanel :nodes="pageTreeNodes" :active-page-id="focusedPageId" @select="selectPageTreePage" />
+          <PageTreePanel
+            :nodes="pageTreeNodes"
+            :active-page-id="focusedPageId"
+            :favorite-page-ids="favoritePageIds"
+            :refreshing="pageTreeRefreshing"
+            @select="selectPageTreePage"
+            @refresh="refreshPageTree"
+          />
         </template>
         <template #api>
           <div v-if="focusedApiResults.length" class="api-panel-list">

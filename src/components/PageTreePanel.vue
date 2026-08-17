@@ -12,12 +12,16 @@ import {
 const props = defineProps<{
   nodes: PageTreeNode[]
   activePageId?: string
+  favoritePageIds?: ReadonlySet<string>
+  refreshing?: boolean
 }>()
 const emit = defineEmits<{
   select: [pageId: string]
+  refresh: []
 }>()
 
 const expandedKeys = ref(new Set<string>())
+const panel = ref<HTMLElement>()
 const groupKeys = computed(() => pageTreeGroupKeys(props.nodes))
 const rows = computed(() => flattenPageTree(props.nodes, expandedKeys.value))
 
@@ -30,15 +34,19 @@ watch(groupKeys, (keys, previous = []) => {
   expand(keys.filter(key => !previousKeys.has(key)))
 }, { immediate: true })
 
-watch(() => props.activePageId, async (pageId) => {
+async function scrollActivePageIntoView(pageId = props.activePageId) {
   if (!pageId) return
-  expand(pageTreeAncestorKeys(props.nodes, pageId))
   await nextTick()
-  if (typeof document === 'undefined') return
-  const activeRow = [...document.querySelectorAll<HTMLElement>('.page-tree-panel [data-page-id]')]
+  const activeRow = [...(panel.value?.querySelectorAll<HTMLElement>('[data-page-id]') ?? [])]
     .find(element => element.dataset.pageId === pageId)
   activeRow?.scrollIntoView({ block: 'nearest', inline: 'nearest' })
-}, { immediate: true })
+}
+
+watch([() => props.activePageId, () => props.nodes], ([pageId]) => {
+  if (!pageId) return
+  expand(pageTreeAncestorKeys(props.nodes, pageId))
+  void scrollActivePageIntoView(pageId)
+}, { immediate: true, flush: 'post' })
 
 function toggleGroup(node: PageTreeGroupNode, expanded?: boolean) {
   const next = new Set(expandedKeys.value)
@@ -64,7 +72,7 @@ function handleGroupKeydown(event: KeyboardEvent, node: PageTreeGroupNode) {
 </script>
 
 <template>
-  <section class="page-tree-panel" aria-label="页面树">
+  <section ref="panel" class="page-tree-panel" aria-label="页面树">
     <div class="page-tree-list" role="tree" aria-label="项目页面">
       <template v-for="row in rows" :key="row.node.key">
         <button
@@ -86,7 +94,10 @@ function handleGroupKeydown(event: KeyboardEvent, node: PageTreeGroupNode) {
           v-else
           type="button"
           class="page-tree-row is-page"
-          :class="{ 'is-active': row.node.pageId === activePageId }"
+          :class="{
+            'is-active': row.node.pageId === activePageId,
+            'is-favorite': favoritePageIds?.has(row.node.pageId),
+          }"
           role="treeitem"
           :data-page-id="row.node.pageId"
           :aria-current="row.node.pageId === activePageId ? 'page' : undefined"
@@ -97,13 +108,21 @@ function handleGroupKeydown(event: KeyboardEvent, node: PageTreeGroupNode) {
           <span class="page-tree-guide"></span>
           <svg class="page-tree-node-icon" viewBox="0 0 16 16" aria-hidden="true"><path d="M4 2.5h5l3 3v8H4zM9 2.5v3h3" /></svg>
           <span>
-            <strong>{{ row.node.label }}</strong>
+            <span class="page-tree-title">
+              <strong>{{ row.node.label }}</strong>
+              <b v-if="favoritePageIds?.has(row.node.pageId)" aria-label="已收藏">★</b>
+            </span>
             <small>{{ row.node.path }}</small>
           </span>
           <em v-if="row.node.virtual">虚拟</em>
         </button>
       </template>
-      <div v-if="!rows.length" class="page-tree-empty">暂无页面</div>
+      <div v-if="!rows.length" class="page-tree-empty">
+        <span>暂无页面</span>
+        <button type="button" :disabled="refreshing" @click="emit('refresh')">
+          {{ refreshing ? '刷新中…' : '刷新页面树' }}
+        </button>
+      </div>
     </div>
   </section>
 </template>

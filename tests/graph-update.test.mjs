@@ -2,6 +2,42 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 import { createServer } from 'vite'
 
+test('notifies the client when the graph event stream reconnects', async () => {
+  const server = await createServer({ configFile: false, server: { middlewareMode: true }, appType: 'custom', logLevel: 'silent' })
+  class FakeEventSource {
+    static current
+    listeners = new Map()
+    constructor(url) {
+      this.url = url
+      FakeEventSource.current = this
+    }
+    addEventListener(type, listener) {
+      this.listeners.set(type, listener)
+    }
+    emit(type) {
+      this.listeners.get(type)?.({ type })
+    }
+    close() {}
+  }
+  globalThis.EventSource = FakeEventSource
+  try {
+    const { subscribeToPageFlowUpdates } = await server.ssrLoadModule('/src/client/graph.ts')
+    let connected = 0
+    const stop = subscribeToPageFlowUpdates({ previewPath: '/__unplugin-pageflow/' }, {
+      graph() {},
+      page() {},
+      connected: () => connected++,
+    })
+    FakeEventSource.current.emit('open')
+    FakeEventSource.current.emit('open')
+    assert.equal(connected, 2)
+    stop()
+  } finally {
+    delete globalThis.EventSource
+    await server.close()
+  }
+})
+
 test('plans graph synchronization without retaining removed preview state', async () => {
   const server = await createServer({ configFile: false, server: { middlewareMode: true }, appType: 'custom', logLevel: 'silent' })
   try {
