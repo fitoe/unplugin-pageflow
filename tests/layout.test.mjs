@@ -5,7 +5,7 @@ import { createServer } from 'vite'
 test('lays out linked pages in layers and limits previews to the viewport', async () => {
   const server = await createServer({ configFile: false, server: { middlewareMode: true }, appType: 'custom', logLevel: 'silent' })
   try {
-    const { assignOrderedFocusSides, centerPageTransform, collapseRepeatedListLinks, createPageSpatialIndex, createRouteDeckView, expandedRouteGroupPath, fitFocusedPreviewTransform, fitPageBoundsTransform, getRenderablePages, getVisiblePageIds, layoutPageGrid, layoutPagesByRoute, promotedRouteGroupPath, queryPageSpatialIndex, responsivePageGridColumns, restoreCanvasLayoutPositions, routeDeckPathForPage } = await server.ssrLoadModule('/src/client/layout.ts')
+    const { assignOrderedFocusSides, centerPageTransform, collapseRepeatedListLinks, createPageSpatialIndex, createRouteDeckView, expandedRouteGroupPath, fitFocusedPreviewTransform, fitPageBoundsTransform, getRenderablePages, getVisiblePageIds, layoutPageGrid, layoutPagesByRoute, PAGE_CARD_HEIGHT, PAGE_GRID_GAP_Y, promotedRouteGroupPath, queryPageSpatialIndex, responsivePageGridColumns, restoreCanvasLayoutPositions, routeDeckPathForPage } = await server.ssrLoadModule('/src/client/layout.ts')
     const { forwardWheelToCanvas, PAGEFLOW_CANVAS_CONFIG } = await server.ssrLoadModule('/src/client/canvas.ts')
     const { expandDynamicRoutes } = await server.ssrLoadModule('/src/shared/dynamic-routes.ts')
     const { previewFrameDisplayPageId, previewRole, resolvePreviewUrl, shouldInspectPreviewFrame, shouldMountPreviewFrame, touchPreviewCache } = await server.ssrLoadModule('/src/client/preview.ts')
@@ -164,8 +164,9 @@ test('lays out linked pages in layers and limits previews to the viewport', asyn
     assert.equal(thumbnailRecordsAreCurrent('new', { revision: 'old' }, [{ revision: 'old' }], true), true)
     assert.equal(thumbnailRecordsAreCurrent('new', undefined, [], true), false)
     const positions = layoutPageGrid(pages)
-    assert.equal(positions.get('page-5')[1] - positions.get('page-0')[1], 286)
+    assert.equal(positions.get('page-5')[1] - positions.get('page-0')[1], PAGE_CARD_HEIGHT + PAGE_GRID_GAP_Y)
     assert.equal(responsivePageGridColumns({ width: 1_440, height: 900 }, pages), 4)
+    assert.equal(responsivePageGridColumns({ width: 1_600, height: 900 }, pages), 5)
     assert.equal(responsivePageGridColumns({ width: 720, height: 900 }, pages), 2)
     const shortPages = pages.slice(0, 4)
     const shortPageHeights = new Map(shortPages.map(page => [page.id, 150]))
@@ -179,7 +180,7 @@ test('lays out linked pages in layers and limits previews to the viewport', asyn
       ['page-2', 300],
     ]), 3)
     assert.equal(masonryPositions.get('page-3')[0], masonryPositions.get('page-1')[0])
-    assert.equal(masonryPositions.get('page-3')[1], 294)
+    assert.equal(masonryPositions.get('page-3')[1], 264 + PAGE_GRID_GAP_Y)
     assert.equal(masonryPositions.get('page-4')[0], masonryPositions.get('page-2')[0])
 
     const restoredPositions = restoreCanvasLayoutPositions(new Map([

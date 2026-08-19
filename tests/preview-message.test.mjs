@@ -13,6 +13,7 @@ test('decodes supported preview messages and rejects malformed payloads', async 
     }), { type: 'api-result', result: { id: '1', fields: [] } })
     assert.deepEqual(decodePreviewMessage({ type: 'unplugin-pageflow:page-reported', path: '/home' }), { type: 'page-reported', path: '/home' })
     assert.deepEqual(decodePreviewMessage({ type: 'unplugin-pageflow:escape' }), { type: 'escape' })
+    assert.deepEqual(decodePreviewMessage({ type: 'unplugin-pageflow:xpath-selected', xpath: '//*[@id="save"]' }), { type: 'xpath-selected', xpath: '//*[@id="save"]' })
     assert.deepEqual(decodePreviewMessage({
       type: 'unplugin-pageflow:hotspot-hover',
       targets: ['/one', 2, '/two'],

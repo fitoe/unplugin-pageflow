@@ -29,7 +29,7 @@ import type {
 import { cancelPageFlowTest, fetchPageFlowEditor, fetchPageFlowGraph, fetchPageFlowTests, openPageFlowEditor, publishPageFlowAIContext, refreshPageFlowConfig, reportPageTitle, runPageFlowLighthouse, runPageFlowTest, startRouteDiscovery, subscribeToPageFlowUpdates, type PageFlowEditorInfo } from './client/graph'
 import { planGraphUpdate } from './client/graph-update'
 import { navigatePreviewFrame, previewFrameDisplayPageId, resolvePreviewUrl, shouldInspectPreviewFrame, shouldMountPreviewFrame, syncPreviewHotspotLayerVisibility, touchPreviewCache } from './client/preview'
-import { deletePageFlowInternalParams, hasPageFlowPreview, PAGEFLOW_INSPECT_PARAM, PAGEFLOW_SCAN_MESSAGE } from './shared/protocol'
+import { deletePageFlowInternalParams, hasPageFlowPreview, PAGEFLOW_INSPECT_PARAM, PAGEFLOW_SCAN_MESSAGE, PAGEFLOW_XPATH_MODE_MESSAGE } from './shared/protocol'
 import { forwardWheelToCanvas, PAGEFLOW_CANVAS_CONFIG, type PageFlowWheelInteraction } from './client/canvas'
 import { CaptureQueue } from './client/capture-queue'
 import { planNextCapture } from './client/capture-planner'
@@ -38,7 +38,7 @@ import { capturePageThumbnails, documentUsesWebGL } from './client/snapshot-capt
 import { ThumbnailResourceCache } from './client/thumbnail-resources'
 import { FocusedPageStateCache } from './client/focus-cache'
 import { createFocusScene, resolveFocusTargetPageIds } from './client/focus-layout'
-import { createPageCardGroup, createPageDeckGroup, pageCardMetaHit, setPageCardShadow } from './client/scene-cards'
+import { createPageCardGroup, createPageDeckGroup, setPageCardShadow } from './client/scene-cards'
 import { SceneNodeCache } from './client/scene-node-cache'
 import { FrameAnimation } from './client/frame-animation'
 import { PreviewFrameRegistry } from './client/preview-frame-registry'
@@ -243,6 +243,8 @@ const livePreviewFrameId = ref<string>()
 const pendingPreviewNavigation = ref<PendingPreviewNavigation>()
 let previewNavigationSequence = 0
 const focusedPageId = ref<string>()
+const xpathSelectionEnabled = ref(false)
+const selectedXPath = ref('')
 const hoveredUserPageId = ref<string>()
 const openUserMenuPageId = ref<string>()
 const focusedLinks = ref<PageFlowLink[]>([])
@@ -294,12 +296,12 @@ const searchResetKey = ref(0)
 const searchRoot = ref<HTMLDivElement>()
 const searchShortcutLabel = /Mac|iPhone|iPad/.test(navigator.userAgent) ? '⌘K' : 'Ctrl K'
 const workbenchView = ref<'canvas' | 'table'>('canvas')
-const canvasFilter = ref<'all' | 'linked' | 'orphan' | 'issues' | 'current-user'>('all')
 const tableFilter = ref('')
 const tableSort = ref<'group' | 'title' | 'path' | 'user' | 'health'>('group')
 const navigationEvents = ref<Array<{ id: number, from: string, to: string, reason: string, at: number }>>([])
 const virtualPageMenu = ref<{ pageId: string, x: number, y: number }>()
 const formLoading = ref(false)
+const focusedFormAvailable = ref(false)
 const canvas = ref<HTMLDivElement>()
 const connectionCanvas = ref<HTMLDivElement>()
 const overlayWorld = ref<HTMLDivElement>()
@@ -435,20 +437,6 @@ const healthSeverityLabels = {
   error: '存在错误',
 } as const
 
-const canvasFilterLabels = {
-  all: '全部页面',
-  linked: '有导航关系',
-  orphan: '孤立页面',
-  issues: '问题页面',
-  'current-user': '当前用户',
-} as const
-
-const canvasFilterItems = computed(() => Object.entries(canvasFilterLabels).map(([value, label]) => ({
-  label,
-  icon: canvasFilter.value === value ? 'i-lucide-check' : undefined,
-  onSelect: () => { canvasFilter.value = value as typeof canvasFilter.value },
-})))
-
 function savePageTodos() {
   void savePageFlowTodos(pageFlowHost, pageTodos.value)
 }
@@ -523,7 +511,6 @@ let diagnosticsInFlightPageId: string | undefined
 let diagnosticsRefreshQueued = false
 const pendingThumbnailRecords: PageFlowThumbnailManifest = {}
 let captureBatchIds = new Set<string>()
-let focusExitPending = false
 let focusTransitionTargetId: string | undefined
 let routeTransitionTargetId: string | undefined
 let focusTargetDraggedAt = 0
@@ -603,22 +590,21 @@ const maximumMountedPreviews = computed(() => {
 })
 const cardHeights = computed(() => new Map(pages.value.map(page => [page.id, pageCardHeight(page.id)])))
 const routeDeckView = computed(() => createRouteDeckView(pages.value, routeGroupPath.value))
+const orphanPageIds = computed(() => new Set(pages.value.filter(page => isOrphanPage(page, pages.value)).map(page => page.id)))
 const pageTreeNodes = computed(() => createPageTree(pages.value, {
   groupNames: groupNames.value,
   pageNames: pageNames.value,
+  orphanPageIds: orphanPageIds.value,
   groupPath: page => routeDeckPathForPage(pages.value, page.id),
 }))
 const canvasPages = computed(() => [...routeDeckView.value.directPages, ...routeDeckView.value.decks.map(deck => deck.representative)])
 const routeDeckByPageId = computed(() => new Map(routeDeckView.value.decks.map(deck => [deck.representative.id, deck])))
 const focusedPage = computed(() => pages.value.find(page => page.id === focusedPageId.value))
-const breadcrumbItems = computed(() => [
-  { label: '全部页面', path: [] as string[] },
-  ...routeGroupPath.value.map((segment, index) => {
+const breadcrumbItems = computed(() => routeGroupPath.value.map((segment, index) => {
     const path = routeGroupPath.value.slice(0, index + 1)
     const key = path.join('/')
     return { label: groupNames.value[key] ?? segment, path }
-  }),
-])
+  }))
 const searchItems = computed(() => pages.value.map((page) => {
   const groups = pageGroupPath(page)
   const resolution = pageUserResolution(page)
@@ -782,6 +768,30 @@ const pageFlowHost: PageFlowHost = props.host ?? new UnpluginPageFlowHost({
   getRequests: () => focusedApiResults.value,
   capture: captureFocusedPageForHost,
 })
+let formAvailabilityTimer: number | undefined
+let formAvailabilityRequest = 0
+
+async function refreshFocusedFormAvailability(pageId = focusedPageId.value) {
+  const request = ++formAvailabilityRequest
+  if (!pageId || !pageFlowHost.scanForm) {
+    focusedFormAvailable.value = false
+    return
+  }
+  try {
+    const scan = await pageFlowHost.scanForm()
+    if (request !== formAvailabilityRequest || focusedPageId.value !== pageId) return
+    focusedFormAvailable.value = scan.controls.length > 0
+  } catch {
+    if (request === formAvailabilityRequest && focusedPageId.value === pageId)
+      focusedFormAvailable.value = false
+  }
+}
+
+function scheduleFocusedFormAvailability(pageId = focusedPageId.value) {
+  window.clearTimeout(formAvailabilityTimer)
+  formAvailabilityTimer = window.setTimeout(() => void refreshFocusedFormAvailability(pageId), 200)
+}
+
 async function smartFillFocusedForm() {
   if (!focusedPageId.value || formLoading.value) return
   const pageId = focusedPageId.value
@@ -1920,7 +1930,7 @@ function activatePreviewNavigation(to: string, location = to, animate = true, re
   livePreviewId.value = target.id
   readyPreviewIds.value = new Set([...readyPreviewIds.value].filter(id => id !== target.id))
   failedPreviewIds.delete(target.id)
-  activatePreview(target.id, animate, true, framePageId)
+  activatePreview(target.id, animate, framePageId)
   return true
 }
 
@@ -1956,7 +1966,7 @@ function observeLivePreviewRoute(framePageId: string, actualUrl: string, reporte
           readyPreviewIds.value = new Set([...readyPreviewIds.value].filter(id => id !== framePageId))
         }
         livePreviewId.value = source.id
-        activatePreview(source.id, true, true, framePageId)
+        activatePreview(source.id, true, framePageId)
         return 'recovered' as const
       }
     }
@@ -1968,7 +1978,7 @@ function observeLivePreviewRoute(framePageId: string, actualUrl: string, reporte
   navigationLocations.value = { ...navigationLocations.value, [target.path]: location }
   livePreviewId.value = target.id
   failedPreviewIds.delete(target.id)
-  activatePreview(target.id, true, true, framePageId)
+  activatePreview(target.id, true, framePageId)
   return 'redirected' as const
 }
 
@@ -1993,7 +2003,11 @@ async function refreshPageTree() {
       if (props.host.refreshProjectConfig) await props.host.refreshProjectConfig()
       applyHostState(await props.host.loadState())
     } else {
-      const graph = await fetchPageFlowGraph(props.config)
+      let graph = await fetchPageFlowGraph(props.config)
+      if (!graph.pages.length) {
+        await new Promise(resolve => window.setTimeout(resolve, 180))
+        graph = await fetchPageFlowGraph(props.config)
+      }
       applyGraph(graph.pages, graph.routeMode)
     }
   } catch {
@@ -2217,7 +2231,7 @@ function cacheCurrentFocusedLinks() {
   )
 }
 
-function activatePreview(pageId: string, animate = true, preserveNavigation = false, navigationFramePageId?: string) {
+function activatePreview(pageId: string, animate = true, navigationFramePageId?: string) {
   if (animate && focusedPageId.value && focusedPageId.value !== pageId) {
     if (focusTransitionTargetId) {
       focusTransitionTargetId = pageId
@@ -2228,7 +2242,7 @@ function activatePreview(pageId: string, animate = true, preserveNavigation = fa
       const targetId = focusTransitionTargetId ?? pageId
       clearFocus(Boolean(navigationFramePageId))
       focusTransitionTargetId = undefined
-      activatePreview(targetId, true, preserveNavigation, navigationFramePageId)
+      activatePreview(targetId, true, navigationFramePageId)
     })
     return
   }
@@ -2248,7 +2262,7 @@ function activatePreview(pageId: string, animate = true, preserveNavigation = fa
     animateToRouteGroup(targetGroupPath, () => {
       const targetId = routeTransitionTargetId ?? pageId
       routeTransitionTargetId = undefined
-      activatePreview(targetId, true, preserveNavigation, navigationFramePageId)
+      activatePreview(targetId, true, navigationFramePageId)
     })
     return
   }
@@ -2274,10 +2288,6 @@ function activatePreview(pageId: string, animate = true, preserveNavigation = fa
       parkedPageProgress.value = {}
     }
     active.value = pageId
-    if (!preserveNavigation && page) {
-      const { [page.path]: _staleLocation, ...freshNavigationLocations } = navigationLocations.value
-      navigationLocations.value = freshNavigationLocations
-    }
     if (!props.host) {
       pendingApiResultsByPage.delete(pageId)
       apiResultsByPage.value = { ...apiResultsByPage.value, [pageId]: [] }
@@ -2345,7 +2355,7 @@ function applyWorkbenchLocation() {
   if (location.panel) panelTab.value = location.panel
   workbenchView.value = location.view ?? 'canvas'
   const page = location.pagePath && pages.value.find(page => page.path === location.pagePath)
-  if (page) activatePreview(page.id, false, true)
+  if (page) activatePreview(page.id, false)
   else if (location.groupPath.length) enterRouteGroup(location.groupPath, false)
   else if (focusedPageId.value) exitFocus(false)
   void nextTick(() => {
@@ -2398,6 +2408,19 @@ function centerFocusedPage(pageId: string) {
 function requestFocusedPageScan(pageId: string) {
   if (focusedPageId.value !== pageId) return
   previewFrameForPage(pageId)?.contentWindow?.postMessage({ type: PAGEFLOW_SCAN_MESSAGE }, window.location.origin)
+}
+
+function syncXPathSelectionMode(pageId = focusedPageId.value) {
+  if (!pageId) return
+  previewFrameForPage(pageId)?.contentWindow?.postMessage({
+    type: PAGEFLOW_XPATH_MODE_MESSAGE,
+    enabled: xpathSelectionEnabled.value,
+  }, window.location.origin)
+}
+
+function toggleXPathSelection() {
+  selectedXPath.value = ''
+  syncXPathSelectionMode()
 }
 
 function requestFocusedDiagnostics(force = false) {
@@ -2529,10 +2552,6 @@ function exitFocus(animated = true, done?: () => void) {
   }
 }
 
-function waitForCapture(pageId: string, timeoutMs = 35000) {
-  return captureQueue.waitFor(pageId, timeoutMs)
-}
-
 async function captureFocusedPageForHost() {
   const pageId = focusedPageId.value
   const frame = pageId ? previewFrameForPage(pageId) : undefined
@@ -2552,43 +2571,6 @@ async function captureFocusedPageForHost() {
     reader.onerror = () => reject(reader.error ?? new Error('PageFlow 截图读取失败'))
     void response.blob().then(blob => reader.readAsDataURL(blob), reject)
   })
-}
-
-function exitFocusAfterSnapshot(done?: () => void) {
-  const pageId = focusedPageId.value
-  if (!pageId || focusExitPending) return
-  focusExitPending = true
-  const exitAfterCapture = async () => {
-    const activeCaptureId = capturePreviewId.value
-    if (activeCaptureId && capturesInProgress.has(activeCaptureId))
-      await waitForCapture(activeCaptureId)
-    if (focusedPageId.value !== pageId) {
-      focusExitPending = false
-      return
-    }
-    cancelScheduledCapture()
-    if (capturePreviewId.value) captureBatchIds.delete(capturePreviewId.value)
-    capturePreviewId.value = pageId
-    forcedThumbnailRefreshIds.add(pageId)
-    failedPreviewIds.delete(pageId)
-    manualCaptureIds.add(pageId)
-    const frame = previewFrameForPage(pageId)
-    if (frame) await capturePreview(pageId, frame, true)
-    else {
-      capturePreviewId.value = undefined
-      forcedThumbnailRefreshIds.delete(pageId)
-      manualCaptureIds.delete(pageId)
-    }
-    if (focusedPageId.value !== pageId) {
-      focusExitPending = false
-      return
-    }
-    exitFocus(true, () => {
-      focusExitPending = false
-      done?.()
-    })
-  }
-  void exitAfterCapture()
 }
 
 function fitCurrentRouteGroup() {
@@ -2644,27 +2626,14 @@ async function resetCurrentLayout() {
   }
 }
 
-function pageMatchesCanvasFilter(page: PageFlowPage) {
-  if (canvasFilter.value === 'all') return true
-  if (canvasFilter.value === 'orphan') return isOrphanPage(page, pages.value)
-  if (canvasFilter.value === 'linked') return page.links.length > 0 || pages.value.some(source => source.id !== page.id && source.links.some(link => link.to === page.id || link.to === page.path))
-  if (canvasFilter.value === 'current-user') return pageUser(page) === activeUser.value
-  const diagnostics = diagnosticsByPage.get(page.id)?.diagnostics ?? page.diagnostics ?? []
-  return diagnostics.some(item => item.severity !== 'suggestion') || failedPreviewIds.has(page.id)
-}
-
-function canvasItemMatchesFilter(page: PageFlowPage) {
-  const deck = routeDeckByPageId.value.get(page.id)
-  return deck ? deck.pages.some(pageMatchesCanvasFilter) : pageMatchesCanvasFilter(page)
-}
-
 function exitFocusedPage() {
-  exitFocusAfterSnapshot(fitCurrentRouteGroup)
+  exitFocus(true, fitCurrentRouteGroup)
 }
 
 async function copyPagePath(path: string) {
-  if (await writeClipboardText(path)) {
-    copiedPath.value = path
+  const copiedValue = selectedXPath.value ? `${path} xpath=${selectedXPath.value}` : path
+  if (await writeClipboardText(copiedValue)) {
+    copiedPath.value = copiedValue
     clearTimeout(copiedPathTimer)
     copiedPathTimer = setTimeout(() => { copiedPath.value = undefined }, 1400)
   } else {
@@ -2821,11 +2790,7 @@ function handleCanvasClick(event: MouseEvent) {
   const localX = worldX - position[0]
   const localY = worldY - position[1]
   const previewH = pagePreviewHeight(page.id)
-  const metaHit = pageCardMetaHit(localX, localY, previewH)
-  if (metaHit === 'title') void editPageName(page)
-  else if (metaHit === 'open') openPage(page.path)
-  else if (metaHit === 'path') void copyPagePath(page.path)
-  else if (localX >= 0 && localX <= PAGE_CARD_WIDTH && localY >= 0 && localY <= previewH) activatePreview(page.id)
+  if (localX >= 0 && localX <= PAGE_CARD_WIDTH && localY >= 0 && localY <= previewH) activatePreview(page.id)
 }
 
 function handleCanvasContextMenu(event: MouseEvent) {
@@ -3015,7 +2980,6 @@ function handleCanvasCursor(event: PointerEvent) {
   const candidates = focusScene.value
     ? [focusScene.value.source, ...focusScene.value.targets.map(target => target.page)]
     : pages.value.filter(page => visiblePageIds.value.has(page.id))
-  let linkHit = false
   let previewPageId: string | undefined
   const pageHit = candidates.some(page => {
     const position = focusScene.value?.source.id === page.id
@@ -3032,19 +2996,11 @@ function handleCanvasCursor(event: PointerEvent) {
       previewPageId = page.id
     const hit = localX >= 0 && localX <= PAGE_CARD_WIDTH
       && localY >= 0 && localY <= pageCardHeight(page.id)
-    if (hit) {
-      const metaHit = pageCardMetaHit(localX, localY, previewHeight)
-      linkHit = !focusScene.value && (metaHit === 'open' || metaHit === 'path' || metaHit === 'title')
-    }
     return hit
   })
   if (previewPageId) keepUserLabelVisible(previewPageId)
   else clearHoveredUserPage(120)
-  if (linkHit) {
-    setTimeout(() => {
-      setCanvasCursor('pointer')
-    }, 0)
-  } else if (pageHit) {
+  if (pageHit) {
     setTimeout(() => {
       setCanvasCursor('default')
     }, 0)
@@ -3209,6 +3165,7 @@ async function handlePreviewLoad(pageId: string, frame: HTMLIFrameElement) {
     loadedPreviewIds.value = new Set(loadedPreviewIds.value).add(pageId)
     syncPreviewHotspots(logicalPageId)
     requestFocusedPageScan(logicalPageId)
+    if (logicalPageId === focusedPageId.value) syncXPathSelectionMode(logicalPageId)
     if (!applyDetectedPcPreviewSize(frame)) schedulePcPreviewSizeDetection(logicalPageId, frame)
     else return
     await waitForPreviewReady(frame, PREVIEW_READY_QUIET_MS)
@@ -3441,11 +3398,19 @@ function handlePreviewMessage(event: MessageEvent) {
     const page = pages.value.find(item => item.id === logicalPageId)
     if (logicalPageId === focusedPageId.value) {
       requestAnimationFrame(() => requestFocusedPageScan(logicalPageId))
+      scheduleFocusedFormAvailability(logicalPageId)
       if (!cachedPageDiagnostics(page)) requestAnimationFrame(() => requestFocusedDiagnostics())
     }
     return
   }
   const sourcePageId = framePageId ? previewDisplayPageId(framePageId) : undefined
+  if (message.type === 'xpath-selected') {
+    if (sourcePageId !== focusedPageId.value || !xpathSelectionEnabled.value) return
+    selectedXPath.value = message.xpath
+    xpathSelectionEnabled.value = false
+    syncXPathSelectionMode(sourcePageId)
+    return
+  }
   if (message.type === 'api-result') {
     if (!sourcePageId || !isLocalBusinessApiResponse(message.result.url, window.location.origin, message.result.contentType)) return
     queueApiResult(sourcePageId, message.result)
@@ -3469,6 +3434,7 @@ function handlePreviewMessage(event: MessageEvent) {
     syncPreviewHotspots(sourcePageId)
     const targetsChanged = focusTargetSetKey(focusedLinks.value) !== focusTargetSetKey(nextLinks)
     focusedLinks.value = nextLinks
+    scheduleFocusedFormAvailability(sourcePageId)
     if (targetsChanged) void requestFocusedLayout()
     else scheduleCanvasRender()
     return
@@ -3490,7 +3456,7 @@ function handlePreviewMessage(event: MessageEvent) {
   activatePreviewNavigation(message.to, message.location, true, '应用导航', livePreviewFrameId.value)
 }
 
-function createCardGroup(page: PageFlowPage, x: number, y: number, scale = 1, highlighted = false, compactOnly = false, hideMeta = false) {
+function createCardGroup(page: PageFlowPage, x: number, y: number, scale = 1, highlighted = false, compactOnly = false) {
   const compact = compactThumbnailRecord(page.id)
   const group = createPageCardGroup({
     page: { ...page, title: pageDisplayName(page) },
@@ -3499,15 +3465,12 @@ function createCardGroup(page: PageFlowPage, x: number, y: number, scale = 1, hi
     scale,
     highlighted,
     orphan: isOrphanPage(page, pages.value),
-    hideMeta: hideMeta || focusedPageId.value === page.id,
     previewHeight: pagePreviewHeight(page.id),
     tiles: compactOnly ? (compact ? [compact] : []) : renderablePageThumbnailTiles(page),
     thumbnailSource,
-    copied: copiedPath.value === page.path,
     dark: darkMode.value,
     previewStatus: previewStatusLabels[pagePreviewStatus(page)],
   })
-  if (!pageMatchesCanvasFilter(page)) group.opacity = 0.13
   return group
 }
 
@@ -3523,7 +3486,6 @@ function createDeckGroup(page: PageFlowPage, x: number, y: number) {
     createLayer: (deckPage, layerX, layerY) => createCardGroup(deckPage, layerX, layerY, 1, false, true, true),
     dark: darkMode.value,
   })
-  if (!canvasItemMatchesFilter(page)) group.opacity = 0.13
   return group
 }
 
@@ -3952,7 +3914,6 @@ watch(requiredThumbnailRecords, records => {
 }, { immediate: true })
 
 watch([active, copiedPath], scheduleCanvasRender)
-watch(canvasFilter, scheduleCanvasRender)
 watch([focusedPageId, routeGroupPath, previewMode, activeUser, panelTab, workbenchView], scheduleWorkbenchLocationSync, { deep: true })
 watch(panelCollapsed, (collapsed) => {
   try {
@@ -3987,7 +3948,19 @@ watch(capturePreviewId, (pageId) => {
   })
 })
 watch([focusedPageId, focusedDiagnostics, focusedApiResults, focusedPageTests, focusedLinks, lighthouseReport], scheduleAIContextSync, { deep: true })
-watch(focusedPageId, (pageId) => {
+watch(focusedPageId, (pageId, previousPageId) => {
+  if (previousPageId && xpathSelectionEnabled.value) {
+    previewFrameForPage(previousPageId)?.contentWindow?.postMessage({
+      type: PAGEFLOW_XPATH_MODE_MESSAGE,
+      enabled: false,
+    }, window.location.origin)
+  }
+  xpathSelectionEnabled.value = false
+  selectedXPath.value = ''
+  focusedFormAvailable.value = false
+  formAvailabilityRequest++
+  window.clearTimeout(formAvailabilityTimer)
+  if (pageId) scheduleFocusedFormAvailability(pageId)
   if (!pageId) panelTab.value = 'tree'
   editorOpenError.value = ''
   window.clearTimeout(diagnosticsRequestTimer)
@@ -4183,6 +4156,7 @@ onUnmounted(() => {
   document.removeEventListener('visibilitychange', handleVisibilityChange)
   window.clearTimeout(aiContextTimer)
   window.clearTimeout(diagnosticsRequestTimer)
+  window.clearTimeout(formAvailabilityTimer)
   removePageUpdateEffects()
   window.removeEventListener('message', handlePreviewMessage)
   window.removeEventListener('keydown', handleSearchShortcut)
@@ -4346,13 +4320,13 @@ onUnmounted(() => {
       :class="{ 'scene-ready': initialSceneReady, 'is-table-view': workbenchView === 'table' }"
       :style="{ '--pageflow-panel-space': workbenchView === 'canvas' && !panelCollapsed ? `${panelWidth + 36}px` : '0px' }"
     >
-      <nav class="canvas-breadcrumb" aria-label="当前位置">
+      <nav v-if="breadcrumbItems.length || focusedPage" class="canvas-breadcrumb" aria-label="当前位置">
         <template v-for="(item, index) in breadcrumbItems" :key="item.path.join('/')">
           <span v-if="index" aria-hidden="true">/</span>
           <button type="button" :aria-current="!focusedPage && index === breadcrumbItems.length - 1 ? 'page' : undefined" @click="enterRouteGroup(item.path)">{{ item.label }}</button>
         </template>
         <template v-if="focusedPage">
-          <span aria-hidden="true">/</span>
+          <span v-if="breadcrumbItems.length" aria-hidden="true">/</span>
           <strong>{{ pageDisplayName(focusedPage) }}</strong>
         </template>
       </nav>
@@ -4369,10 +4343,6 @@ onUnmounted(() => {
         />
         <UButton type="button" class="canvas-tool" icon="i-lucide-scan" color="neutral" variant="ghost" title="适应当前层级" aria-label="适应全图" @click="fitCurrentRouteGroup" />
         <UButton type="button" class="canvas-tool" icon="i-lucide-layout-grid" color="neutral" variant="ghost" title="恢复自动布局" aria-label="恢复自动布局" @click="resetCurrentLayout" />
-        <UDropdownMenu :items="canvasFilterItems" :content="{ align: 'start', side: 'right', sideOffset: 8 }">
-          <UButton type="button" class="canvas-tool" icon="i-lucide-list-filter" color="neutral" :variant="canvasFilter === 'all' ? 'ghost' : 'soft'" :title="`过滤：${canvasFilterLabels[canvasFilter]}`" aria-label="过滤页面" />
-        </UDropdownMenu>
-        <UButton type="button" class="canvas-tool" :icon="workbenchView === 'table' ? 'i-lucide-workflow' : 'i-lucide-table-2'" color="neutral" :variant="workbenchView === 'table' ? 'soft' : 'ghost'" :title="workbenchView === 'table' ? '返回画布视图' : '打开页面表格'" aria-label="切换画布和表格视图" @click="workbenchView = workbenchView === 'canvas' ? 'table' : 'canvas'" />
       </nav>
       <div
         v-if="virtualPageMenu"
@@ -4481,7 +4451,7 @@ onUnmounted(() => {
               />
             </UDropdownMenu>
             <UButton
-              v-if="page.id === focusedPageId"
+              v-if="page.id === focusedPageId && focusedFormAvailable"
               type="button"
               class="page-form-fill-action"
               icon="i-lucide-wand-sparkles"
@@ -4513,7 +4483,7 @@ onUnmounted(() => {
               :aria-label="favoritePageIds.has(page.id) ? '取消收藏当前页面' : '收藏当前页面'"
               :style="{
                 left: `${PAGE_CARD_WIDTH + 16 / Math.max(settledTransform.scaleX, 0.01)}px`,
-                top: `${84 / Math.max(settledTransform.scaleY, 0.01)}px`,
+                top: `${(focusedFormAvailable ? 84 : 50) / Math.max(settledTransform.scaleY, 0.01)}px`,
                 transform: `scale(${1 / Math.max(settledTransform.scaleX, 0.01)}, ${1 / Math.max(settledTransform.scaleY, 0.01)})`,
                 transformOrigin: 'top left',
               }"
@@ -4619,6 +4589,7 @@ onUnmounted(() => {
             :favorite-page-ids="favoritePageIds"
             :refreshing="pageTreeRefreshing"
             @select="selectPageTreePage"
+            @select-group="enterRouteGroup"
             @refresh="refreshPageTree"
           />
         </template>
@@ -4995,13 +4966,18 @@ onUnmounted(() => {
     </div>
     <footer class="app-statusbar">
       <button type="button" class="route-sync-status" :aria-expanded="configPopoverOpen" @click="configPopoverOpen = !configPopoverOpen"><i></i> {{ status }}</button>
-      <button
-        v-if="focusedEditorPage"
-        type="button"
-        class="statusbar-page-path"
-        :title="`复制 ${focusedEditorPage.path}`"
-        @click="copyPagePath(focusedEditorPage.path)"
-      >{{ copiedPath === focusedEditorPage.path ? '已复制' : focusedEditorPage.path }}</button>
+      <div v-if="focusedEditorPage" class="statusbar-page-location">
+        <label class="statusbar-xpath-toggle" title="选取页面节点并在复制路径中附带 XPath">
+          <input v-model="xpathSelectionEnabled" type="checkbox" @change="toggleXPathSelection">
+          <span>XPath</span>
+        </label>
+        <button
+          type="button"
+          class="statusbar-page-path"
+          :title="`复制 ${focusedEditorPage.path}${selectedXPath ? ` xpath=${selectedXPath}` : ''}`"
+          @click="copyPagePath(focusedEditorPage.path)"
+        >{{ copiedPath === `${focusedEditorPage.path}${selectedXPath ? ` xpath=${selectedXPath}` : ''}` ? '已复制' : selectedXPath ? `${focusedEditorPage.path} xpath=${selectedXPath}` : focusedEditorPage.path }}</button>
+      </div>
       <span class="statusbar-summary">{{ routeDeckView.decks.length }} 组 / {{ pages.length }} 页 · v{{ pageFlowVersion }}</span>
     </footer>
   </main>

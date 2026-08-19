@@ -3,7 +3,7 @@ import type {
   ResolvedPageFlowOptions,
 } from '../shared/types'
 import { startPageFlowDomStatePersistence } from './state.ts'
-import { hasPageFlowInspection, hasPageFlowPreview, PAGEFLOW_API_RESULT_MESSAGE, PAGEFLOW_DIAGNOSTIC_HIGHLIGHT_MESSAGE, PAGEFLOW_DIAGNOSTICS_RESULT_MESSAGE, PAGEFLOW_DIAGNOSTICS_SCAN_MESSAGE, PAGEFLOW_ESCAPE_MESSAGE, PAGEFLOW_FORM_COMMAND_MESSAGE, PAGEFLOW_FORM_RESULT_MESSAGE, PAGEFLOW_HOTSPOT_HOVER_MESSAGE, PAGEFLOW_NAVIGATE_MESSAGE, PAGEFLOW_NETWORK_EVENT, PAGEFLOW_PAGE_REPORTED_MESSAGE, PAGEFLOW_READY_EVENT, PAGEFLOW_SCAN_MESSAGE, PAGEFLOW_SCAN_RESULT_MESSAGE, PAGEFLOW_WEBGL_CANVAS_ATTRIBUTE } from '../shared/protocol.ts'
+import { hasPageFlowInspection, hasPageFlowPreview, PAGEFLOW_API_RESULT_MESSAGE, PAGEFLOW_DIAGNOSTIC_HIGHLIGHT_MESSAGE, PAGEFLOW_DIAGNOSTICS_RESULT_MESSAGE, PAGEFLOW_DIAGNOSTICS_SCAN_MESSAGE, PAGEFLOW_ESCAPE_MESSAGE, PAGEFLOW_FORM_COMMAND_MESSAGE, PAGEFLOW_FORM_RESULT_MESSAGE, PAGEFLOW_HOTSPOT_HOVER_MESSAGE, PAGEFLOW_NAVIGATE_MESSAGE, PAGEFLOW_NETWORK_EVENT, PAGEFLOW_PAGE_REPORTED_MESSAGE, PAGEFLOW_READY_EVENT, PAGEFLOW_SCAN_MESSAGE, PAGEFLOW_SCAN_RESULT_MESSAGE, PAGEFLOW_WEBGL_CANVAS_ATTRIBUTE, PAGEFLOW_XPATH_MODE_MESSAGE } from '../shared/protocol.ts'
 import { highlightDiagnosticElement, scanPageDiagnostics } from './diagnostics'
 import { applyPageFlowFormValues, scanPageFlowFormControls, undoPageFlowFormFill } from './form-fill'
 import type { PageFlowRouterAdapter } from './adapters/types'
@@ -12,6 +12,7 @@ import { findBrowserHistoryAdapter } from './adapters/browser-history'
 import { mountPageFlowLauncher } from './launcher'
 import { isLocalBusinessApiResponse } from './api-filter'
 import { collectApiFields } from './api-fields'
+import { createXPathSelectionController } from './xpath-selector'
 import { instrumentPageFlowNetwork, observePageFlowScroll, pageFlowHotspotCenter, pageFlowInternalLinks, pageFlowLinkLabel } from '@pageflow/runtime'
 
 const pageFlowSearchParams = () => new URLSearchParams(window.location.search)
@@ -730,8 +731,13 @@ export async function startPageFlowRuntime(config: ResolvedPageFlowOptions) {
   const runtimeWindow = window as PageFlowWindow
   if (!runtimeWindow.__UNPLUGIN_PAGEFLOW_SCAN_BOUND__) {
     runtimeWindow.__UNPLUGIN_PAGEFLOW_SCAN_BOUND__ = true
+    const xpathSelection = createXPathSelectionController(window)
     window.addEventListener('message', event => {
       if (event.origin !== window.location.origin) return
+      if (event.data?.type === PAGEFLOW_XPATH_MODE_MESSAGE) {
+        xpathSelection.setEnabled(event.data.enabled === true)
+        return
+      }
       if (event.data?.type === PAGEFLOW_SCAN_MESSAGE) {
         void scanRenderedPage(router!).then(page => {
           if (window.parent !== window)

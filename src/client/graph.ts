@@ -8,7 +8,7 @@ export interface PageFlowEditorInfo {
 }
 
 export async function fetchPageFlowGraph(config: ResolvedPageFlowOptions) {
-  const response = await fetch(`${config.previewPath}api/graph`)
+  const response = await fetch(`${config.previewPath}api/graph`, { cache: 'no-store' })
   if (!response.ok) throw new Error(`Failed to load unplugin-pageflow graph: ${response.status}`)
   return response.json() as Promise<PageFlowGraph>
 }

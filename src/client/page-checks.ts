@@ -28,11 +28,23 @@ function targetPageId(target: string, pages: PageFlowPage[]) {
   return pages.find(page => page.id === value || page.path === value)?.id
 }
 
+function routeFamily(path: string) {
+  const parts = path.split('/').filter(Boolean)
+  return parts[0] === 'pages' ? parts[1] : parts[0]
+}
+
 export function isOrphanPage(page: PageFlowPage, pages: PageFlowPage[]) {
   const isHome = pages[0]?.id === page.id || page.path === '/'
   if (isHome) return false
-  return !pages.some(source => source.id !== page.id
+  const hasIncoming = pages.some(source => source.id !== page.id
     && source.links.some(link => targetPageId(link.to, pages) === page.id))
+  const hasOutgoing = page.links.some(link => {
+    const target = targetPageId(link.to, pages)
+    return target && target !== page.id
+  })
+  const family = routeFamily(page.path)
+  const hasRouteFamily = Boolean(family) && pages.some(other => other.id !== page.id && routeFamily(other.path) === family)
+  return !hasIncoming && !hasOutgoing && !hasRouteFamily
 }
 
 export function createPageChecks(

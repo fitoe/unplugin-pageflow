@@ -7,6 +7,7 @@ import {
   PAGEFLOW_NAVIGATE_MESSAGE,
   PAGEFLOW_PAGE_REPORTED_MESSAGE,
   PAGEFLOW_SCAN_RESULT_MESSAGE,
+  PAGEFLOW_XPATH_SELECTED_MESSAGE,
 } from '../shared/protocol'
 
 export type PreviewMessage =
@@ -17,6 +18,7 @@ export type PreviewMessage =
   | { type: 'diagnostics-result'; path: string; diagnostics: PageFlowDiagnostic[] }
   | { type: 'escape' }
   | { type: 'navigate'; to: string; location?: string; hotspot: boolean }
+  | { type: 'xpath-selected'; xpath: string }
 
 export function decodePreviewMessage(data: unknown): PreviewMessage | undefined {
   if (!data || typeof data !== 'object') return
@@ -30,6 +32,8 @@ export function decodePreviewMessage(data: unknown): PreviewMessage | undefined 
     path: typeof message.path === 'string' ? message.path : undefined,
   }
   if (message.type === PAGEFLOW_ESCAPE_MESSAGE) return { type: 'escape' }
+  if (message.type === PAGEFLOW_XPATH_SELECTED_MESSAGE && typeof message.xpath === 'string' && message.xpath)
+    return { type: 'xpath-selected', xpath: message.xpath }
   if (message.type === PAGEFLOW_HOTSPOT_HOVER_MESSAGE) {
     const targets = Array.isArray(message.targets)
       ? message.targets.filter((target: unknown): target is string => typeof target === 'string')

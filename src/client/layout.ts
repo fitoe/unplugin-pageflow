@@ -2,11 +2,11 @@ import type { PageFlowLink, PageFlowPage } from '../shared/types'
 
 export const PAGE_CARD_WIDTH = 240
 export const PAGE_CARD_HEIGHT = 256
-export const PAGE_CARD_META_HEIGHT = 68
+export const PAGE_CARD_META_HEIGHT = 0
 export const PAGE_PREVIEW_INSET = 0
 export const PAGEFLOW_AUTO_PREVIEW_SCALE = 1.25
-export const PAGE_GRID_GAP_X = 88
-export const PAGE_GRID_GAP_Y = 30
+export const PAGE_GRID_GAP_X = 48
+export const PAGE_GRID_GAP_Y = 64
 const PAGE_GRID_INSET = 64
 
 export interface CanvasTransform {

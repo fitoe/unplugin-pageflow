@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import os from 'node:os'
 import test from 'node:test'
 import { resolve } from 'node:path'
@@ -64,6 +64,54 @@ test('persists edited group and page names and refreshes the virtual client conf
     assert.equal(refreshed.source, resolve(root, '.pageflow'))
     assert.equal(refreshed.groupNames.refreshed, '重新读取')
     assert.deepEqual(refreshed.canvasLayouts['/'].home, [320, 180])
+  } finally {
+    await server.close()
+    await rm(root, { recursive: true, force: true })
+  }
+})
+
+test('refreshing project config rescans uni-app routes and removes deleted pages', async () => {
+  const root = await mkdtemp(resolve(os.tmpdir(), 'pageflow-uni-refresh-'))
+  const pagesDirectory = resolve(root, 'src/pages')
+  await mkdir(pagesDirectory, { recursive: true })
+  await writeFile(resolve(root, '.pageflow'), JSON.stringify({ enabled: true, previewPath: '/__unplugin-pageflow/' }))
+  await writeFile(resolve(root, 'src/pages.json'), JSON.stringify({
+    pages: [
+      { path: 'pages/home', style: { navigationBarTitleText: '首页' } },
+      { path: 'pages/legacy', style: { navigationBarTitleText: '旧页面' } },
+    ],
+  }))
+  await writeFile(resolve(pagesDirectory, 'home.vue'), '<template><navigator url="/pages/legacy" /></template>')
+  await writeFile(resolve(pagesDirectory, 'legacy.vue'), '<template><view>legacy</view></template>')
+
+  const server = await createServer({
+    root,
+    configFile: resolve('vite.config.ts'),
+    logLevel: 'silent',
+    server: { host: '127.0.0.1', port: 0 },
+  })
+
+  try {
+    await server.listen()
+    const address = server.httpServer?.address()
+    assert(address && typeof address === 'object')
+    const origin = `http://127.0.0.1:${address.port}`
+    const graphUrl = `${origin}/__unplugin-pageflow/api/graph`
+    assert.deepEqual((await (await fetch(graphUrl)).json()).pages.map(page => page.path), ['/pages/home', '/pages/legacy'])
+
+    await writeFile(resolve(root, 'src/pages.json'), JSON.stringify({
+      pages: [
+        { path: 'pages/home', style: { navigationBarTitleText: '新首页' } },
+        { path: 'pages/current', style: { navigationBarTitleText: '当前页面' } },
+      ],
+    }))
+    await writeFile(resolve(pagesDirectory, 'current.vue'), '<template><view>current</view></template>')
+
+    const refreshResponse = await fetch(`${origin}/__unplugin-pageflow/api/config`, { method: 'POST' })
+    const refreshedGraph = await (await fetch(graphUrl)).json()
+    assert.equal(refreshResponse.status, 200)
+    assert.deepEqual(refreshedGraph.pages.map(page => page.path), ['/pages/home', '/pages/current'])
+    assert.equal(refreshedGraph.pages.find(page => page.path === '/pages/home')?.title, '新首页')
   } finally {
     await server.close()
     await rm(root, { recursive: true, force: true })
@@ -363,6 +411,11 @@ test('collapses the configured uni-app home into the root route', async () => {
     const clientConfig = await (await fetch(`${origin}/@id/virtual:unplugin-pageflow/config`)).text()
     await plugin.transform('<template><navigator url="/pages/login">Login</navigator></template>', resolve('tests/fixtures/uniapp/src/pages/index.vue'))
     await plugin.transform("uni.switchTab({ url: '/pages/index' })", 'src/menu.vue')
+    await fetch(`${origin}/__unplugin-pageflow/api/page`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ path: '/pages/login', title: '登录新标题' }),
+    })
     const graph = await (await fetch(`${origin}/__unplugin-pageflow/api/graph`)).json()
 
     assert.equal(response.status, 204)
@@ -370,7 +423,7 @@ test('collapses the configured uni-app home into the root route', async () => {
     assert.deepEqual(graph.pages.map(page => page.path), ['/', '/pages/login', '/pages/untitled', '/pages/product/index', '/menu'])
     assert.equal(graph.pages.find(page => page.id === 'root').title, 'Fixture home')
     assert.notEqual(graph.pages.find(page => page.id === 'root').revision, '/')
-    assert.equal(graph.pages.find(page => page.id === 'login').title, 'Fixture login')
+    assert.equal(graph.pages.find(page => page.id === 'login').title, '登录新标题')
     assert.equal(graph.pages.find(page => page.id === 'product').title, 'Fixture product')
     assert.equal(graph.pages.find(page => page.id === 'untitled').title, '')
     assert.deepEqual(graph.pages.filter(page => page.routeOrder != null).map(page => [page.path, page.routeOrder]), [

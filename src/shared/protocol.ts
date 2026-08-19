@@ -47,3 +47,5 @@ export const PAGEFLOW_DIAGNOSTICS_RESULT_MESSAGE = 'unplugin-pageflow:diagnostic
 export const PAGEFLOW_DIAGNOSTIC_HIGHLIGHT_MESSAGE = 'unplugin-pageflow:diagnostic-highlight'
 export const PAGEFLOW_FORM_COMMAND_MESSAGE = 'unplugin-pageflow:form-command'
 export const PAGEFLOW_FORM_RESULT_MESSAGE = 'unplugin-pageflow:form-result'
+export const PAGEFLOW_XPATH_MODE_MESSAGE = 'unplugin-pageflow:xpath-mode'
+export const PAGEFLOW_XPATH_SELECTED_MESSAGE = 'unplugin-pageflow:xpath-selected'

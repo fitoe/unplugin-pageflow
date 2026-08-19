@@ -14,6 +14,9 @@ test('checks page entries, links, self-links, and test coverage', async () => {
         { label: '外部帮助', to: 'https://example.com/help' },
       ] },
       { id: 'orphan', path: '/orphan', title: '孤立页面', links: [{ label: '自己', to: '/orphan' }] },
+      { id: 'entry-only', path: '/entry-only', title: '入口页面', links: [{ label: '详情', to: '/detail' }] },
+      { id: 'module-a', path: '/module/a', title: '模块页 A', links: [] },
+      { id: 'module-b', path: '/module/b', title: '模块页 B', links: [] },
     ]
     const checks = createPageChecks(pages[1], pages, [{ id: 'test', name: '详情测试' }])
     assert.deepEqual(Object.fromEntries(checks.map(item => [item.id, item.status])), {
@@ -29,6 +32,8 @@ test('checks page entries, links, self-links, and test coverage', async () => {
     assert.equal(isOrphanPage(pages[0], pages), false)
     assert.equal(isOrphanPage(pages[1], pages), false)
     assert.equal(isOrphanPage(pages[2], pages), true)
+    assert.equal(isOrphanPage(pages[3], pages), false)
+    assert.equal(isOrphanPage(pages[4], pages), false)
 
     const runtimeLinks = [
       { label: '详情', to: '/detail', kind: 'event' },

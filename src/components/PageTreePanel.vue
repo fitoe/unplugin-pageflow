@@ -17,16 +17,22 @@ const props = defineProps<{
 }>()
 const emit = defineEmits<{
   select: [pageId: string]
+  selectGroup: [path: string[]]
   refresh: []
 }>()
 
 const expandedKeys = ref(new Set<string>())
+const collapsedKeys = ref(new Set<string>())
 const panel = ref<HTMLElement>()
 const groupKeys = computed(() => pageTreeGroupKeys(props.nodes))
-const rows = computed(() => flattenPageTree(props.nodes, expandedKeys.value))
+const visibleExpandedKeys = computed(() => new Set(
+  [...expandedKeys.value].filter(key => !collapsedKeys.value.has(key)),
+))
+const rows = computed(() => flattenPageTree(props.nodes, visibleExpandedKeys.value))
 
-function expand(keys: string[]) {
+function expand(keys: string[], reveal = false) {
   expandedKeys.value = new Set([...expandedKeys.value, ...keys])
+  if (reveal) collapsedKeys.value = new Set([...collapsedKeys.value].filter(key => !keys.includes(key)))
 }
 
 watch(groupKeys, (keys, previous = []) => {
@@ -44,20 +50,26 @@ async function scrollActivePageIntoView(pageId = props.activePageId) {
 
 watch([() => props.activePageId, () => props.nodes], ([pageId]) => {
   if (!pageId) return
-  expand(pageTreeAncestorKeys(props.nodes, pageId))
+  expand(pageTreeAncestorKeys(props.nodes, pageId), true)
   void scrollActivePageIntoView(pageId)
 }, { immediate: true, flush: 'post' })
 
 function toggleGroup(node: PageTreeGroupNode, expanded?: boolean) {
-  const next = new Set(expandedKeys.value)
-  const shouldExpand = expanded ?? !next.has(node.key)
-  if (shouldExpand) next.add(node.key)
-  else next.delete(node.key)
-  expandedKeys.value = next
+  const shouldExpand = expanded ?? !visibleExpandedKeys.value.has(node.key)
+  expandedKeys.value = new Set(expandedKeys.value).add(node.key)
+  const nextCollapsed = new Set(collapsedKeys.value)
+  if (shouldExpand) nextCollapsed.delete(node.key)
+  else nextCollapsed.add(node.key)
+  collapsedKeys.value = nextCollapsed
 }
 
 function selectPage(node: PageTreePageNode) {
   emit('select', node.pageId)
+}
+
+function selectGroup(node: PageTreeGroupNode) {
+  if (node.navigable === false) toggleGroup(node)
+  else emit('selectGroup', node.path)
 }
 
 function handleGroupKeydown(event: KeyboardEvent, node: PageTreeGroupNode) {
@@ -75,21 +87,32 @@ function handleGroupKeydown(event: KeyboardEvent, node: PageTreeGroupNode) {
   <section ref="panel" class="page-tree-panel" aria-label="页面树">
     <div class="page-tree-list" role="tree" aria-label="项目页面">
       <template v-for="row in rows" :key="row.node.key">
-        <button
+        <div
           v-if="row.node.kind === 'group'"
-          type="button"
           class="page-tree-row is-group"
           role="treeitem"
-          :aria-expanded="expandedKeys.has(row.node.key)"
+          :aria-expanded="visibleExpandedKeys.has(row.node.key)"
           :style="{ '--tree-depth': row.depth }"
-          @click="toggleGroup(row.node)"
-          @keydown="handleGroupKeydown($event, row.node)"
         >
-          <svg class="page-tree-chevron" viewBox="0 0 16 16" aria-hidden="true"><path d="m6 3 5 5-5 5" /></svg>
-          <svg class="page-tree-node-icon" viewBox="0 0 16 16" aria-hidden="true"><path d="M2.5 4.5h4l1.2 1.5h5.8v6.5h-11z" /></svg>
-          <span>{{ row.node.label }}</span>
-          <small>{{ row.node.pageCount }}</small>
-        </button>
+          <button
+            type="button"
+            class="page-tree-toggle"
+            :aria-label="visibleExpandedKeys.has(row.node.key) ? `折叠${row.node.label}` : `展开${row.node.label}`"
+            @click="toggleGroup(row.node)"
+          >
+            <svg class="page-tree-chevron" viewBox="0 0 16 16" aria-hidden="true"><path d="m6 3 5 5-5 5" /></svg>
+          </button>
+          <button
+            type="button"
+            class="page-tree-group-link"
+            @click="selectGroup(row.node)"
+            @keydown="handleGroupKeydown($event, row.node)"
+          >
+            <svg class="page-tree-node-icon" viewBox="0 0 16 16" aria-hidden="true"><path d="M2.5 4.5h4l1.2 1.5h5.8v6.5h-11z" /></svg>
+            <span>{{ row.node.label }}</span>
+            <small>{{ row.node.pageCount }}</small>
+          </button>
+        </div>
         <button
           v-else
           type="button"

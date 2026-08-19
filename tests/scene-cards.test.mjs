@@ -15,7 +15,7 @@ test('builds reusable page cards and real-page deck layers', async () => {
     logLevel: 'silent',
   })
   try {
-    const { createPageCardGroup, createPageDeckGroup, pageCardMetaHit } = await server.ssrLoadModule('/src/client/scene-cards.ts')
+    const { createPageCardGroup, createPageDeckGroup } = await server.ssrLoadModule('/src/client/scene-cards.ts')
     const page = id => ({ id, title: `Title ${id}`, path: `/${id}`, accent: '#fff', links: [] })
     const card = createPageCardGroup({
       page: page('home'),
@@ -24,19 +24,12 @@ test('builds reusable page cards and real-page deck layers', async () => {
       previewHeight: 852,
       tiles: [],
       thumbnailSource: () => undefined,
-      copied: true,
       orphan: true,
     })
-    assert.deepEqual([card.x, card.y, card.children.length], [10, 20, 6])
+    assert.deepEqual([card.x, card.y, card.children.length], [10, 20, 3])
     assert.equal(card.children[0].stroke, '#a3a3a3')
     assert.equal(card.children[0].strokeWidth, 2)
-    assert.deepEqual(card.children.slice(1).map(child => child.text), [
-      'Title home', '/home', 'Title home', '→', '已复制',
-    ])
-    assert.equal(pageCardMetaHit(230, 870, 852), 'open')
-    assert.equal(pageCardMetaHit(100, 870, 852), 'title')
-    assert.equal(pageCardMetaHit(100, 895, 852), 'path')
-    assert.equal(pageCardMetaHit(230, 895, 852), 'path')
+    assert.deepEqual(card.children.slice(1).map(child => child.text), ['Title home', '/home'])
 
     const layers = [page('index'), page('detail')]
     const deck = createPageDeckGroup({
@@ -53,7 +46,6 @@ test('builds reusable page cards and real-page deck layers', async () => {
         previewHeight: 852,
         tiles: [],
         thumbnailSource: () => undefined,
-        hideMeta: true,
       }),
     })
     assert.equal(deck.children.length, 3)

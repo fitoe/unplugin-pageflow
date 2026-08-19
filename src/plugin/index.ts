@@ -238,9 +238,10 @@ function createGraph(
       const configuredPath = route.path === '/' && hiddenHomePath ? hiddenHomePath : route.path
       const configuredTitle = configuredTitlesByPath.get(configuredPath)
       const configuredPage = routeOrderByPath.has(configuredPath)
+      const reportedTitle = reportedPages.get(route.path)?.title
       return {
         id: route.id,
-        title: configuredTitle ?? (configuredPage ? '' : reportedPages.get(route.path)?.title || route.title),
+        title: reportedTitle || configuredTitle || (configuredPage ? '' : route.title),
         path: route.path,
         sourceFile: projectSourceFile(route.componentFile),
         routeOrder: routeOrderByPath.get(route.path)
@@ -498,6 +499,7 @@ const factory: UnpluginFactory<PageFlowOptions | undefined> = (options) => {
   let routeMode: PageFlowRouteMode = 'history'
   let uniAppHomePath: string | undefined
   let uniAppRoutes: PageFlowRuntimeRoute[] = []
+  let runtimeRoutes: PageFlowRuntimeRoute[] = []
   let configuredTitlesByPath = new Map<string, string>()
   let routeOrderByPath = new Map<string, number>()
   let tabPaths = new Set<string>()
@@ -578,7 +580,7 @@ const factory: UnpluginFactory<PageFlowOptions | undefined> = (options) => {
     rebuildGraph(updatedPaths.length ? updatedPaths : undefined)
   }
 
-  const scanVueSources = async (directory: string) => {
+  const scanVueSources = async (directory: string, rebuild = true) => {
     let changed = false
     const scan = async (current: string) => {
       for (const entry of await readdir(current, { withFileTypes: true })) {
@@ -594,7 +596,33 @@ const factory: UnpluginFactory<PageFlowOptions | undefined> = (options) => {
       if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error
       return
     }
-    if (changed && routes.length) rebuildGraph()
+    if (changed && routes.length && rebuild) rebuildGraph()
+  }
+
+  const refreshProjectGraph = async () => {
+    const uniAppConfig = await readUniAppConfig(projectRoot)
+    if (resolved.framework === 'auto' && uniAppConfig.homePath) resolved.framework = 'uni-app'
+    if (resolved.framework === 'uni-app') {
+      uniAppHomePath = uniAppConfig.homePath
+      uniAppRoutes = uniAppConfig.routes
+      configuredTitlesByPath = uniAppConfig.titlesByPath
+      routeOrderByPath = uniAppConfig.routeOrderByPath
+      tabPaths = uniAppConfig.tabPaths
+      routes = mergeUniAppRoutes(uniAppRoutes, resolved.routes, runtimeRoutes, uniAppHomePath)
+
+      const activePaths = new Set(routes.map(route => route.path))
+      for (const path of reportedPages.keys()) {
+        if (!activePaths.has(path)) reportedPages.delete(path)
+      }
+    }
+
+    staticLinksByFile.clear()
+    staticDiagnosticsByFile.clear()
+    sourceRevisionsByFile.clear()
+    sourceRedirectsByFile.clear()
+    await Promise.all([resolve(projectRoot, 'src'), resolve(projectRoot, 'app')].map(directory => scanVueSources(directory, false)))
+    pageTestIndex?.setRoutes(routes)
+    rebuildGraph()
   }
 
   const sendEvent = (event: string, data: unknown) => {
@@ -708,7 +736,7 @@ const factory: UnpluginFactory<PageFlowOptions | undefined> = (options) => {
         } catch (error) {
           server.config.logger.warn(`unplugin-pageflow could not read pages.json: ${error instanceof Error ? error.message : error}`)
         }
-        void Promise.all([resolve(projectRoot, 'src'), resolve(projectRoot, 'app')].map(scanVueSources)).catch(error =>
+        void Promise.all([resolve(projectRoot, 'src'), resolve(projectRoot, 'app')].map(directory => scanVueSources(directory))).catch(error =>
           server.config.logger.warn(`unplugin-pageflow could not scan Vue sources: ${error instanceof Error ? error.message : error}`),
         )
         const thumbnailCache = createThumbnailCache(resolve(projectRoot, '.unplugin-pageflow/cache'))
@@ -766,7 +794,7 @@ const factory: UnpluginFactory<PageFlowOptions | undefined> = (options) => {
             try {
               Object.assign(resolved, await loadProjectOptions(projectRoot, options))
               resolved.testCommands = inferTestCommands(projectRoot, resolved.testCommands)
-              rebuildGraph()
+              await refreshProjectGraph()
               const module = server.moduleGraph.getModuleById(PAGEFLOW_CONFIG_RESOLVED_ID)
               if (module) server.moduleGraph.invalidateModule(module)
               response.setHeader('Content-Type', 'application/json; charset=utf-8')
@@ -1127,6 +1155,7 @@ const factory: UnpluginFactory<PageFlowOptions | undefined> = (options) => {
 
           if (pathname === graphPath && request.method === 'GET') {
             response.setHeader('Content-Type', 'application/json; charset=utf-8')
+            response.setHeader('Cache-Control', 'no-store')
             response.end(JSON.stringify(graph))
             return
           }
@@ -1196,8 +1225,9 @@ const factory: UnpluginFactory<PageFlowOptions | undefined> = (options) => {
           if (pathname === routesPath && request.method === 'POST') {
             try {
               const next = await readRoutes(request)
+              runtimeRoutes = next.routes
               const nextRoutes = resolved.framework === 'uni-app'
-                ? mergeUniAppRoutes(uniAppRoutes, resolved.routes, next.routes, uniAppHomePath)
+                ? mergeUniAppRoutes(uniAppRoutes, resolved.routes, runtimeRoutes, uniAppHomePath)
                 : next.routes
               if (next.routeMode !== routeMode || JSON.stringify(nextRoutes) !== JSON.stringify(routes)) {
                 routeMode = next.routeMode

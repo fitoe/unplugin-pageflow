@@ -18,6 +18,7 @@ export interface PageTreeGroupNode {
   children: PageTreeNode[]
   pageCount: number
   order: number
+  navigable?: boolean
 }
 
 export type PageTreeNode = PageTreeGroupNode | PageTreePageNode
@@ -30,6 +31,7 @@ export interface PageTreeRow {
 interface PageTreeOptions {
   groupNames?: Record<string, string>
   pageNames?: Record<string, string>
+  orphanPageIds?: ReadonlySet<string>
   groupPath: (page: PageFlowPage) => string[]
 }
 
@@ -37,7 +39,12 @@ export function createPageTree(pages: PageFlowPage[], options: PageTreeOptions):
   const roots: PageTreeNode[] = []
   const groups = new Map<string, PageTreeGroupNode>()
 
+  const orphanPages: Array<{ page: PageFlowPage, order: number }> = []
   pages.forEach((page, order) => {
+    if (options.orphanPageIds?.has(page.id)) {
+      orphanPages.push({ page, order })
+      return
+    }
     const path = options.groupPath(page)
     let children = roots
     path.forEach((segment, index) => {
@@ -71,6 +78,27 @@ export function createPageTree(pages: PageFlowPage[], options: PageTreeOptions):
       order,
     })
   })
+
+  if (orphanPages.length) {
+    roots.push({
+      kind: 'group',
+      key: 'group:__pageflow_orphans__',
+      label: '孤岛页面',
+      path: [],
+      children: orphanPages.map(({ page, order }) => ({
+        kind: 'page',
+        key: `page:${page.id}`,
+        label: options.pageNames?.[page.path] ?? page.title,
+        pageId: page.id,
+        path: page.path,
+        virtual: Boolean(page.virtual),
+        order,
+      })),
+      pageCount: orphanPages.length,
+      order: pages.length,
+      navigable: false,
+    })
+  }
 
   return roots
 }

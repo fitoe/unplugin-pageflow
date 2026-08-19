@@ -217,9 +217,12 @@ header {
 .page-tree-list { min-height: 0; flex: 1; overflow: auto; padding: 8px 7px 10px; }
 .page-tree-row { --tree-indent: calc(var(--tree-depth) * 16px); display: flex; width: 100%; min-width: 0; cursor: pointer; align-items: center; border: 0; border-radius: 5px; color: var(--pageflow-muted); background: transparent; padding-right: 7px; padding-left: calc(5px + var(--tree-indent)); text-align: left; }
 .page-tree-row:hover, .page-tree-row:focus-visible { color: var(--pageflow-text); background: var(--pageflow-surface-muted); outline: none; }
-.page-tree-row.is-group { height: 29px; gap: 4px; font: 11px var(--pageflow-font-sans); }
-.page-tree-row.is-group > span { min-width: 0; flex: 1; overflow: hidden; color: var(--pageflow-text); font-weight: 500; text-overflow: ellipsis; white-space: nowrap; }
-.page-tree-row.is-group > small { flex: none; color: var(--pageflow-muted); font: 8px var(--pageflow-font-mono); }
+.page-tree-row.is-group { height: 29px; gap: 0; font: 11px var(--pageflow-font-sans); }
+.page-tree-toggle { display: grid; width: 17px; height: 100%; flex: none; cursor: pointer; border: 0; color: inherit; background: transparent; padding: 0; place-items: center; }
+.page-tree-group-link { display: flex; min-width: 0; height: 100%; flex: 1; cursor: pointer; align-items: center; gap: 4px; border: 0; color: inherit; background: transparent; padding: 0; text-align: left; }
+.page-tree-toggle:focus-visible, .page-tree-group-link:focus-visible { outline: 1px solid currentColor; outline-offset: -2px; }
+.page-tree-group-link > span { min-width: 0; flex: 1; overflow: hidden; color: var(--pageflow-text); font-weight: 500; text-overflow: ellipsis; white-space: nowrap; }
+.page-tree-group-link > small { flex: none; color: var(--pageflow-muted); font: 8px var(--pageflow-font-mono); }
 .page-tree-chevron { width: 11px; height: 11px; flex: none; fill: none; stroke: currentColor; stroke-linecap: round; stroke-linejoin: round; stroke-width: 1.6; transition: transform 100ms ease; }
 .page-tree-row.is-group[aria-expanded='true'] .page-tree-chevron { transform: rotate(90deg); }
 .page-tree-node-icon { width: 14px; height: 14px; flex: none; fill: none; stroke: currentColor; stroke-linecap: round; stroke-linejoin: round; stroke-width: 1.25; }
@@ -338,9 +341,18 @@ header {
   background: var(--pageflow-surface);
   font: 9px var(--pageflow-font-mono);
 }
-.statusbar-page-path {
+.statusbar-page-location {
   position: absolute;
   left: 50%;
+  display: flex;
+  max-width: 58vw;
+  align-items: center;
+  gap: 8px;
+  transform: translateX(-50%);
+}
+.statusbar-xpath-toggle { display: flex; flex: 0 0 auto; align-items: center; gap: 4px; cursor: pointer; }
+.statusbar-xpath-toggle input { width: 12px; height: 12px; margin: 0; accent-color: var(--pageflow-text); }
+.statusbar-page-path {
   min-width: 0;
   max-width: 42vw;
   overflow: hidden;
@@ -351,7 +363,6 @@ header {
   background: transparent;
   font: inherit;
   text-overflow: ellipsis;
-  transform: translateX(-50%);
   white-space: nowrap;
 }
 .statusbar-page-path:hover {

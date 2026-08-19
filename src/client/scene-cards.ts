@@ -9,20 +9,11 @@ export interface PageCardOptions {
   previewHeight: number
   tiles: PageFlowThumbnailRecord[]
   thumbnailSource(record: PageFlowThumbnailRecord): string | undefined
-  copied?: boolean
   scale?: number
   highlighted?: boolean
   orphan?: boolean
-  hideMeta?: boolean
   dark?: boolean
   previewStatus?: string
-}
-
-export function pageCardMetaHit(localX: number, localY: number, previewHeight: number) {
-  if (localX < 0 || localX > PAGE_CARD_WIDTH) return
-  if (localY >= previewHeight + 6 && localY <= previewHeight + 32)
-    return localX >= PAGE_CARD_WIDTH - 30 ? 'open' : 'title'
-  if (localY > previewHeight + 32 && localY <= previewHeight + 56) return 'path'
 }
 
 export function setPageCardShadow(group: Group, highlighted: boolean, capturePulse?: number) {
@@ -42,7 +33,6 @@ export function createPageCardGroup(options: PageCardOptions) {
   const { page, x, y, previewHeight, tiles, thumbnailSource } = options
   const primary = options.dark ? '#f5f5f5' : '#262626'
   const secondary = options.dark ? '#a3a3a3' : '#737373'
-  const muted = options.dark ? '#737373' : '#a3a3a3'
   const group = new Group({ x, y, scaleX: options.scale ?? 1, scaleY: options.scale ?? 1, hittable: false })
   group.add(new Rect({
     width: PAGE_CARD_WIDTH,
@@ -72,11 +62,6 @@ export function createPageCardGroup(options: PageCardOptions) {
   if (!hasThumbnail) {
     group.add(new Text({ x: 16, y: Math.max(16, previewHeight / 2 - 34), width: PAGE_CARD_WIDTH - 32, text: options.previewStatus ?? page.title, fill: primary, fontSize: options.previewStatus ? 12 : 18, fontWeight: 700, textAlign: options.previewStatus ? 'center' : 'left', textWrap: 'none', textOverflow: 'ellipsis' }))
     group.add(new Text({ x: 16, y: Math.max(38, previewHeight / 2 - 8), width: PAGE_CARD_WIDTH - 32, text: options.previewStatus ? '聚焦页面后可查看实时预览' : page.path, fill: secondary, fontFamily: 'ui-monospace, Cascadia Code, SFMono-Regular, Consolas, monospace', fontSize: 9, textAlign: options.previewStatus ? 'center' : 'left', textWrap: 'none', textOverflow: 'ellipsis' }))
-  }
-  if (!options.hideMeta) {
-    group.add(new Text({ x: 0, y: previewHeight + 12, width: PAGE_CARD_WIDTH - 28, text: page.title, fill: primary, fontSize: 13, fontWeight: 700, textWrap: 'none', textOverflow: 'ellipsis', cursor: 'default' }))
-    group.add(new Text({ x: PAGE_CARD_WIDTH - 20, y: previewHeight + 10, width: 20, text: '→', fill: secondary, fontSize: 15, textAlign: 'right', cursor: 'pointer' }))
-    group.add(new Text({ x: 0, y: previewHeight + 38, width: PAGE_CARD_WIDTH, text: options.copied ? '已复制' : page.path, fill: muted, fontFamily: 'ui-monospace, Cascadia Code, SFMono-Regular, Consolas, monospace', fontSize: 10, textWrap: 'none', textOverflow: 'ellipsis', cursor: 'pointer' }))
   }
   return group
 }
