@@ -2627,7 +2627,7 @@ async function resetCurrentLayout() {
 }
 
 function exitFocusedPage() {
-  exitFocus(true, fitCurrentRouteGroup)
+  exitFocus(false, fitCurrentRouteGroup)
 }
 
 async function copyPagePath(path: string) {
@@ -3756,7 +3756,7 @@ function applyGraph(nextPages: PageFlowPage[], nextRouteMode: PageFlowRouteMode)
     focusedTargetPositions.value = {}
   }
   focusedPageStateCache.retain(plan.pageIds)
-  if (plan.focusedPageRemoved) exitFocus()
+  if (plan.focusedPageRemoved) exitFocus(false)
   const previousPages = new Map(pages.value.map(page => [page.id, page]))
   nextPages.forEach((page) => {
     const previous = previousPages.get(page.id)

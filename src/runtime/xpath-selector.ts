@@ -1,6 +1,7 @@
 import { PAGEFLOW_XPATH_SELECTED_MESSAGE } from '../shared/protocol'
 
 const XPATH_HIGHLIGHT_ATTRIBUTE = 'data-unplugin-pageflow-xpath-target'
+const BLOCKED_INTERACTION_EVENTS = ['pointerdown', 'pointerup', 'mousedown', 'mouseup', 'touchstart', 'touchend'] as const
 
 function xpathLiteral(value: string) {
   if (!value.includes('"')) return `"${value}"`
@@ -55,7 +56,7 @@ export function createXPathSelectionController(windowRef: Window) {
     windowRef.parent.postMessage({ type: PAGEFLOW_XPATH_SELECTED_MESSAGE, xpath: elementXPath(target) }, windowRef.location.origin)
   }
   const style = documentRef.createElement('style')
-  style.textContent = `[${XPATH_HIGHLIGHT_ATTRIBUTE}] { outline: 2px solid #2563eb !important; outline-offset: -2px !important; cursor: crosshair !important; }`
+  style.textContent = `[${XPATH_HIGHLIGHT_ATTRIBUTE}] { outline: 2px solid #2563eb !important; outline-offset: -2px !important; background-color: rgb(37 99 235 / 12%) !important; cursor: crosshair !important; }`
   documentRef.head.append(style)
 
   return {
@@ -65,7 +66,8 @@ export function createXPathSelectionController(windowRef: Window) {
       const action = next ? 'addEventListener' : 'removeEventListener'
       documentRef[action]('pointerover', onPointerOver, true)
       documentRef[action]('click', onClick, true)
-      documentRef[action]('pointerdown', blockInteraction, true)
+      for (const eventName of BLOCKED_INTERACTION_EVENTS)
+        documentRef[action](eventName, blockInteraction, true)
       if (!next) clearHighlight()
     },
   }

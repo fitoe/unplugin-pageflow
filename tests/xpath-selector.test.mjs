@@ -16,12 +16,19 @@ test('builds stable XPath values and selects a node without triggering its click
     assert.equal(elementXPath(button), '//*[@id="save"]')
     assert.equal(elementXPath(secondItem), '/html/body/main/ul/li[2]')
 
+    const interactions = []
     let clicks = 0
     button.addEventListener('click', () => clicks++)
+    for (const eventName of ['pointerdown', 'pointerup', 'mousedown', 'mouseup', 'touchstart', 'touchend'])
+      button.addEventListener(eventName, () => interactions.push(eventName))
     const controller = createXPathSelectionController(window)
     controller.setEnabled(true)
     button.dispatchEvent(new window.MouseEvent('pointerover', { bubbles: true }))
+    assert.equal(button.hasAttribute('data-unplugin-pageflow-xpath-target'), true)
+    for (const eventName of ['pointerdown', 'pointerup', 'mousedown', 'mouseup', 'touchstart', 'touchend'])
+      button.dispatchEvent(new window.Event(eventName, { bubbles: true, cancelable: true }))
     button.dispatchEvent(new window.MouseEvent('click', { bubbles: true, cancelable: true }))
+    assert.deepEqual(interactions, [])
     assert.equal(clicks, 0)
     assert.deepEqual(messages, [{ type: 'unplugin-pageflow:xpath-selected', xpath: '//*[@id="save"]' }])
     controller.setEnabled(false)
