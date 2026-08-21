@@ -34,9 +34,19 @@ export function createXPathSelectionController(windowRef: Window) {
   }
   const eventElement = (event: Event) => {
     const target = event.target
-    return target && (target as Node).nodeType === 1 ? target as Element : undefined
+    const fallback = target && (target as Node).nodeType === 1 ? target as Element : undefined
+    if (!('clientX' in event) || !('clientY' in event)
+      || typeof event.clientX !== 'number' || typeof event.clientY !== 'number'
+      || typeof documentRef.elementsFromPoint !== 'function') return fallback
+    const candidates = documentRef.elementsFromPoint(event.clientX, event.clientY)
+      .filter((element) => {
+        const rect = element.getBoundingClientRect()
+        return rect.width > 0 && rect.height > 0
+      })
+    if (!candidates.length) return fallback
+    return candidates.reduce((deepest, element) => deepest.contains(element) ? element : deepest)
   }
-  const onPointerOver = (event: Event) => {
+  const onPointerMove = (event: Event) => {
     const target = eventElement(event)
     if (!target || target === highlighted) return
     clearHighlight()
@@ -50,7 +60,7 @@ export function createXPathSelectionController(windowRef: Window) {
   }
   const onClick = (event: Event) => {
     if (!enabled) return
-    const target = eventElement(event)
+    const target = highlighted ?? eventElement(event)
     blockInteraction(event)
     if (!target || windowRef.parent === windowRef) return
     windowRef.parent.postMessage({ type: PAGEFLOW_XPATH_SELECTED_MESSAGE, xpath: elementXPath(target) }, windowRef.location.origin)
@@ -64,7 +74,7 @@ export function createXPathSelectionController(windowRef: Window) {
       if (enabled === next) return
       enabled = next
       const action = next ? 'addEventListener' : 'removeEventListener'
-      documentRef[action]('pointerover', onPointerOver, true)
+      documentRef[action]('pointermove', onPointerMove, true)
       documentRef[action]('click', onClick, true)
       for (const eventName of BLOCKED_INTERACTION_EVENTS)
         documentRef[action](eventName, blockInteraction, true)

@@ -37,6 +37,7 @@ test('builds reusable page cards and real-page deck layers', async () => {
       y: 200,
       previewHeight: 852,
       label: 'orders',
+      routePath: '/orders',
       count: 2,
       layerPages: layers,
       createLayer: (layerPage, x, y) => createPageCardGroup({
@@ -48,12 +49,14 @@ test('builds reusable page cards and real-page deck layers', async () => {
         thumbnailSource: () => undefined,
       }),
     })
-    assert.equal(deck.children.length, 3)
+    assert.equal(deck.children.length, 4)
     assert.deepEqual(deck.children.slice(0, 2).map(child => [child.x, Math.abs(child.y), child.opacity]), [
       [7, 7, 0.84],
       [0, 0, 1],
     ])
     assert.equal(deck.children[2].text, 'orders · 2')
+    assert.equal(deck.children[3].text, '/orders')
+    assert.equal(deck.children[3].fontFamily, 'ui-monospace, Cascadia Code, SFMono-Regular, Consolas, monospace')
   } finally {
     await server.close()
   }

@@ -44,3 +44,23 @@ test('page tree preserves route groups, custom names, and expansion', async () =
     await server.close()
   }
 })
+
+test('page tree always provides a readable label for untitled pages', async () => {
+  const server = await createServer({ configFile: false, server: { middlewareMode: true }, appType: 'custom', logLevel: 'silent' })
+  try {
+    const { createPageTree } = await server.ssrLoadModule('/src/client/page-tree.ts')
+    const pages = [
+      { id: 'ai', title: '', path: '/pages/agritech/ai/index', accent: '#000', links: [] },
+      { id: 'detail', title: '  ', path: '/pages/member-detail', accent: '#000', links: [] },
+      { id: 'named', title: 'Graph title', path: '/pages/named', accent: '#000', links: [] },
+    ]
+    const nodes = createPageTree(pages, {
+      pageNames: { '/pages/named': '  ' },
+      groupPath: () => [],
+    })
+
+    assert.deepEqual(nodes.map(node => node.label), ['AI', 'Member detail', 'Graph title'])
+  } finally {
+    await server.close()
+  }
+})

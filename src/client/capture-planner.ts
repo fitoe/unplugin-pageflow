@@ -1,5 +1,9 @@
 import type { PageFlowPage } from '../shared/types'
 
+export function canAutomaticallyCapturePage(page: Pick<PageFlowPage, 'virtual'>) {
+  return !page.virtual
+}
+
 interface CapturePlanOptions {
   pages: PageFlowPage[]
   batchIds: Iterable<string>

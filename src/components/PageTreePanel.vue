@@ -12,6 +12,7 @@ import {
 const props = defineProps<{
   nodes: PageTreeNode[]
   activePageId?: string
+  activeGroupPath?: string[]
   favoritePageIds?: ReadonlySet<string>
   refreshing?: boolean
 }>()
@@ -25,6 +26,7 @@ const expandedKeys = ref(new Set<string>())
 const collapsedKeys = ref(new Set<string>())
 const panel = ref<HTMLElement>()
 const groupKeys = computed(() => pageTreeGroupKeys(props.nodes))
+const activeGroupKey = computed(() => props.activeGroupPath?.length ? `group:${props.activeGroupPath.join('/')}` : '')
 const visibleExpandedKeys = computed(() => new Set(
   [...expandedKeys.value].filter(key => !collapsedKeys.value.has(key)),
 ))
@@ -52,6 +54,16 @@ watch([() => props.activePageId, () => props.nodes], ([pageId]) => {
   if (!pageId) return
   expand(pageTreeAncestorKeys(props.nodes, pageId), true)
   void scrollActivePageIntoView(pageId)
+}, { immediate: true, flush: 'post' })
+
+watch([activeGroupKey, () => props.nodes], async ([groupKey]) => {
+  if (!groupKey) return
+  const segments = groupKey.slice('group:'.length).split('/')
+  expand(segments.slice(0, -1).map((_, index) => `group:${segments.slice(0, index + 1).join('/')}`), true)
+  await nextTick()
+  const activeRow = [...(panel.value?.querySelectorAll<HTMLElement>('[data-group-key]') ?? [])]
+    .find(element => element.dataset.groupKey === groupKey)
+  activeRow?.scrollIntoView({ block: 'nearest', inline: 'nearest' })
 }, { immediate: true, flush: 'post' })
 
 function toggleGroup(node: PageTreeGroupNode, expanded?: boolean) {
@@ -90,8 +102,11 @@ function handleGroupKeydown(event: KeyboardEvent, node: PageTreeGroupNode) {
         <div
           v-if="row.node.kind === 'group'"
           class="page-tree-row is-group"
+          :class="{ 'is-active': row.node.key === activeGroupKey }"
           role="treeitem"
           :aria-expanded="visibleExpandedKeys.has(row.node.key)"
+          :aria-current="row.node.key === activeGroupKey ? 'location' : undefined"
+          :data-group-key="row.node.key"
           :style="{ '--tree-depth': row.depth }"
         >
           <button
@@ -135,7 +150,6 @@ function handleGroupKeydown(event: KeyboardEvent, node: PageTreeGroupNode) {
               <strong>{{ row.node.label }}</strong>
               <b v-if="favoritePageIds?.has(row.node.pageId)" aria-label="已收藏">★</b>
             </span>
-            <small>{{ row.node.path }}</small>
           </span>
           <em v-if="row.node.virtual">虚拟</em>
         </button>

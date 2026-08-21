@@ -35,6 +35,20 @@ interface PageTreeOptions {
   groupPath: (page: PageFlowPage) => string[]
 }
 
+export function pageTreePageLabel(page: Pick<PageFlowPage, 'path' | 'title'>, pageNames?: Record<string, string>) {
+  const configured = pageNames?.[page.path]?.trim()
+  if (configured) return configured
+  const title = page.title.trim()
+  if (title) return title
+  const segments = page.path.split('/').filter(Boolean)
+  const segment = segments.at(-1)?.toLowerCase() === 'index' ? segments.at(-2) : segments.at(-1)
+  if (!segment) return page.path || '未命名页面'
+  if (segment.toLowerCase() === 'ai') return 'AI'
+  return segment
+    .replace(/[-_]+/g, ' ')
+    .replace(/^\p{Ll}/u, value => value.toUpperCase())
+}
+
 export function createPageTree(pages: PageFlowPage[], options: PageTreeOptions): PageTreeNode[] {
   const roots: PageTreeNode[] = []
   const groups = new Map<string, PageTreeGroupNode>()
@@ -71,7 +85,7 @@ export function createPageTree(pages: PageFlowPage[], options: PageTreeOptions):
     children.push({
       kind: 'page',
       key: `page:${page.id}`,
-      label: options.pageNames?.[page.path] ?? page.title,
+      label: pageTreePageLabel(page, options.pageNames),
       pageId: page.id,
       path: page.path,
       virtual: Boolean(page.virtual),
@@ -88,7 +102,7 @@ export function createPageTree(pages: PageFlowPage[], options: PageTreeOptions):
       children: orphanPages.map(({ page, order }) => ({
         kind: 'page',
         key: `page:${page.id}`,
-        label: options.pageNames?.[page.path] ?? page.title,
+        label: pageTreePageLabel(page, options.pageNames),
         pageId: page.id,
         path: page.path,
         virtual: Boolean(page.virtual),

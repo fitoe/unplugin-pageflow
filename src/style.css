@@ -225,15 +225,17 @@ header {
 .page-tree-group-link > small { flex: none; color: var(--pageflow-muted); font: 8px var(--pageflow-font-mono); }
 .page-tree-chevron { width: 11px; height: 11px; flex: none; fill: none; stroke: currentColor; stroke-linecap: round; stroke-linejoin: round; stroke-width: 1.6; transition: transform 100ms ease; }
 .page-tree-row.is-group[aria-expanded='true'] .page-tree-chevron { transform: rotate(90deg); }
+.page-tree-row.is-group.is-active { color: #2563eb; background: color-mix(in srgb, #3b82f6 9%, var(--pageflow-surface)); }
+.dark .page-tree-row.is-group.is-active { color: #60a5fa; }
+.page-tree-row.is-group.is-active .page-tree-group-link > span { color: currentColor; }
 .page-tree-node-icon { width: 14px; height: 14px; flex: none; fill: none; stroke: currentColor; stroke-linecap: round; stroke-linejoin: round; stroke-width: 1.25; }
-.page-tree-row.is-page { position: relative; min-height: 39px; gap: 7px; padding-top: 4px; padding-bottom: 4px; }
-.page-tree-row.is-page > span:not(.page-tree-guide) { display: grid; min-width: 0; flex: 1; gap: 1px; }
+.page-tree-row.is-page { position: relative; min-height: 31px; gap: 7px; padding-top: 3px; padding-bottom: 3px; }
+.page-tree-row.is-page > span:not(.page-tree-guide) { display: flex; min-width: 0; flex: 1; align-items: center; }
 .page-tree-title { display: flex; min-width: 0; align-items: center; gap: 4px; }
 .page-tree-row.is-page strong { min-width: 0; overflow: hidden; color: var(--pageflow-text); font-size: 11px; font-weight: 500; text-overflow: ellipsis; white-space: nowrap; }
 .page-tree-title b { flex: none; color: #f59e0b; font-size: 10px; font-weight: 400; }
 .page-tree-row.is-page.is-favorite strong { color: #b45309; }
 .dark .page-tree-row.is-page.is-favorite strong { color: #fbbf24; }
-.page-tree-row.is-page small { overflow: hidden; color: var(--pageflow-muted); font: 8px var(--pageflow-font-mono); text-overflow: ellipsis; white-space: nowrap; }
 .page-tree-row.is-page em { flex: none; border: 1px solid var(--pageflow-border); border-radius: 3px; padding: 1px 3px; color: var(--pageflow-muted); font: normal 7px var(--pageflow-font-mono); }
 .page-tree-row.is-page.is-active { color: #2563eb; background: color-mix(in srgb, #3b82f6 9%, var(--pageflow-surface)); }
 .dark .page-tree-row.is-page.is-active { color: #60a5fa; }

@@ -111,6 +111,7 @@ async function readUniAppConfig(root: string) {
       type PageConfig = { path?: unknown, style?: { navigationBarTitleText?: unknown } }
       type SubPackageConfig = { root?: unknown, pages?: PageConfig[] }
       const config = JSON.parse(stripJsonComments(await readFile(file, 'utf8'))) as {
+        globalStyle?: { navigationBarTitleText?: unknown }
         pages?: PageConfig[]
         subPackages?: SubPackageConfig[]
         subpackages?: SubPackageConfig[]
@@ -140,7 +141,9 @@ async function readUniAppConfig(root: string) {
         pkg.pages?.forEach(page => addPage(page, packageRoot))
       })
       const home = config.pages?.[0]?.path
+      const globalTitle = config.globalStyle?.navigationBarTitleText
       return {
+        globalTitle: typeof globalTitle === 'string' ? globalTitle.trim() : '',
         homePath: typeof home === 'string' && home.trim() ? normalizePath(home) : undefined,
         routes,
         titlesByPath,
@@ -151,7 +154,7 @@ async function readUniAppConfig(root: string) {
       if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error
     }
   }
-  return { homePath: undefined, routes: [] as PageFlowRuntimeRoute[], titlesByPath: new Map<string, string>(), routeOrderByPath: new Map<string, number>(), tabPaths: new Set<string>() }
+  return { globalTitle: '', homePath: undefined, routes: [] as PageFlowRuntimeRoute[], titlesByPath: new Map<string, string>(), routeOrderByPath: new Map<string, number>(), tabPaths: new Set<string>() }
 }
 
 function mergeUniAppRoutes(
@@ -205,6 +208,7 @@ function createGraph(
   projectRoot: string,
   dynamicParams: ResolvedPageFlowOptions['dynamicParams'],
   uniAppHomePath?: string,
+  uniAppGlobalTitle = '',
 ): PageFlowGraph {
   routes = expandDynamicRoutes(routes, dynamicParams)
   const projectSourceFile = (file: string | undefined) => {
@@ -239,9 +243,12 @@ function createGraph(
       const configuredTitle = configuredTitlesByPath.get(configuredPath)
       const configuredPage = routeOrderByPath.has(configuredPath)
       const reportedTitle = reportedPages.get(route.path)?.title
+      const pageTitle = configuredPage && !configuredTitle && reportedTitle === uniAppGlobalTitle
+        ? ''
+        : reportedTitle
       return {
         id: route.id,
-        title: reportedTitle || configuredTitle || (configuredPage ? '' : route.title),
+        title: pageTitle || configuredTitle || (configuredPage ? '' : route.title),
         path: route.path,
         sourceFile: projectSourceFile(route.componentFile),
         routeOrder: routeOrderByPath.get(route.path)
@@ -498,6 +505,7 @@ const factory: UnpluginFactory<PageFlowOptions | undefined> = (options) => {
   let routes: PageFlowRuntimeRoute[] = []
   let routeMode: PageFlowRouteMode = 'history'
   let uniAppHomePath: string | undefined
+  let uniAppGlobalTitle = ''
   let uniAppRoutes: PageFlowRuntimeRoute[] = []
   let runtimeRoutes: PageFlowRuntimeRoute[] = []
   let configuredTitlesByPath = new Map<string, string>()
@@ -531,7 +539,7 @@ const factory: UnpluginFactory<PageFlowOptions | undefined> = (options) => {
   }
 
   const rebuildGraph = (updatedPaths?: string | string[]) => {
-    graph = createGraph(routes, reportedPages, staticLinksByFile, staticDiagnosticsByFile, configuredTitlesByPath, routeOrderByPath, sourceRevisionsByFile, sourceRedirectsByFile, tabPaths, resolved.diagnostics.rules, graph.version + 1, routeMode, projectRoot, resolved.dynamicParams, uniAppHomePath)
+    graph = createGraph(routes, reportedPages, staticLinksByFile, staticDiagnosticsByFile, configuredTitlesByPath, routeOrderByPath, sourceRevisionsByFile, sourceRedirectsByFile, tabPaths, resolved.diagnostics.rules, graph.version + 1, routeMode, projectRoot, resolved.dynamicParams, uniAppHomePath, uniAppGlobalTitle)
     if (updatedPaths) {
       const paths = Array.isArray(updatedPaths) ? updatedPaths : [updatedPaths]
       paths.forEach((path) => {
@@ -604,6 +612,7 @@ const factory: UnpluginFactory<PageFlowOptions | undefined> = (options) => {
     if (resolved.framework === 'auto' && uniAppConfig.homePath) resolved.framework = 'uni-app'
     if (resolved.framework === 'uni-app') {
       uniAppHomePath = uniAppConfig.homePath
+      uniAppGlobalTitle = uniAppConfig.globalTitle
       uniAppRoutes = uniAppConfig.routes
       configuredTitlesByPath = uniAppConfig.titlesByPath
       routeOrderByPath = uniAppConfig.routeOrderByPath
@@ -723,6 +732,7 @@ const factory: UnpluginFactory<PageFlowOptions | undefined> = (options) => {
         try {
           const uniAppConfig = await readUniAppConfig(projectRoot)
           uniAppHomePath = uniAppConfig.homePath
+          uniAppGlobalTitle = uniAppConfig.globalTitle
           uniAppRoutes = uniAppConfig.routes
           if (resolved.framework === 'auto' && uniAppHomePath) resolved.framework = 'uni-app'
           if (resolved.framework === 'uni-app') routeMode = 'hash'

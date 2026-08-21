@@ -33,7 +33,7 @@ test('clicking a removed page refreshes a stale page tree', { timeout: 30_000 },
       }
     })
     await page.goto(`${origin}/__unplugin-pageflow/`, { waitUntil: 'networkidle' })
-    const staleCheckout = page.locator('.page-tree-row.is-page', { hasText: '/checkout' })
+    const staleCheckout = page.locator('.page-tree-row.is-page[title="/checkout"]')
     await staleCheckout.waitFor()
 
     const currentGraph = await (await fetch(`${origin}/__unplugin-pageflow/api/graph`)).json()

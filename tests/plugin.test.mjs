@@ -118,6 +118,48 @@ test('refreshing project config rescans uni-app routes and removes deleted pages
   }
 })
 
+test('does not use the uni-app global title for an untitled page', async () => {
+  const root = await mkdtemp(resolve(os.tmpdir(), 'pageflow-uni-global-title-'))
+  const pagesDirectory = resolve(root, 'src/pages')
+  await mkdir(pagesDirectory, { recursive: true })
+  await writeFile(resolve(root, '.pageflow'), JSON.stringify({ enabled: true, previewPath: '/__unplugin-pageflow/' }))
+  await writeFile(resolve(root, 'src/pages.json'), JSON.stringify({
+    globalStyle: { navigationBarTitleText: '项目首页' },
+    pages: [
+      { path: 'pages/home', style: { navigationBarTitleText: '首页' } },
+      { path: 'pages/advice', style: { navigationStyle: 'custom' } },
+    ],
+  }))
+  await writeFile(resolve(pagesDirectory, 'home.vue'), '<template><view>home</view></template>')
+  await writeFile(resolve(pagesDirectory, 'advice.vue'), '<template><view>advice</view></template>')
+
+  const server = await createServer({
+    root,
+    configFile: resolve('vite.config.ts'),
+    logLevel: 'silent',
+    server: { host: '127.0.0.1', port: 0 },
+  })
+
+  try {
+    await server.listen()
+    const address = server.httpServer?.address()
+    assert(address && typeof address === 'object')
+    const origin = `http://127.0.0.1:${address.port}`
+    await fetch(`${origin}/__unplugin-pageflow/api/page`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ path: '/pages/advice', title: '项目首页', links: [] }),
+    })
+
+    const graph = await (await fetch(`${origin}/__unplugin-pageflow/api/graph`)).json()
+    assert.equal(graph.pages.find(page => page.path === '/pages/advice')?.title, '')
+    assert.equal(graph.pages.find(page => page.path === '/pages/home')?.title, '首页')
+  } finally {
+    await server.close()
+    await rm(root, { recursive: true, force: true })
+  }
+})
+
 test('serves the unplugin-pageflow client from the configured development route', async () => {
   const server = await createServer({
     root: process.cwd(),

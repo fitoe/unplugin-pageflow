@@ -32,7 +32,7 @@ import { navigatePreviewFrame, previewFrameDisplayPageId, resolvePreviewUrl, sho
 import { deletePageFlowInternalParams, hasPageFlowPreview, PAGEFLOW_INSPECT_PARAM, PAGEFLOW_SCAN_MESSAGE, PAGEFLOW_XPATH_MODE_MESSAGE } from './shared/protocol'
 import { forwardWheelToCanvas, PAGEFLOW_CANVAS_CONFIG, type PageFlowWheelInteraction } from './client/canvas'
 import { CaptureQueue } from './client/capture-queue'
-import { planNextCapture } from './client/capture-planner'
+import { canAutomaticallyCapturePage, planNextCapture } from './client/capture-planner'
 import { waitForPreviewReady } from './client/snapshot'
 import { capturePageThumbnails, documentUsesWebGL } from './client/snapshot-capture'
 import { ThumbnailResourceCache } from './client/thumbnail-resources'
@@ -50,6 +50,7 @@ import { createPageChecks, isOrphanPage, mergePageLinks, type PageFlowPageCheckS
 import { createPageHealth, previewStatusLabels, type PageFlowPreviewStatus } from './client/page-health'
 import { buildApiFieldTree } from './client/api-field-tree'
 import { createPageTree } from './client/page-tree'
+import PageTreePanel from './components/PageTreePanel.vue'
 
 const pageFlowVersion = __PAGEFLOW_VERSION__
 import { createApiIssues, mergeApiResult, type PageFlowApiIssue } from './client/api-diagnostics'
@@ -102,6 +103,7 @@ import {
   routeDeckPathForPage,
   PAGE_CARD_META_HEIGHT,
   PAGE_CARD_WIDTH,
+  PAGE_DECK_LABEL_HIT_HEIGHT,
   PAGE_GRID_GAP_X,
   PAGE_GRID_GAP_Y,
   PAGEFLOW_AUTO_PREVIEW_SCALE,
@@ -113,7 +115,6 @@ const props = defineProps<{ config: ResolvedPageFlowOptions, host?: PageFlowHost
 const ACCENTS = ['#3b82f6', '#8b5cf6', '#06b6d4', '#10b981', '#f59e0b', '#ef4444']
 const MAX_HOST_AUTO_THUMBNAILS = 50
 const ApiFieldTree = defineAsyncComponent(() => import('./components/ApiFieldTree.vue'))
-const PageTreePanel = defineAsyncComponent(() => import('./components/PageTreePanel.vue'))
 
 const previewModes = {
   mobile: { label: '手机', width: 393, height: 852 },
@@ -511,7 +512,6 @@ let diagnosticsInFlightPageId: string | undefined
 let diagnosticsRefreshQueued = false
 const pendingThumbnailRecords: PageFlowThumbnailManifest = {}
 let captureBatchIds = new Set<string>()
-let focusTransitionTargetId: string | undefined
 let routeTransitionTargetId: string | undefined
 let focusTargetDraggedAt = 0
 let suppressCanvasClickUntil = 0
@@ -600,6 +600,8 @@ const pageTreeNodes = computed(() => createPageTree(pages.value, {
 const canvasPages = computed(() => [...routeDeckView.value.directPages, ...routeDeckView.value.decks.map(deck => deck.representative)])
 const routeDeckByPageId = computed(() => new Map(routeDeckView.value.decks.map(deck => [deck.representative.id, deck])))
 const focusedPage = computed(() => pages.value.find(page => page.id === focusedPageId.value))
+const statusbarRoute = computed(() => focusedEditorPage.value?.path
+  ?? (routeGroupPath.value.length ? groupRoutePath(routeGroupPath.value) : ''))
 const breadcrumbItems = computed(() => routeGroupPath.value.map((segment, index) => {
     const path = routeGroupPath.value.slice(0, index + 1)
     const key = path.join('/')
@@ -2025,8 +2027,8 @@ async function selectPageTreePage(pageId: string) {
     status.value = '页面已失效，页面树已更新'
     return
   }
-  if (pageId === focusedPageId.value) locateFocusedPage()
-  else activatePreview(pageId)
+  if (pageId === focusedPageId.value) return
+  activatePreview(pageId)
 }
 
 function resizePanelBy(delta: number) {
@@ -2174,7 +2176,7 @@ function scheduleNextCapture() {
     manualIds: manualCaptureIds,
     priorityIds: new Set([livePreviewId.value, focusedPageId.value, ...visiblePageIds.value].filter(Boolean) as string[]),
     failedIds: failedPreviewIds,
-    canCaptureAutomatically: page => !pageHasStoredThumbnail(page),
+    canCaptureAutomatically: canAutomaticallyCapturePage,
     isCurrent: thumbnailIsCurrent,
   })
   captureBatchIds = plan.batchIds
@@ -2193,7 +2195,7 @@ function startNextCapture() {
     manualIds: manualCaptureIds,
     priorityIds: new Set([livePreviewId.value, focusedPageId.value, ...visiblePageIds.value].filter(Boolean) as string[]),
     failedIds: failedPreviewIds,
-    canCaptureAutomatically: page => !pageHasStoredThumbnail(page),
+    canCaptureAutomatically: canAutomaticallyCapturePage,
     isCurrent: thumbnailIsCurrent,
   })
   captureBatchIds = plan.batchIds
@@ -2233,17 +2235,9 @@ function cacheCurrentFocusedLinks() {
 
 function activatePreview(pageId: string, animate = true, navigationFramePageId?: string) {
   if (animate && focusedPageId.value && focusedPageId.value !== pageId) {
-    if (focusTransitionTargetId) {
-      focusTransitionTargetId = pageId
-      return
-    }
-    focusTransitionTargetId = pageId
-    animateFocusLayout(0, () => {
-      const targetId = focusTransitionTargetId ?? pageId
-      clearFocus(Boolean(navigationFramePageId))
-      focusTransitionTargetId = undefined
-      activatePreview(targetId, true, navigationFramePageId)
-    })
+    focusAnimation.cancel()
+    clearFocus(Boolean(navigationFramePageId))
+    activatePreview(pageId, false, navigationFramePageId)
     return
   }
   const page = pages.value.find(item => item.id === pageId)
@@ -2493,7 +2487,6 @@ function diagnosticMeasurement(item: PageFlowDiagnostic) {
 }
 
 function requestFocusedLayout() {
-  if (focusTransitionTargetId) return
   focusLayoutProgress = 0
   renderCanvasScene()
   animateFocusLayout(1)
@@ -2540,15 +2533,40 @@ function animateFocusLayout(target: 0 | 1, done?: () => void) {
 }
 
 function exitFocus(animated = true, done?: () => void) {
-  if (!focusedPageId.value) return
-  if (animated) animateFocusLayout(0, () => {
+  const pageId = focusedPageId.value
+  if (!pageId) return
+  const page = pages.value.find(page => page.id === pageId && !page.virtual)
+  const frame = page ? previewFrameForPage(pageId) : undefined
+  const clear = () => {
+    if (page && frame?.contentDocument?.body && frame.isConnected) {
+      cancelScheduledCapture()
+      forcedThumbnailRefreshIds.add(pageId)
+      manualCaptureIds.add(pageId)
+      capturePreviewId.value = pageId
+      const capture = capturePreview(pageId, frame, true)
+      clearFocus(true)
+      void capture.finally(() => {
+        if (focusedPageId.value || livePreviewId.value !== pageId) return
+        clearPendingPreviewNavigation()
+        livePreviewId.value = undefined
+        livePreviewFrameId.value = undefined
+        scheduleCanvasRender()
+        scheduleNextCapture()
+      })
+      done?.()
+      return
+    }
+    if (page) {
+      forcedThumbnailRefreshIds.add(pageId)
+      manualCaptureIds.add(pageId)
+    }
     clearFocus()
     done?.()
-  })
+  }
+  if (animated) animateFocusLayout(0, clear)
   else {
     focusAnimation.cancel()
-    clearFocus()
-    done?.()
+    clear()
   }
 }
 
@@ -2630,8 +2648,8 @@ function exitFocusedPage() {
   exitFocus(false, fitCurrentRouteGroup)
 }
 
-async function copyPagePath(path: string) {
-  const copiedValue = selectedXPath.value ? `${path} xpath=${selectedXPath.value}` : path
+async function copyPagePath(path: string, includeXPath = true) {
+  const copiedValue = includeXPath && selectedXPath.value ? `${path} xpath=${selectedXPath.value}` : path
   if (await writeClipboardText(copiedValue)) {
     copiedPath.value = copiedValue
     clearTimeout(copiedPathTimer)
@@ -2656,6 +2674,13 @@ function openPage(path: string) {
 
 function groupDisplayName(key: string, fallback: string) {
   return groupNames.value[key] || fallback
+}
+
+function groupRoutePath(path: string[]) {
+  const key = path.join('/')
+  const usesUniAppPages = pages.value.some(page => page.path.startsWith('/pages/')
+    && path.every((segment, index) => routeDeckPathForPage(pages.value, page.id)[index] === segment))
+  return usesUniAppPages ? `/pages/${key}` : `/${key}`
 }
 
 function pageDisplayName(page: PageFlowPage) {
@@ -2765,8 +2790,11 @@ function handleCanvasClick(event: MouseEvent) {
     const position = positions.value.get(item.id)
     if (!position) return false
     const previewH = pagePreviewHeight(item.id)
+    const hitHeight = routeDeckByPageId.value.has(item.id)
+      ? previewH + PAGE_DECK_LABEL_HIT_HEIGHT
+      : previewH + PAGE_CARD_META_HEIGHT
     const insideCard = worldX >= position[0] && worldX <= position[0] + PAGE_CARD_WIDTH
-      && worldY >= position[1] && worldY <= position[1] + previewH + PAGE_CARD_META_HEIGHT
+      && worldY >= position[1] && worldY <= position[1] + hitHeight
     return insideCard
   })
   if (!page) {
@@ -2790,7 +2818,7 @@ function handleCanvasClick(event: MouseEvent) {
   const localX = worldX - position[0]
   const localY = worldY - position[1]
   const previewH = pagePreviewHeight(page.id)
-  if (localX >= 0 && localX <= PAGE_CARD_WIDTH && localY >= 0 && localY <= previewH) activatePreview(page.id)
+  if (localX >= 0 && localX <= PAGE_CARD_WIDTH && localY >= 0 && localY <= previewH) activatePreview(page.id, false)
 }
 
 function handleCanvasContextMenu(event: MouseEvent) {
@@ -3481,6 +3509,7 @@ function createDeckGroup(page: PageFlowPage, x: number, y: number) {
     y,
     previewHeight: pagePreviewHeight(page.id),
     label: groupDisplayName(deck.key, deck.label),
+    routePath: groupRoutePath(deck.key.split('/').filter(Boolean)),
     count: deck.pages.length,
     layerPages: visibleDeckLayerPages(page.id),
     createLayer: (deckPage, layerX, layerY) => createCardGroup(deckPage, layerX, layerY, 1, false, true, true),
@@ -4586,6 +4615,7 @@ onUnmounted(() => {
           <PageTreePanel
             :nodes="pageTreeNodes"
             :active-page-id="focusedPageId"
+            :active-group-path="focusedPageId ? undefined : routeGroupPath"
             :favorite-page-ids="favoritePageIds"
             :refreshing="pageTreeRefreshing"
             @select="selectPageTreePage"
@@ -4966,17 +4996,17 @@ onUnmounted(() => {
     </div>
     <footer class="app-statusbar">
       <button type="button" class="route-sync-status" :aria-expanded="configPopoverOpen" @click="configPopoverOpen = !configPopoverOpen"><i></i> {{ status }}</button>
-      <div v-if="focusedEditorPage" class="statusbar-page-location">
-        <label class="statusbar-xpath-toggle" title="选取页面节点并在复制路径中附带 XPath">
+      <div v-if="statusbarRoute" class="statusbar-page-location">
+        <label v-if="focusedEditorPage" class="statusbar-xpath-toggle" title="选取页面节点并在复制路径中附带 XPath">
           <input v-model="xpathSelectionEnabled" type="checkbox" @change="toggleXPathSelection">
           <span>XPath</span>
         </label>
         <button
           type="button"
           class="statusbar-page-path"
-          :title="`复制 ${focusedEditorPage.path}${selectedXPath ? ` xpath=${selectedXPath}` : ''}`"
-          @click="copyPagePath(focusedEditorPage.path)"
-        >{{ copiedPath === `${focusedEditorPage.path}${selectedXPath ? ` xpath=${selectedXPath}` : ''}` ? '已复制' : selectedXPath ? `${focusedEditorPage.path} xpath=${selectedXPath}` : focusedEditorPage.path }}</button>
+          :title="`复制 ${statusbarRoute}${focusedEditorPage && selectedXPath ? ` xpath=${selectedXPath}` : ''}`"
+          @click="copyPagePath(statusbarRoute, Boolean(focusedEditorPage))"
+        >{{ copiedPath === `${statusbarRoute}${focusedEditorPage && selectedXPath ? ` xpath=${selectedXPath}` : ''}` ? '已复制' : focusedEditorPage && selectedXPath ? `${statusbarRoute} xpath=${selectedXPath}` : statusbarRoute }}</button>
       </div>
       <span class="statusbar-summary">{{ routeDeckView.decks.length }} 组 / {{ pages.length }} 页 · v{{ pageFlowVersion }}</span>
     </footer>

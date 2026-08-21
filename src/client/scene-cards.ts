@@ -71,6 +71,7 @@ export interface PageDeckOptions {
   y: number
   previewHeight: number
   label: string
+  routePath: string
   count: number
   layerPages: PageFlowPage[]
   createLayer(page: PageFlowPage, x: number, y: number): Group
@@ -78,6 +79,7 @@ export interface PageDeckOptions {
 }
 
 export function createPageDeckGroup(options: PageDeckOptions) {
+  const secondary = options.dark ? '#a3a3a3' : '#737373'
   const group = new Group({ x: options.x, y: options.y, hittable: false })
   ;[...options.layerPages].reverse().forEach((page, index) => {
     const layer = options.layerPages.length - index - 1
@@ -86,5 +88,6 @@ export function createPageDeckGroup(options: PageDeckOptions) {
     group.add(card)
   })
   group.add(new Text({ x: 0, y: options.previewHeight + 12, width: PAGE_CARD_WIDTH, text: `${options.label} · ${options.count}`, fill: options.dark ? '#f5f5f5' : '#262626', fontSize: 13, fontWeight: 700, textWrap: 'none', textOverflow: 'ellipsis', cursor: 'default' }))
+  group.add(new Text({ x: 0, y: options.previewHeight + 32, width: PAGE_CARD_WIDTH, text: options.routePath, fill: secondary, fontFamily: 'ui-monospace, Cascadia Code, SFMono-Regular, Consolas, monospace', fontSize: 9, textWrap: 'none', textOverflow: 'ellipsis', cursor: 'default' }))
   return group
 }
