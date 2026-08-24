@@ -1546,7 +1546,7 @@ function fitInitialCanvas() {
   syncOverlay(true)
 }
 
-function requestLayout(nextPages = pages.value, _animate = false) {
+function requestLayout(nextPages = pages.value, _animate = false, restoreSavedLayout = true) {
   if (!initialSceneReady.value) {
     clearTimeout(initialRevealTimer)
     initialLayoutSettled.value = false
@@ -1554,14 +1554,17 @@ function requestLayout(nextPages = pages.value, _animate = false) {
   ++layoutRequestId
   const layoutPagesList = canvasPagesFor(nextPages)
   const heights = new Map(layoutPagesList.map(page => [page.id, pageCardHeight(page.id)]))
-  positions.value = restoreCanvasLayout(centerLayoutHorizontally(layoutPageGrid(
+  const automaticPositions = centerLayoutHorizontally(layoutPageGrid(
     layoutPagesList,
     heights,
     responsivePageGridColumns({
       width: canvas.value?.clientWidth ?? window.innerWidth,
       height: canvas.value?.clientHeight ?? window.innerHeight,
     }, layoutPagesList, heights),
-  ), layoutPagesList), layoutPagesList)
+  ), layoutPagesList)
+  positions.value = restoreSavedLayout
+    ? restoreCanvasLayout(automaticPositions, layoutPagesList)
+    : automaticPositions
   draw()
   fitInitialCanvas()
   initialLayoutSettled.value = true
@@ -1585,7 +1588,8 @@ async function refreshProjectConfig() {
       applyGraph(graph.pages, graph.routeMode)
     }
     initialCanvasFitted = false
-    requestLayout()
+    requestLayout(pages.value, false, false)
+    await saveCurrentCanvasLayout()
   } catch (error) {
     configFileStatus.value = {
       loaded: false,

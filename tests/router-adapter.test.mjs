@@ -43,6 +43,13 @@ test('adapts Vue Router discovery, routes, locations, and intercepted navigation
     assert.equal(adapter.resolve('/.well_known'), undefined)
     assert.deepEqual(adapter.resolveAnchor(new URL('http://localhost/app/detail/8?q=1')), { path: '/detail/:id', location: '/detail/8?q=1' })
 
+    const gridContent = window.document.createElement('div')
+    gridContent.__vueParentComponent = {
+      vnode: { el: gridContent, props: { onClick: function click() { uni.navigateTo({ url }) } } },
+      parent: { vnode: { props: { url: '/detail/7?from=grid' } } },
+    }
+    assert.deepEqual(adapter.renderedNavigationTargets(gridContent), ['/detail/:id'])
+
     const navigations = []
     adapter.interceptNavigation((navigation, method) => navigations.push({ navigation, method }))
     assert.equal(await router.push('/detail/9'), 'pushed')

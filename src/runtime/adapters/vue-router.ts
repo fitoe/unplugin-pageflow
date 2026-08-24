@@ -114,12 +114,14 @@ export class VueRouterAdapter implements PageFlowRouterAdapter {
     const component = (element as VueRenderedElement).__vueParentComponent
     if (!component) return []
     const sources: string[] = []
+    const components: NonNullable<VueRenderedElement['__vueParentComponent']>[] = []
     const handlers = { ...component.vnode?.props, ...component.subTree?.props }
     Object.entries(handlers ?? {}).forEach(([key, value]) => {
       if (/^onClick(?:Once|Capture|Passive)*$/i.test(key) && typeof value === 'function') sources.push(value.toString())
     })
     let current: VueRenderedElement['__vueParentComponent'] = component
     for (let depth = 0; current && depth < 4; depth++, current = current.parent) {
+      components.push(current)
       const listeners = current.vnode?.props ?? {}
       for (const source of [...sources]) {
         for (const emitted of source.matchAll(/(?:\$?emit)\s*\(\s*(["'])([^"']+)\1/g)) {
@@ -145,6 +147,17 @@ export class VueRouterAdapter implements PageFlowRouterAdapter {
       }
       for (const match of source.matchAll(/(["'`])(\/[^"'`$]*)/g)) {
         const target = this.resolve(match[2])?.path
+        if (target) targets.add(target)
+      }
+    })
+    const navigationSources = sources.filter(source => /\b(?:push|replace|navigateTo|redirectTo|switchTab|reLaunch)\s*\(/.test(source))
+    components.forEach(current => {
+      const props = { ...current.vnode?.props, ...current.subTree?.props }
+      for (const key of ['url', 'to', 'path', 'href']) {
+        const value = props?.[key]
+        if (typeof value !== 'string' || !value.startsWith('/')) continue
+        if (!navigationSources.some(source => new RegExp(`\\b${key}\\b`).test(source))) continue
+        const target = this.resolve(value)?.path
         if (target) targets.add(target)
       }
     })
