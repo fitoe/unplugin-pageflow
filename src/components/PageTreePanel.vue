@@ -14,6 +14,7 @@ const props = defineProps<{
   activePageId?: string
   activeGroupPath?: string[]
   favoritePageIds?: ReadonlySet<string>
+  figmaPageIds?: ReadonlySet<string>
   refreshing?: boolean
 }>()
 const emit = defineEmits<{
@@ -148,6 +149,13 @@ function handleGroupKeydown(event: KeyboardEvent, node: PageTreeGroupNode) {
           <span>
             <span class="page-tree-title">
               <strong>{{ row.node.label }}</strong>
+              <svg v-if="figmaPageIds?.has(row.node.pageId)" class="figma-brand-icon page-tree-figma" viewBox="0 0 10 15" role="img" aria-label="已绑定 Figma">
+                <path fill="#f24e1e" d="M0 2.5A2.5 2.5 0 0 1 2.5 0H5v5H2.5A2.5 2.5 0 0 1 0 2.5Z" />
+                <path fill="#ff7262" d="M5 0h2.5a2.5 2.5 0 0 1 0 5H5Z" />
+                <path fill="#a259ff" d="M0 7.5A2.5 2.5 0 0 1 2.5 5H5v5H2.5A2.5 2.5 0 0 1 0 7.5Z" />
+                <circle cx="7.5" cy="7.5" r="2.5" fill="#1abcfe" />
+                <path fill="#0acf83" d="M0 12.5A2.5 2.5 0 0 1 2.5 10H5v2.5a2.5 2.5 0 0 1-5 0Z" />
+              </svg>
               <b v-if="favoritePageIds?.has(row.node.pageId)" aria-label="已收藏">★</b>
             </span>
           </span>

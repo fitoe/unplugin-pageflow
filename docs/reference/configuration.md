@@ -21,7 +21,7 @@ PageFlow.vite({
 | `previewPath` | `/__unplugin-pageflow/` | URL used by the visual map. |
 | `appUrl` | `/` | Route used to discover the application router. |
 | `dynamicParams` | `{}` | Supplies sample values for dynamic route parameters. |
-| `figmaPages` | `{}` | Maps page paths or route patterns to Figma files and nodes. |
+| `pages` | `{}` | Stores page-owned metadata such as names and compact Figma node references. |
 | `pageTests` | `{}` | Explicitly associates route globs with test file globs. |
 | `testCommands` | `{}` | Enables test execution per test kind with explicit shell-free commands. |
 
@@ -31,18 +31,15 @@ Map application pages to Figma files or specific nodes. When a mapped page is fo
 
 ```json
 {
-  "figmaPages": {
-    "/pages/agri-condition/home/index": "https://www.figma.com/design/FILE_KEY/Project?node-id=123-456",
-    "/orders/:id": {
-      "url": "https://www.figma.com/design/FILE_KEY/Project?node-id=789-10",
-      "label": "Order design",
-      "openMode": "browser"
+  "pages": {
+    "/pages/agri-condition/home/index": {
+      "figma": "FILE_KEY#123:456"
     }
   }
 }
 ```
 
-`openMode` defaults to `desktop`, which opens the Figma desktop protocol. Use `browser` to open the HTTPS link instead. Exact paths, paths without query parameters, `:param`, `*`, and `**` patterns are supported. Reload `.pageflow` from the configuration status popover to apply mapping changes without restarting Vite.
+Clicking the always-visible Figma action lets you paste arbitrary text containing a Figma node URL. PageFlow stores only the stable `fileKey#nodeId` reference and rebuilds an HTTPS URL when opening it, allowing Figma to use the desktop app when available and the web app otherwise. Page keys may also use route patterns such as `:param`, `*`, and `**`.
 
 ## Page tests
 

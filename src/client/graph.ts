@@ -19,6 +19,35 @@ export async function refreshPageFlowConfig(config: ResolvedPageFlowOptions) {
   return response.json() as Promise<PageFlowProjectConfig>
 }
 
+export async function savePageFlowFigmaLink(config: ResolvedPageFlowOptions, path: string, text: string) {
+  const response = await fetch(`${config.previewPath}api/figma-page`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ path, text }),
+  })
+  if (!response.ok) throw new Error((await response.json().catch(() => undefined))?.error || 'Failed to save Figma link')
+  return response.json() as Promise<{ path: string, link: ResolvedPageFlowOptions['figmaPages'][string] }>
+}
+
+export async function deletePageFlowFigmaLink(config: ResolvedPageFlowOptions, path: string) {
+  const response = await fetch(`${config.previewPath}api/figma-page`, {
+    method: 'DELETE',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ path }),
+  })
+  if (!response.ok) throw new Error((await response.json().catch(() => undefined))?.error || 'Failed to delete Figma link')
+  return response.json() as Promise<{ path: string }>
+}
+
+export async function savePageFlowLocation(config: ResolvedPageFlowOptions, path: string, location: string) {
+  const response = await fetch(`${config.previewPath}api/page-location`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ path, location }),
+  })
+  if (!response.ok) throw new Error((await response.json().catch(() => undefined))?.error || 'Failed to save page location')
+}
+
 export async function reportPageTitle(config: ResolvedPageFlowOptions, path: string, title: string) {
   const response = await fetch(`${config.previewPath}api/page`, {
     method: 'POST',

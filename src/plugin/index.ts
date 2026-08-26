@@ -40,6 +40,7 @@ import { inferTestCommands } from './test-command.ts'
 import { extractEventNavigationDiagnostics } from './source-diagnostics.ts'
 import { PAGEFLOW_TEST_EVENT } from '../shared/protocol.ts'
 import { loadProjectOptions, resolveOptions, stripJsonComments } from './options.ts'
+import { extractFigmaLink, normalizeFigmaPages } from '../client/figma.ts'
 
 const ACCENTS = ['#ff795d', '#7c6cff', '#26b99a', '#e7ad43', '#dd648e']
 
@@ -792,6 +793,8 @@ const factory: UnpluginFactory<PageFlowOptions | undefined> = (options) => {
           const clientVersionPath = `${resolved.previewPath}api/client-version`
           const groupNamePath = `${resolved.previewPath}api/group-name`
           const pageNamePath = `${resolved.previewPath}api/page-name`
+          const figmaPagePath = `${resolved.previewPath}api/figma-page`
+          const pageLocationPath = `${resolved.previewPath}api/page-location`
           const canvasLayoutPath = `${resolved.previewPath}api/canvas-layout`
           const testsPath = `${resolved.previewPath}api/tests`
           const lighthousePath = `${resolved.previewPath}api/lighthouse`
@@ -807,6 +810,7 @@ const factory: UnpluginFactory<PageFlowOptions | undefined> = (options) => {
               groupNames: resolved.groupNames,
               pageNames: resolved.pageNames,
               figmaPages: resolved.figmaPages,
+              pageLocations: resolved.pageLocations,
               canvasLayouts: resolved.canvasLayouts,
             }))
             return
@@ -826,6 +830,7 @@ const factory: UnpluginFactory<PageFlowOptions | undefined> = (options) => {
                 groupNames: resolved.groupNames,
                 pageNames: resolved.pageNames,
                 figmaPages: resolved.figmaPages,
+                pageLocations: resolved.pageLocations,
                 canvasLayouts: resolved.canvasLayouts,
               }))
             } catch (error) {
@@ -1090,6 +1095,86 @@ const factory: UnpluginFactory<PageFlowOptions | undefined> = (options) => {
               if (configModule) server.moduleGraph.invalidateModule(configModule)
               response.setHeader('Content-Type', 'application/json; charset=utf-8')
               response.end(JSON.stringify({ key, name }))
+            } catch (error) {
+              response.statusCode = 400
+              response.setHeader('Content-Type', 'application/json; charset=utf-8')
+              response.end(JSON.stringify({ error: error instanceof Error ? error.message : 'Invalid request' }))
+            }
+            return
+          }
+
+          if (pathname === figmaPagePath && request.method === 'POST') {
+            try {
+              const body = await readJson(request)
+              const path = typeof body.path === 'string' ? body.path.trim() : ''
+              const text = typeof body.text === 'string' ? body.text : ''
+              if (!path || path.length > 500) throw new Error('Invalid page path')
+              const ref = extractFigmaLink(text)
+              if (!ref) throw new Error('未识别到包含 node-id 的 Figma 节点链接')
+              const link = normalizeFigmaPages({ [path]: ref }, resolved.pageNames)[path]
+              if (!link) throw new Error('Figma 节点链接无效')
+              const configFile = resolve(projectRoot, '.pageflow')
+              const stored = JSON.parse(stripJsonComments(await readFile(configFile, 'utf8'))) as PageFlowOptions
+              stored.pages = { ...(stored.pages ?? {}), [path]: { ...(stored.pages?.[path] ?? {}), figma: ref } }
+              await writeFile(configFile, `${JSON.stringify(stored, null, 2)}\n`)
+              resolved.figmaPages = { ...resolved.figmaPages, [path]: link }
+              const configModule = server.moduleGraph.getModuleById(PAGEFLOW_CONFIG_RESOLVED_ID)
+              if (configModule) server.moduleGraph.invalidateModule(configModule)
+              response.setHeader('Content-Type', 'application/json; charset=utf-8')
+              response.end(JSON.stringify({ path, link }))
+            } catch (error) {
+              response.statusCode = 400
+              response.setHeader('Content-Type', 'application/json; charset=utf-8')
+              response.end(JSON.stringify({ error: error instanceof Error ? error.message : 'Invalid request' }))
+            }
+            return
+          }
+
+          if (pathname === pageLocationPath && request.method === 'POST') {
+            try {
+              const body = await readJson(request)
+              const path = typeof body.path === 'string' ? body.path.trim() : ''
+              const location = typeof body.location === 'string' ? body.location.trim() : ''
+              if (!path || path.length > 500) throw new Error('Invalid page path')
+              if (!location || location.length > 2000 || location.split(/[?#]/, 1)[0] !== path)
+                throw new Error('Invalid page location')
+              const configFile = resolve(projectRoot, '.pageflow')
+              const stored = JSON.parse(stripJsonComments(await readFile(configFile, 'utf8'))) as PageFlowOptions
+              stored.pages = { ...(stored.pages ?? {}), [path]: { ...(stored.pages?.[path] ?? {}), location } }
+              await writeFile(configFile, `${JSON.stringify(stored, null, 2)}\n`)
+              resolved.pageLocations = { ...resolved.pageLocations, [path]: location }
+              const configModule = server.moduleGraph.getModuleById(PAGEFLOW_CONFIG_RESOLVED_ID)
+              if (configModule) server.moduleGraph.invalidateModule(configModule)
+              response.setHeader('Content-Type', 'application/json; charset=utf-8')
+              response.end(JSON.stringify({ path, location }))
+            } catch (error) {
+              response.statusCode = 400
+              response.setHeader('Content-Type', 'application/json; charset=utf-8')
+              response.end(JSON.stringify({ error: error instanceof Error ? error.message : 'Invalid request' }))
+            }
+            return
+          }
+
+          if (pathname === figmaPagePath && request.method === 'DELETE') {
+            try {
+              const body = await readJson(request)
+              const path = typeof body.path === 'string' ? body.path.trim() : ''
+              if (!path || path.length > 500) throw new Error('Invalid page path')
+              const configFile = resolve(projectRoot, '.pageflow')
+              const stored = JSON.parse(stripJsonComments(await readFile(configFile, 'utf8'))) as PageFlowOptions
+              const page = { ...(stored.pages?.[path] ?? {}) }
+              delete page.figma
+              stored.pages = { ...(stored.pages ?? {}) }
+              if (Object.keys(page).length) stored.pages[path] = page
+              else delete stored.pages[path]
+              await writeFile(configFile, `${JSON.stringify(stored, null, 2)}\n`)
+              const figmaPages = { ...resolved.figmaPages }
+              delete figmaPages[path]
+              resolved.figmaPages = figmaPages
+              const configModule = server.moduleGraph.getModuleById(PAGEFLOW_CONFIG_RESOLVED_ID)
+              if (configModule) server.moduleGraph.invalidateModule(configModule)
+              response.setHeader('Content-Type', 'application/json; charset=utf-8')
+              response.end(JSON.stringify({ path }))
             } catch (error) {
               response.statusCode = 400
               response.setHeader('Content-Type', 'application/json; charset=utf-8')

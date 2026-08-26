@@ -6,8 +6,15 @@ export type PageFlowDynamicParamValues = Record<string, string | number>
 
 export interface PageFlowFigmaLink {
   url: string
+  ref: string
   label?: string
-  openMode?: 'desktop' | 'browser'
+}
+
+export interface PageFlowPageConfig {
+  name?: string
+  figma?: string
+  /** Last parameterized location used to open this page. */
+  location?: string
 }
 
 export interface PageFlowOptions {
@@ -27,8 +34,8 @@ export interface PageFlowOptions {
   previewRoles?: Array<{ match: string; role: string }>
   groupNames?: Record<string, string>
   pageNames?: Record<string, string>
-  /** Route/path to Figma file or node mappings shown beside focused previews. */
-  figmaPages?: Record<string, string | PageFlowFigmaLink>
+  /** Page-owned metadata. */
+  pages?: Record<string, PageFlowPageConfig>
   canvasLayouts?: Record<string, Record<string, [number, number]>>
   /** Explicit route or route-glob to test file/glob mappings. */
   pageTests?: Record<string, string[]>
@@ -78,6 +85,7 @@ export interface ResolvedPageFlowOptions {
   groupNames: Record<string, string>
   pageNames: Record<string, string>
   figmaPages: Record<string, PageFlowFigmaLink>
+  pageLocations: Record<string, string>
   canvasLayouts: Record<string, Record<string, [number, number]>>
   pageTests: Record<string, string[]>
   testCommands: Partial<Record<PageFlowTestKind, PageFlowTestCommand>>
@@ -96,6 +104,7 @@ export interface PageFlowProjectConfig extends PageFlowConfigFileStatus {
   groupNames: Record<string, string>
   pageNames: Record<string, string>
   figmaPages: Record<string, PageFlowFigmaLink>
+  pageLocations: Record<string, string>
   canvasLayouts: Record<string, Record<string, [number, number]>>
 }
 

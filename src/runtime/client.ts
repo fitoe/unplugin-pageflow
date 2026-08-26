@@ -228,6 +228,15 @@ function associateProgrammaticElement(element: Element, target: string, location
 }
 let lastClickedElement: Element | null = null
 
+function programmaticNavigationElement() {
+  if (!lastClickedElement) return null
+  const formControl = lastClickedElement.closest('input, textarea, select, option, [contenteditable="true"], uni-input, uni-textarea, uni-picker')
+  if (formControl) return null
+  const element = lastClickedElement.closest('a, button, [role="link"], [role="button"], uni-button, uni-view')
+    ?? lastClickedElement
+  return isFormControlRegion(element) ? null : element
+}
+
 function notifyNavigation(to: string, location = to, interaction?: 'hotspot') {
   if (window.parent === window) return
   window.parent.postMessage({
@@ -632,8 +641,7 @@ function protectPreviewInteractions(router: PageFlowRouterAdapter, config: Resol
   router.interceptNavigation((navigation, method) => {
       const target = navigation.path
       if (target) {
-        const element = lastClickedElement?.closest('a, button, [role="link"], [role="button"], uni-button, uni-view')
-          ?? lastClickedElement
+        const element = programmaticNavigationElement()
         const label = element?.textContent?.trim() || `${method} ${target}`
         programmaticLinks.set(`${router.currentPath()}:${target}`, {
           label,
@@ -656,8 +664,7 @@ function protectPreviewInteractions(router: PageFlowRouterAdapter, config: Resol
       const location = options?.url
       const target = location && router.resolve(location)?.path
       if (target) {
-        const element = lastClickedElement?.closest('a, button, [role="link"], [role="button"], uni-button, uni-view')
-          ?? lastClickedElement
+        const element = programmaticNavigationElement()
         const label = element?.textContent?.trim() || `${method} ${target}`
         programmaticLinks.set(`${router.currentPath()}:${target}`, {
           label,

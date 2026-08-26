@@ -13,6 +13,7 @@ mountPageFlow(document.querySelector('#app'), {
   groupNames: {},
   pageNames: {},
   figmaPages: {},
+  pageLocations: {},
   canvasLayouts: {},
   pageTests: {},
   testCommands: {},

@@ -26,7 +26,7 @@ import type {
   PageFlowThumbnailRecord,
   ResolvedPageFlowOptions,
 } from './shared/types'
-import { cancelPageFlowTest, fetchPageFlowEditor, fetchPageFlowGraph, fetchPageFlowTests, openPageFlowEditor, publishPageFlowAIContext, refreshPageFlowConfig, reportPageTitle, runPageFlowLighthouse, runPageFlowTest, startRouteDiscovery, subscribeToPageFlowUpdates, type PageFlowEditorInfo } from './client/graph'
+import { cancelPageFlowTest, deletePageFlowFigmaLink, fetchPageFlowEditor, fetchPageFlowGraph, fetchPageFlowTests, openPageFlowEditor, publishPageFlowAIContext, refreshPageFlowConfig, reportPageTitle, runPageFlowLighthouse, runPageFlowTest, savePageFlowFigmaLink, savePageFlowLocation, startRouteDiscovery, subscribeToPageFlowUpdates, type PageFlowEditorInfo } from './client/graph'
 import { planGraphUpdate } from './client/graph-update'
 import { navigatePreviewFrame, previewFrameDisplayPageId, resolvePreviewUrl, shouldInspectPreviewFrame, shouldMountPreviewFrame, syncPreviewHotspotLayerVisibility, touchPreviewCache } from './client/preview'
 import { deletePageFlowInternalParams, hasPageFlowPreview, PAGEFLOW_INSPECT_PARAM, PAGEFLOW_SCAN_MESSAGE, PAGEFLOW_XPATH_MODE_MESSAGE } from './shared/protocol'
@@ -221,7 +221,7 @@ const initialResourcesSettled = ref(props.config.previewPath === '/')
 const previewMode = ref<PageFlowPreviewMode>(storedPreviewMode())
 const thumbnailTier = ref<PageFlowThumbnailTier>(thumbnailTierForZoom(zoomPercent.value))
 const thumbnailResources = ref<Record<string, string>>({})
-const navigationLocations = ref<Record<string, string>>({})
+const navigationLocations = ref<Record<string, string>>({ ...props.config.pageLocations })
 const {
   activeUser,
   groupUsers,
@@ -305,6 +305,10 @@ const navigationEvents = ref<Array<{ id: number, from: string, to: string, reaso
 const virtualPageMenu = ref<{ pageId: string, x: number, y: number }>()
 const formLoading = ref(false)
 const focusedFormAvailable = ref(false)
+const figmaBindingPage = ref<PageFlowPage>()
+const figmaBindingText = ref('')
+const figmaBindingError = ref('')
+const figmaBindingSaving = ref(false)
 const canvas = ref<HTMLDivElement>()
 const connectionCanvas = ref<HTMLDivElement>()
 const overlayWorld = ref<HTMLDivElement>()
@@ -321,10 +325,67 @@ function toggleFavoritePage(pageId: string) {
 function pageFigmaLink(page: PageFlowPage) {
   return figmaLinkForPage(page, figmaPages.value)
 }
+const figmaPageIds = computed(() => new Set(pages.value.filter(page => pageFigmaLink(page)).map(page => page.id)))
 
 function openPageInFigma(page: PageFlowPage) {
   const link = pageFigmaLink(page)
-  if (link) openFigmaLink(link)
+  if (link) {
+    openFigmaLink(link)
+    return
+  }
+  figmaBindingPage.value = page
+  figmaBindingText.value = ''
+  figmaBindingError.value = props.host ? '当前宿主模式不支持写入 .pageflow，请在项目配置中手动添加链接。' : ''
+}
+
+function editPageFigma(page: PageFlowPage) {
+  figmaBindingPage.value = page
+  figmaBindingText.value = pageFigmaLink(page)?.ref ?? ''
+  figmaBindingError.value = props.host ? '当前宿主模式不支持写入 .pageflow，请在项目配置中手动编辑。' : ''
+}
+
+async function deletePageFigma(page: PageFlowPage) {
+  const link = pageFigmaLink(page)
+  if (!link || props.host || !window.confirm(`确定删除 ${pageDisplayName(page)} 的 Figma 绑定吗？`)) return
+  try {
+    await deletePageFlowFigmaLink(props.config, page.path)
+    const next = { ...figmaPages.value }
+    delete next[page.path]
+    figmaPages.value = next
+  } catch (error) {
+    status.value = error instanceof Error ? error.message : 'Figma 绑定删除失败'
+  }
+}
+
+function pageFigmaMenuItems(page: PageFlowPage) {
+  return [[
+    { label: '编辑绑定', icon: 'i-lucide-pencil', onSelect: () => editPageFigma(page) },
+    { label: '删除绑定', icon: 'i-lucide-trash-2', color: 'error' as const, onSelect: () => deletePageFigma(page) },
+  ]]
+}
+
+function closeFigmaBinding() {
+  if (figmaBindingSaving.value) return
+  figmaBindingPage.value = undefined
+  figmaBindingText.value = ''
+  figmaBindingError.value = ''
+}
+
+async function bindFigmaPage() {
+  const page = figmaBindingPage.value
+  if (!page || props.host || figmaBindingSaving.value) return
+  figmaBindingSaving.value = true
+  figmaBindingError.value = ''
+  try {
+    const result = await savePageFlowFigmaLink(props.config, page.path, figmaBindingText.value)
+    figmaPages.value = { ...figmaPages.value, [result.path]: result.link }
+    figmaBindingSaving.value = false
+    closeFigmaBinding()
+  } catch (error) {
+    figmaBindingError.value = error instanceof Error ? error.message : 'Figma 链接保存失败'
+  } finally {
+    figmaBindingSaving.value = false
+  }
 }
 const focusedPageChecks = computed(() => {
   const page = pages.value.find(item => item.id === focusedPageId.value)
@@ -1592,6 +1653,7 @@ async function refreshProjectConfig() {
     groupNames.value = { ...refreshed.groupNames }
     pageNames.value = { ...refreshed.pageNames }
     figmaPages.value = { ...(refreshed.figmaPages ?? {}) }
+    navigationLocations.value = { ...(refreshed.pageLocations ?? {}) }
     canvasLayouts.value = { ...refreshed.canvasLayouts }
     configFileStatus.value = { loaded: refreshed.loaded, source: refreshed.source }
     if (props.host) applyHostState(await props.host.loadState())
@@ -1915,7 +1977,10 @@ function activatePreviewNavigation(to: string, location = to, animate = true, re
   if (!target) return false
   const source = pages.value.find(page => page.id === focusedPageId.value)
   if (source && source.id !== target.id) recordNavigation(source.path, location, reason)
+  const previousLocation = navigationLocations.value[target.path]
   navigationLocations.value = { ...navigationLocations.value, [target.path]: location }
+  if (!props.host && previousLocation !== location && location !== target.path && /[?#]/.test(location))
+    void savePageFlowLocation(props.config, target.path, location).catch(() => undefined)
   const frame = framePageId ? previewFrames.get(framePageId) : undefined
   if (framePageId && frame) {
     const expectedUrl = previewUrl(target.path, true)
@@ -4546,24 +4611,50 @@ onUnmounted(() => {
               }"
               @click.stop="toggleFavoritePage(page.id)"
             />
-            <UButton
-              v-if="page.id === focusedPageId && pageFigmaLink(page)"
-              type="button"
-              class="page-figma-action"
-              icon="i-lucide-figma"
-              :label="pageFigmaLink(page)?.label || 'Figma'"
-              color="neutral"
-              variant="soft"
-              size="xs"
-              aria-label="在 Figma 中打开当前页面"
+            <div
+              v-if="page.id === focusedPageId"
+              class="page-figma-actions"
               :style="{
                 left: `${PAGE_CARD_WIDTH + 16 / Math.max(settledTransform.scaleX, 0.01)}px`,
                 top: `${(focusedFormAvailable ? 118 : 84) / Math.max(settledTransform.scaleY, 0.01)}px`,
                 transform: `scale(${1 / Math.max(settledTransform.scaleX, 0.01)}, ${1 / Math.max(settledTransform.scaleY, 0.01)})`,
                 transformOrigin: 'top left',
               }"
-              @click.stop="openPageInFigma(page)"
-            />
+            >
+              <UButton
+                type="button"
+                class="page-figma-action"
+                :class="{ 'is-bound': Boolean(pageFigmaLink(page)) }"
+                :label="pageFigmaLink(page) ? 'Figma' : '绑定 Figma'"
+                color="neutral"
+                variant="soft"
+                size="xs"
+                :aria-label="pageFigmaLink(page) ? '在 Figma 中打开当前页面' : '为当前页面绑定 Figma 节点'"
+                @click.stop="openPageInFigma(page)"
+              >
+                <template #leading>
+                  <svg class="figma-brand-icon" viewBox="0 0 10 15" aria-hidden="true">
+                    <path fill="#f24e1e" d="M0 2.5A2.5 2.5 0 0 1 2.5 0H5v5H2.5A2.5 2.5 0 0 1 0 2.5Z" />
+                    <path fill="#ff7262" d="M5 0h2.5a2.5 2.5 0 0 1 0 5H5Z" />
+                    <path fill="#a259ff" d="M0 7.5A2.5 2.5 0 0 1 2.5 5H5v5H2.5A2.5 2.5 0 0 1 0 7.5Z" />
+                    <circle cx="7.5" cy="7.5" r="2.5" fill="#1abcfe" />
+                    <path fill="#0acf83" d="M0 12.5A2.5 2.5 0 0 1 2.5 10H5v2.5a2.5 2.5 0 0 1-5 0Z" />
+                  </svg>
+                </template>
+              </UButton>
+              <UDropdownMenu v-if="pageFigmaLink(page)" :items="pageFigmaMenuItems(page)" :content="{ align: 'start', sideOffset: 4 }">
+                <UButton
+                  type="button"
+                  class="page-figma-menu"
+                  icon="i-lucide-chevron-down"
+                  color="neutral"
+                  variant="soft"
+                  size="xs"
+                  aria-label="Figma 绑定操作"
+                  @click.stop
+                />
+              </UDropdownMenu>
+            </div>
           </div>
           <div
             v-for="page in previewPages"
@@ -4663,6 +4754,7 @@ onUnmounted(() => {
             :active-page-id="focusedPageId"
             :active-group-path="focusedPageId ? undefined : routeGroupPath"
             :favorite-page-ids="favoritePageIds"
+            :figma-page-ids="figmaPageIds"
             :refreshing="pageTreeRefreshing"
             @select="selectPageTreePage"
             @select-group="enterRouteGroup"
@@ -5027,6 +5119,31 @@ onUnmounted(() => {
       </div>
       </aside>
     </section>
+    <div v-if="figmaBindingPage" class="figma-binding-backdrop" @click.self="closeFigmaBinding">
+      <section class="figma-binding-dialog" role="dialog" aria-modal="true" aria-labelledby="figma-binding-title">
+        <header>
+          <div>
+            <h2 id="figma-binding-title">绑定 Figma 节点</h2>
+            <p>{{ figmaBindingPage.path }}</p>
+          </div>
+          <button type="button" aria-label="关闭" @click="closeFigmaBinding">×</button>
+        </header>
+        <textarea
+          id="figma-binding-text"
+          v-model="figmaBindingText"
+          autofocus
+          rows="4"
+          placeholder="粘贴 Figma 节点链接"
+          @keydown.ctrl.enter.prevent="bindFigmaPage"
+          @keydown.meta.enter.prevent="bindFigmaPage"
+        ></textarea>
+        <p v-if="figmaBindingError" class="figma-binding-error">{{ figmaBindingError }}</p>
+        <footer>
+          <UButton color="neutral" variant="ghost" :disabled="figmaBindingSaving" @click="closeFigmaBinding">取消</UButton>
+          <UButton color="primary" :loading="figmaBindingSaving" :disabled="!figmaBindingText.trim() || Boolean(props.host)" @click="bindFigmaPage">识别并保存</UButton>
+        </footer>
+      </section>
+    </div>
     <div v-if="workbenchView === 'canvas'" class="zoom" :style="{ right: panelCollapsed ? '18px' : `${panelWidth + 30}px` }"><button type="button" @click="zoomCanvas('in')">+</button><span>{{ zoomPercent }}%</span><button type="button" @click="zoomCanvas('out')">−</button></div>
     <div v-if="configPopoverOpen" class="config-popover" role="dialog" aria-label="PageFlow 配置状态">
       <div class="config-popover-status">

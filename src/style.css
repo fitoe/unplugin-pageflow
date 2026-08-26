@@ -79,7 +79,22 @@ header {
 .page-user-overlay { position: absolute; z-index: 4; width: 240px; height: 0; overflow: visible; pointer-events: none; }
 .page-form-fill-action { position: absolute; height: 26px; pointer-events: auto; white-space: nowrap; box-shadow: 0 2px 7px var(--pageflow-shadow); }
 .page-favorite-action { position: absolute; height: 26px; pointer-events: auto; white-space: nowrap; box-shadow: 0 2px 7px var(--pageflow-shadow); }
-.page-figma-action { position: absolute; height: 26px; pointer-events: auto; white-space: nowrap; box-shadow: 0 2px 7px var(--pageflow-shadow); }
+.page-figma-actions { position: absolute; display: flex; height: 26px; pointer-events: auto; white-space: nowrap; filter: drop-shadow(0 2px 7px var(--pageflow-shadow)); }
+.page-figma-action { height: 26px; border-radius: 6px 0 0 6px; }
+.figma-brand-icon { width: 10px; height: 15px; flex: none; }
+.page-figma-menu { height: 26px; min-width: 24px; padding-inline: 4px; border-left: 1px solid var(--pageflow-border); border-radius: 0 6px 6px 0; }
+.page-figma-actions > .page-figma-action:last-child { border-radius: 6px; }
+.figma-binding-backdrop { position: fixed; z-index: 100; inset: 0; display: grid; place-items: center; background: rgb(0 0 0 / 46%); padding: 24px; pointer-events: auto; }
+.figma-binding-dialog { width: min(520px, calc(100vw - 48px)); border: 1px solid var(--pageflow-border); border-radius: 12px; background: var(--pageflow-surface); padding: 18px; box-shadow: 0 24px 70px rgb(0 0 0 / 35%); color: var(--pageflow-text); }
+.figma-binding-dialog header { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; }
+.figma-binding-dialog h2 { margin: 0; font-size: 16px; }
+.figma-binding-dialog header p { margin: 5px 0 0; color: var(--pageflow-muted); font: 10px var(--pageflow-font-mono); }
+.figma-binding-dialog header button { cursor: pointer; border: 0; background: transparent; color: var(--pageflow-muted); font-size: 22px; line-height: 1; }
+.figma-binding-dialog textarea { width: 100%; margin-top: 16px; resize: vertical; box-sizing: border-box; border: 1px solid var(--pageflow-border); border-radius: 8px; outline: none; background: var(--pageflow-bg); padding: 10px; color: var(--pageflow-text); font: 11px/1.55 var(--pageflow-font-mono); }
+.figma-binding-dialog textarea:focus { border-color: #7c6cff; box-shadow: 0 0 0 3px rgb(124 108 255 / 12%); }
+.figma-binding-error { margin: 7px 0 0; font-size: 11px; }
+.figma-binding-error { color: #ef4444; }
+.figma-binding-dialog footer { display: flex; justify-content: flex-end; gap: 8px; margin-top: 18px; }
 .viewport-switch-layout { margin-left: 0; }
 
 .workspace { position: absolute; inset: 46px 0 28px; overflow: hidden; overscroll-behavior: none; touch-action: none; }
@@ -235,6 +250,7 @@ header {
 .page-tree-title { display: flex; min-width: 0; align-items: center; gap: 4px; }
 .page-tree-row.is-page strong { min-width: 0; overflow: hidden; color: var(--pageflow-text); font-size: 11px; font-weight: 500; text-overflow: ellipsis; white-space: nowrap; }
 .page-tree-title b { flex: none; color: #f59e0b; font-size: 10px; font-weight: 400; }
+.page-tree-figma { width: 8px; height: 12px; }
 .page-tree-row.is-page.is-favorite strong { color: #b45309; }
 .dark .page-tree-row.is-page.is-favorite strong { color: #fbbf24; }
 .page-tree-row.is-page em { flex: none; border: 1px solid var(--pageflow-border); border-radius: 3px; padding: 1px 3px; color: var(--pageflow-muted); font: normal 7px var(--pageflow-font-mono); }

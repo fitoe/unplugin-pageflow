@@ -9,6 +9,10 @@ function normalizePreviewPath(path: string) {
 }
 
 export function resolveOptions(options: PageFlowOptions = {}): ResolvedPageFlowOptions {
+  const pageNames = Object.fromEntries(Object.entries(options.pages ?? {}).flatMap(([path, page]) => page.name?.trim() ? [[path, page.name.trim()]] : []))
+  const pageFigma = Object.fromEntries(Object.entries(options.pages ?? {}).flatMap(([path, page]) => page.figma ? [[path, page.figma]] : []))
+  const pageLocations = Object.fromEntries(Object.entries(options.pages ?? {}).flatMap(([path, page]) => page.location?.trim() ? [[path, page.location.trim()]] : []))
+  const resolvedPageNames = { ...(options.pageNames ?? {}), ...pageNames }
   return {
     enabled: options.enabled ?? true,
     launcher: options.launcher ?? true,
@@ -19,8 +23,9 @@ export function resolveOptions(options: PageFlowOptions = {}): ResolvedPageFlowO
     dynamicParams: options.dynamicParams ?? {},
     previewRoles: options.previewRoles ?? [],
     groupNames: options.groupNames ?? {},
-    pageNames: options.pageNames ?? {},
-    figmaPages: normalizeFigmaPages(options.figmaPages),
+    pageNames: resolvedPageNames,
+    figmaPages: normalizeFigmaPages(pageFigma, resolvedPageNames),
+    pageLocations,
     canvasLayouts: options.canvasLayouts ?? {},
     pageTests: options.pageTests ?? {},
     testCommands: options.testCommands ?? {},
@@ -76,7 +81,7 @@ export async function loadProjectOptions(root: string, options: PageFlowOptions 
       previewRoles: options.previewRoles ?? stored.previewRoles,
       groupNames: { ...(options.groupNames ?? {}), ...(stored.groupNames ?? {}) },
       pageNames: { ...(options.pageNames ?? {}), ...(stored.pageNames ?? {}) },
-      figmaPages: { ...(options.figmaPages ?? {}), ...(stored.figmaPages ?? {}) },
+      pages: { ...(options.pages ?? {}), ...(stored.pages ?? {}) },
       canvasLayouts: { ...(options.canvasLayouts ?? {}), ...(stored.canvasLayouts ?? {}) },
       pageTests: options.pageTests ?? stored.pageTests,
       testCommands: options.testCommands ?? stored.testCommands,

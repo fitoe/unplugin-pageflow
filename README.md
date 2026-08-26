@@ -100,11 +100,15 @@ PageFlow.vite({ launcher: false })
 
 ```json
 {
-  "figmaPages": {
-    "/pages/agri-condition/home/index": "https://www.figma.com/design/FILE_KEY/Project?node-id=123-456"
+  "pages": {
+    "/pages/agri-condition/home/index": {
+      "figma": "FILE_KEY#123:456"
+    }
   }
 }
 ```
+
+未绑定时可直接点击常驻的 Figma 按钮，粘贴包含节点链接的任意文本；PageFlow 会自动识别并保存紧凑的 `fileKey#nodeId`。
 
 浮动按钮只注入开发环境，不进入生产构建。端口跟随项目的 Vite 开发服务器。Vue Router 路由会自动发现；uni-app 以 `pages.json` 作为页面集合与顺序的唯一来源，`.pageflow` 中的 `routes` 只用于覆盖路由元数据或补充自定义页面，不会裁剪 `pages.json` 页面。
 

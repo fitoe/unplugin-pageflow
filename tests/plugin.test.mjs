@@ -40,22 +40,48 @@ test('persists edited group and page names and refreshes the virtual client conf
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ key: '/screen/legacy/yuye', name: '渔业演示' }),
     })
+    const saveFigmaPage = await fetch(`${origin}/__unplugin-pageflow/api/figma-page`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        path: '/orders/42',
+        text: '设计稿：https://www.figma.com/design/AbCdEf/PageFlow?node-id=123-456',
+      }),
+    })
+    const savePageLocation = await fetch(`${origin}/__unplugin-pageflow/api/page-location`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ path: '/orders/42', location: '/orders/42?tab=history#latest' }),
+    })
     const refreshedConfig = await (await fetch(configUrl)).text()
     const stored = JSON.parse(await readFile(resolve(root, '.pageflow'), 'utf8'))
     assert.equal(save.status, 200)
     assert.equal(saveLayout.status, 200)
     assert.equal(savePageName.status, 200)
+    assert.equal(saveFigmaPage.status, 200)
+    assert.equal(savePageLocation.status, 200)
     assert.match(refreshedConfig, /业务流程/)
     assert.match(refreshedConfig, /overview/)
     assert.match(refreshedConfig, /渔业演示/)
     assert.equal(stored.groupNames.business, '业务流程')
     assert.equal(stored.pageNames['/screen/legacy/yuye'], '渔业演示')
+    assert.equal(stored.pages['/orders/42'].figma, 'AbCdEf#123:456')
+    assert.equal(stored.pages['/orders/42'].location, '/orders/42?tab=history#latest')
+    assert.equal(stored.figmaPages?.['/orders/42'], undefined)
     assert.deepEqual(stored.canvasLayouts['/business'].overview, [120, 240])
+    const deleteFigmaPage = await fetch(`${origin}/__unplugin-pageflow/api/figma-page`, {
+      method: 'DELETE',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ path: '/orders/42' }),
+    })
+    const storedAfterDelete = JSON.parse(await readFile(resolve(root, '.pageflow'), 'utf8'))
+    assert.equal(deleteFigmaPage.status, 200)
+    assert.deepEqual(storedAfterDelete.pages?.['/orders/42'], { location: '/orders/42?tab=history#latest' })
     await writeFile(resolve(root, '.pageflow'), JSON.stringify({
       enabled: true,
       previewPath: '/__unplugin-pageflow/',
       groupNames: { refreshed: '重新读取' },
-      figmaPages: { '/orders/:id': 'https://www.figma.com/design/AbCdEf/PageFlow?node-id=123-456' },
+      pages: { '/orders/:id': { figma: 'AbCdEf#123:456', location: '/orders/:id?id=42' } },
       canvasLayouts: { '/': { home: [320, 180] } },
     }))
     const refreshResponse = await fetch(`${origin}/__unplugin-pageflow/api/config`, { method: 'POST' })
@@ -64,7 +90,8 @@ test('persists edited group and page names and refreshes the virtual client conf
     assert.equal(refreshed.loaded, true)
     assert.equal(refreshed.source, resolve(root, '.pageflow'))
     assert.equal(refreshed.groupNames.refreshed, '重新读取')
-    assert.equal(refreshed.figmaPages['/orders/:id'].openMode, 'desktop')
+    assert.equal(refreshed.figmaPages['/orders/:id'].ref, 'AbCdEf#123:456')
+    assert.equal(refreshed.pageLocations['/orders/:id'], '/orders/:id?id=42')
     assert.deepEqual(refreshed.canvasLayouts['/'].home, [320, 180])
   } finally {
     await server.close()

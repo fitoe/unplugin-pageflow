@@ -332,10 +332,23 @@ test('discovers Vue Router routes and reports rendered navigation hotspots', asy
       && item.message.to === '/about'
       && item.message.location === '/about?from=uni'))
 
+    const uniInput = window.document.createElement('uni-input')
+    const inputWrapper = window.document.createElement('uni-view')
+    const input = window.document.createElement('input')
+    inputWrapper.getBoundingClientRect = () => ({ left: 20, top: 310, width: 180, height: 32 })
+    input.addEventListener('click', () => window.uni.navigateTo({ url: '/about?from=input' }))
+    inputWrapper.append(input)
+    uniInput.append(inputWrapper)
+    container.append(uniInput)
+    input.click()
+    await new Promise(resolve => setTimeout(resolve, 20))
+    assert.equal([...window.document.querySelectorAll('[data-unplugin-pageflow-hotspot="event"]')]
+      .some(element => element.style.top === '310px'), false)
+
     const detachedNavigationCount = parentMessages.filter(item => item.message.type === 'unplugin-pageflow:navigate').length
     const navigationResult = await window.uni.navigateTo({ url: '/about?from=login-success' })
     assert.deepEqual(navigationResult, { errMsg: 'navigateTo:ok', original: true })
-    assert.deepEqual(originalUniNavigations, ['/about?from=uni', '/about?from=login-success'])
+    assert.deepEqual(originalUniNavigations, ['/about?from=uni', '/about?from=input', '/about?from=login-success'])
     assert.equal(parentMessages.filter(item => item.message.type === 'unplugin-pageflow:navigate').length, detachedNavigationCount + 1)
     assert.deepEqual(parentMessages.findLast(item => item.message.type === 'unplugin-pageflow:navigate').message, {
       type: 'unplugin-pageflow:navigate',
@@ -356,6 +369,7 @@ test('discovers Vue Router routes and reports rendered navigation hotspots', asy
     }))
     assert.deepEqual(originalUniNavigations, [
       '/about?from=uni',
+      '/about?from=input',
       '/about?from=login-success',
       '/about?from=uni',
     ])
