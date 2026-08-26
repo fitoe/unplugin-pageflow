@@ -2,6 +2,7 @@ import { readFile, writeFile } from 'node:fs/promises'
 import { resolve } from 'node:path'
 import type { PageFlowOptions, ResolvedPageFlowOptions } from '../shared/types.ts'
 import { resolvePageFlowApiDiagnosticOptions, resolvePageFlowDiagnosticOptions } from '../shared/options.ts'
+import { normalizeFigmaPages } from '../client/figma.ts'
 
 function normalizePreviewPath(path: string) {
   return `/${path.replace(/^\/+|\/+$/g, '')}/`
@@ -19,6 +20,7 @@ export function resolveOptions(options: PageFlowOptions = {}): ResolvedPageFlowO
     previewRoles: options.previewRoles ?? [],
     groupNames: options.groupNames ?? {},
     pageNames: options.pageNames ?? {},
+    figmaPages: normalizeFigmaPages(options.figmaPages),
     canvasLayouts: options.canvasLayouts ?? {},
     pageTests: options.pageTests ?? {},
     testCommands: options.testCommands ?? {},
@@ -74,6 +76,7 @@ export async function loadProjectOptions(root: string, options: PageFlowOptions 
       previewRoles: options.previewRoles ?? stored.previewRoles,
       groupNames: { ...(options.groupNames ?? {}), ...(stored.groupNames ?? {}) },
       pageNames: { ...(options.pageNames ?? {}), ...(stored.pageNames ?? {}) },
+      figmaPages: { ...(options.figmaPages ?? {}), ...(stored.figmaPages ?? {}) },
       canvasLayouts: { ...(options.canvasLayouts ?? {}), ...(stored.canvasLayouts ?? {}) },
       pageTests: options.pageTests ?? stored.pageTests,
       testCommands: options.testCommands ?? stored.testCommands,

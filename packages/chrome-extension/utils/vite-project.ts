@@ -7,6 +7,14 @@ export type LoadedPageFlowProject = PageFlowProjectConfig & {
 
 type PublicGraph = { pages: Array<Pick<PageFlowGraph['pages'][number], 'id' | 'title' | 'path'>> }
 
+interface ProjectCanvasOptions {
+  groupNames: ResolvedPageFlowOptions['groupNames']
+  pageNames: ResolvedPageFlowOptions['pageNames']
+  figmaPages: ResolvedPageFlowOptions['figmaPages']
+  canvasLayouts: ResolvedPageFlowOptions['canvasLayouts']
+  pages: PageFlowHostState['pages']
+}
+
 interface PublicPageFlowProject extends Partial<ProjectCanvasOptions> {
   graph?: PublicGraph
 }
@@ -39,6 +47,7 @@ function resolveProject(config: PublicPageFlowProject, graph: PublicGraph, origi
     source,
     groupNames: config.groupNames ?? {},
     pageNames: config.pageNames ?? {},
+    figmaPages: config.figmaPages ?? {},
     canvasLayouts: translateViteCanvasLayouts(config.canvasLayouts, graph, origin),
     pages: (config.pages ?? graph.pages.map(page => ({
       url: new URL(page.path, origin).href,
@@ -70,12 +79,12 @@ export async function loadVitePageFlowProject(origin: string, declaredUrl?: stri
       fetch(new URL('/@id/__x00__virtual:unplugin-pageflow/config', origin)),
       fetch(new URL('/__unplugin-pageflow/api/graph', origin)),
     ])
-    if (!configResponse.ok || !graphResponse.ok) return { loaded: false, groupNames: {}, pageNames: {}, canvasLayouts: {}, pages: [] }
+    if (!configResponse.ok || !graphResponse.ok) return { loaded: false, groupNames: {}, pageNames: {}, figmaPages: {}, canvasLayouts: {}, pages: [] }
     const config = parseVitePageFlowConfig(await configResponse.text())
-    if (!config) return { loaded: false, groupNames: {}, pageNames: {}, canvasLayouts: {}, pages: [] }
+    if (!config) return { loaded: false, groupNames: {}, pageNames: {}, figmaPages: {}, canvasLayouts: {}, pages: [] }
     const graph = await graphResponse.json() as PageFlowGraph
     return resolveProject(config, graph, origin, '.pageflow')
   } catch {
-    return { loaded: false, groupNames: {}, pageNames: {}, canvasLayouts: {}, pages: [] }
+    return { loaded: false, groupNames: {}, pageNames: {}, figmaPages: {}, canvasLayouts: {}, pages: [] }
   }
 }

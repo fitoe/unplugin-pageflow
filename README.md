@@ -96,6 +96,16 @@ http://localhost:5173/__unplugin-pageflow/
 PageFlow.vite({ launcher: false })
 ```
 
+可在 `.pageflow` 中把页面绑定到 Figma 节点；聚焦该页面后，预览旁会显示 Figma 按钮：
+
+```json
+{
+  "figmaPages": {
+    "/pages/agri-condition/home/index": "https://www.figma.com/design/FILE_KEY/Project?node-id=123-456"
+  }
+}
+```
+
 浮动按钮只注入开发环境，不进入生产构建。端口跟随项目的 Vite 开发服务器。Vue Router 路由会自动发现；uni-app 以 `pages.json` 作为页面集合与顺序的唯一来源，`.pageflow` 中的 `routes` 只用于覆盖路由元数据或补充自定义页面，不会裁剪 `pages.json` 页面。
 
 ## 框架支持

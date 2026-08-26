@@ -806,6 +806,7 @@ const factory: UnpluginFactory<PageFlowOptions | undefined> = (options) => {
               graph: { pages: graph.pages.map(({ id, title, path }) => ({ id, title, path })) },
               groupNames: resolved.groupNames,
               pageNames: resolved.pageNames,
+              figmaPages: resolved.figmaPages,
               canvasLayouts: resolved.canvasLayouts,
             }))
             return
@@ -824,6 +825,7 @@ const factory: UnpluginFactory<PageFlowOptions | undefined> = (options) => {
                 ...resolved.configFile,
                 groupNames: resolved.groupNames,
                 pageNames: resolved.pageNames,
+                figmaPages: resolved.figmaPages,
                 canvasLayouts: resolved.canvasLayouts,
               }))
             } catch (error) {

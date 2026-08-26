@@ -54,6 +54,7 @@ import PageTreePanel from './components/PageTreePanel.vue'
 
 const pageFlowVersion = __PAGEFLOW_VERSION__
 import { createApiIssues, mergeApiResult, type PageFlowApiIssue } from './client/api-diagnostics'
+import { figmaLinkForPage, openFigmaLink } from './client/figma'
 import { isPreviewUserStorageKey } from './client/user-sessions'
 import { usePageUsers } from './client/page-users'
 import { buildWorkbenchHash, parseWorkbenchHash } from './client/workbench-location'
@@ -201,6 +202,7 @@ const active = ref('home')
 const status = ref(props.config.previewPath === '/' ? 'Demo data' : 'Discovering routes…')
 const groupNames = ref({ ...props.config.groupNames })
 const pageNames = ref({ ...props.config.pageNames })
+const figmaPages = ref({ ...props.config.figmaPages })
 const canvasLayouts = ref({ ...props.config.canvasLayouts })
 const configPopoverOpen = ref(false)
 const configRefreshing = ref(false)
@@ -314,6 +316,15 @@ function toggleFavoritePage(pageId: string) {
   else next.add(pageId)
   favoritePageIds.value = next
   localStorage.setItem(FAVORITE_PAGES_STORAGE_KEY, JSON.stringify([...next]))
+}
+
+function pageFigmaLink(page: PageFlowPage) {
+  return figmaLinkForPage(page, figmaPages.value)
+}
+
+function openPageInFigma(page: PageFlowPage) {
+  const link = pageFigmaLink(page)
+  if (link) openFigmaLink(link)
 }
 const focusedPageChecks = computed(() => {
   const page = pages.value.find(item => item.id === focusedPageId.value)
@@ -1580,6 +1591,7 @@ async function refreshProjectConfig() {
       : await refreshPageFlowConfig(props.config)
     groupNames.value = { ...refreshed.groupNames }
     pageNames.value = { ...refreshed.pageNames }
+    figmaPages.value = { ...(refreshed.figmaPages ?? {}) }
     canvasLayouts.value = { ...refreshed.canvasLayouts }
     configFileStatus.value = { loaded: refreshed.loaded, source: refreshed.source }
     if (props.host) applyHostState(await props.host.loadState())
@@ -4533,6 +4545,24 @@ onUnmounted(() => {
                 transformOrigin: 'top left',
               }"
               @click.stop="toggleFavoritePage(page.id)"
+            />
+            <UButton
+              v-if="page.id === focusedPageId && pageFigmaLink(page)"
+              type="button"
+              class="page-figma-action"
+              icon="i-lucide-figma"
+              :label="pageFigmaLink(page)?.label || 'Figma'"
+              color="neutral"
+              variant="soft"
+              size="xs"
+              aria-label="在 Figma 中打开当前页面"
+              :style="{
+                left: `${PAGE_CARD_WIDTH + 16 / Math.max(settledTransform.scaleX, 0.01)}px`,
+                top: `${(focusedFormAvailable ? 118 : 84) / Math.max(settledTransform.scaleY, 0.01)}px`,
+                transform: `scale(${1 / Math.max(settledTransform.scaleX, 0.01)}, ${1 / Math.max(settledTransform.scaleY, 0.01)})`,
+                transformOrigin: 'top left',
+              }"
+              @click.stop="openPageInFigma(page)"
             />
           </div>
           <div

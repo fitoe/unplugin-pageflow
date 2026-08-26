@@ -14,6 +14,7 @@ const pageFlowIcons = [
   'i-lucide-download',
   'i-lucide-file-code-2',
   'i-lucide-file-plus-2',
+  'i-lucide-figma',
   'i-lucide-gauge',
   'i-lucide-monitor',
   'i-lucide-moon',

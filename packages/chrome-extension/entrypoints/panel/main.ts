@@ -30,6 +30,7 @@ const config: ResolvedPageFlowOptions = {
   previewRoles: [],
   groupNames: project.groupNames ?? {},
   pageNames: project.pageNames ?? {},
+  figmaPages: project.figmaPages ?? {},
   canvasLayouts: project.canvasLayouts ?? {},
   pageTests: {},
   testCommands: {},

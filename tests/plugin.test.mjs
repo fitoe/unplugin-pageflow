@@ -55,6 +55,7 @@ test('persists edited group and page names and refreshes the virtual client conf
       enabled: true,
       previewPath: '/__unplugin-pageflow/',
       groupNames: { refreshed: '重新读取' },
+      figmaPages: { '/orders/:id': 'https://www.figma.com/design/AbCdEf/PageFlow?node-id=123-456' },
       canvasLayouts: { '/': { home: [320, 180] } },
     }))
     const refreshResponse = await fetch(`${origin}/__unplugin-pageflow/api/config`, { method: 'POST' })
@@ -63,6 +64,7 @@ test('persists edited group and page names and refreshes the virtual client conf
     assert.equal(refreshed.loaded, true)
     assert.equal(refreshed.source, resolve(root, '.pageflow'))
     assert.equal(refreshed.groupNames.refreshed, '重新读取')
+    assert.equal(refreshed.figmaPages['/orders/:id'].openMode, 'desktop')
     assert.deepEqual(refreshed.canvasLayouts['/'].home, [320, 180])
   } finally {
     await server.close()

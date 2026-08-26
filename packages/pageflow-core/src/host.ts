@@ -6,6 +6,7 @@ export interface PageFlowHostProjectConfig {
   error?: string
   groupNames: Record<string, string>
   pageNames: Record<string, string>
+  figmaPages?: Record<string, { url: string, label?: string, openMode?: 'desktop' | 'browser' }>
   canvasLayouts: Record<string, Record<string, [number, number]>>
 }
 

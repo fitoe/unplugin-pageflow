@@ -79,6 +79,7 @@ header {
 .page-user-overlay { position: absolute; z-index: 4; width: 240px; height: 0; overflow: visible; pointer-events: none; }
 .page-form-fill-action { position: absolute; height: 26px; pointer-events: auto; white-space: nowrap; box-shadow: 0 2px 7px var(--pageflow-shadow); }
 .page-favorite-action { position: absolute; height: 26px; pointer-events: auto; white-space: nowrap; box-shadow: 0 2px 7px var(--pageflow-shadow); }
+.page-figma-action { position: absolute; height: 26px; pointer-events: auto; white-space: nowrap; box-shadow: 0 2px 7px var(--pageflow-shadow); }
 .viewport-switch-layout { margin-left: 0; }
 
 .workspace { position: absolute; inset: 46px 0 28px; overflow: hidden; overscroll-behavior: none; touch-action: none; }
