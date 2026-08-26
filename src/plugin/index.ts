@@ -661,8 +661,19 @@ const factory: UnpluginFactory<PageFlowOptions | undefined> = (options) => {
         return `import config from '${PAGEFLOW_CONFIG_ID}'; import { startPageFlowRuntime } from '${runtimeEntry}'; startPageFlowRuntime(config)`
     },
     transform(code, id) {
-      if (!id.endsWith('.vue')) return
-      updateSource(code, id)
+      if (id.endsWith('.vue')) {
+        updateSource(code, id)
+        return
+      }
+      // uni-app's HTML plugin can bypass transformIndexHtml for the generated
+      // H5 entry page. Inject into the app entry as a fallback so the runtime
+      // (and development launcher) still starts on normal hash routes.
+      if (resolved.framework === 'uni-app'
+        && /\.(?:[cm]?[jt]sx?)$/.test(id)
+        && /\.mount\(\s*['"]#app['"]\s*\)/.test(code)
+        && !code.includes(PAGEFLOW_RUNTIME_ID)) {
+        return `import '${PAGEFLOW_RUNTIME_ID}'\n${code}`
+      }
     },
     vite: {
       apply: 'serve',

@@ -2238,6 +2238,18 @@ function cacheCurrentFocusedLinks() {
 }
 
 function activatePreview(pageId: string, animate = true, navigationFramePageId?: string) {
+  // In-page navigation (tabs, filters, query changes, etc.) can report the
+  // current route again. The live iframe already owns that transition, so
+  // replaying the canvas flight only makes the page shrink and grow without
+  // changing focus.
+  if (focusedPageId.value === pageId) {
+    const framePageId = navigationFramePageId ?? livePreviewFrameId.value ?? pageId
+    livePreviewFrameId.value = framePageId
+    livePreviewId.value = pageId
+    livePreviewCacheIds.value = touchPreviewCache(livePreviewCacheIds.value, pageId)
+    if (!props.host) void nextTick(() => requestFocusedPageScan(pageId))
+    return
+  }
   if (animate && focusedPageId.value && focusedPageId.value !== pageId) {
     focusAnimation.cancel()
     clearFocus(Boolean(navigationFramePageId))
