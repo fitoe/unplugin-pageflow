@@ -123,10 +123,12 @@
   "dependencies": {
     "@faker-js/faker": "^10.6.0",
     "@nuxt/ui": "^4.10.0",
+    "@vueuse/integrations": "14.4.0",
     "axe-core": "^4.12.1",
     "chrome-launcher": "^1.2.1",
     "lighthouse": "^13.4.1",
     "puppeteer-core": "^25.4.0",
+    "sortablejs": "1.15.6",
     "tailwindcss": "^4.3.3",
     "unplugin": "^2.3.5",
     "vue-json-pretty": "^2.6.0"

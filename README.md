@@ -110,6 +110,8 @@ PageFlow.vite({ launcher: false })
 
 未绑定时可直接点击常驻的 Figma 按钮，粘贴包含节点链接的任意文本；PageFlow 会自动识别并保存紧凑的 `fileKey#nodeId`。
 
+如需检查绑定设计文件是否有新版本，在运行 PageFlow 的本地环境中设置 `FIGMA_ACCESS_TOKEN`（也兼容 `FIGMA_TOKEN`）。令牌是当前环境的全局能力，不属于项目配置，PageFlow 只在本地服务端使用它。首次成功查询时会自动为尚无基线的绑定保存一个轻量的 `figmaVersion` 字符串；之后文件版本变化时，Figma 图标会显示橙色提示。提示表示文件有更新，不代表绑定节点一定发生了变化。
+
 浮动按钮只注入开发环境，不进入生产构建。端口跟随项目的 Vite 开发服务器。Vue Router 路由会自动发现；uni-app 以 `pages.json` 作为页面集合与顺序的唯一来源，`.pageflow` 中的 `routes` 只用于覆盖路由元数据或补充自定义页面，不会裁剪 `pages.json` 页面。
 
 ## 框架支持

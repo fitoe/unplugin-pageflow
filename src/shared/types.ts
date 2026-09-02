@@ -8,11 +8,15 @@ export interface PageFlowFigmaLink {
   url: string
   ref: string
   label?: string
+  /** Figma file version last acknowledged by the user. */
+  version?: string
 }
 
 export interface PageFlowPageConfig {
   name?: string
   figma?: string
+  /** Figma file version last acknowledged by the user. */
+  figmaVersion?: string
   /** Last parameterized location used to open this page. */
   location?: string
 }
@@ -37,6 +41,8 @@ export interface PageFlowOptions {
   /** Page-owned metadata. */
   pages?: Record<string, PageFlowPageConfig>
   canvasLayouts?: Record<string, Record<string, [number, number]>>
+  /** Page-tree placement overrides. These do not move or rename source files. */
+  pageTree?: { placements?: Record<string, { group?: string, order?: number }> }
   /** Explicit route or route-glob to test file/glob mappings. */
   pageTests?: Record<string, string[]>
   /** Explicit test commands. Placeholders: {file}, {name}. Commands run without a shell. */
@@ -86,6 +92,7 @@ export interface ResolvedPageFlowOptions {
   pageNames: Record<string, string>
   figmaPages: Record<string, PageFlowFigmaLink>
   pageLocations: Record<string, string>
+  pageTreePlacements: Record<string, { group?: string, order?: number }>
   canvasLayouts: Record<string, Record<string, [number, number]>>
   pageTests: Record<string, string[]>
   testCommands: Partial<Record<PageFlowTestKind, PageFlowTestCommand>>
@@ -105,6 +112,7 @@ export interface PageFlowProjectConfig extends PageFlowConfigFileStatus {
   pageNames: Record<string, string>
   figmaPages: Record<string, PageFlowFigmaLink>
   pageLocations: Record<string, string>
+  pageTreePlacements: Record<string, { group?: string, order?: number }>
   canvasLayouts: Record<string, Record<string, [number, number]>>
 }
 

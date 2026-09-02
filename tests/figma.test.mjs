@@ -25,6 +25,8 @@ test('parses, normalizes, matches, and opens Figma page links', async () => {
     }, { '/orders/:id': '订单设计' })
     assert.equal(mappings['/orders/:id'].ref, 'AbCdEf#123:456')
     assert.equal(mappings['/invalid'], undefined)
+    const versioned = normalizeFigmaPages({ '/orders/:id': 'AbCdEf#123:456' }, {}, { '/orders/:id': '42' })
+    assert.equal(versioned['/orders/:id'].version, '42')
     assert.equal(figmaLinkForPage({ id: 'order-42', path: '/orders/42?tab=detail' }, mappings)?.label, '订单设计')
     assert.equal(figmaLinkForPage({ id: 'https://app.test/orders/42', path: 'https://app.test/orders/42?tab=detail' }, mappings)?.label, '订单设计')
 

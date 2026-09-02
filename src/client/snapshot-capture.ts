@@ -74,22 +74,39 @@ export function waitForWebGLRender(target: HTMLElement) {
   return new Promise<void>(resolve => view.requestAnimationFrame(() => resolve()))
 }
 
+export const PAGEFLOW_PRESERVED_CANVAS_MAX_PIXELS = 1_048_576
+
+export function boundedCanvasFrameSize(width: number, height: number, maximumPixels = PAGEFLOW_PRESERVED_CANVAS_MAX_PIXELS) {
+  const safeWidth = Math.max(1, Math.floor(width))
+  const safeHeight = Math.max(1, Math.floor(height))
+  const pixels = safeWidth * safeHeight
+  if (pixels <= maximumPixels) return { width: safeWidth, height: safeHeight }
+  const scale = Math.sqrt(maximumPixels / pixels)
+  return {
+    width: Math.max(1, Math.floor(safeWidth * scale)),
+    height: Math.max(1, Math.floor(safeHeight * scale)),
+  }
+}
+
 export async function preserveCanvasFrames(target: HTMLElement) {
   const restores: Array<() => void> = []
   const decodes: Promise<unknown>[] = []
   target.querySelectorAll('canvas').forEach((source) => {
     const frame = source.ownerDocument.createElement('canvas')
-    frame.width = source.width
-    frame.height = source.height
+    const frameSize = boundedCanvasFrameSize(source.width, source.height)
+    frame.width = frameSize.width
+    frame.height = frameSize.height
     const context = frame.getContext('2d')
     if (!context) return
     try {
-      context.drawImage(source, 0, 0)
+      context.drawImage(source, 0, 0, frame.width, frame.height)
       const dataUrl = frame.toDataURL()
+      frame.width = 0
+      frame.height = 0
       const image = source.ownerDocument.createElement('img')
       image.src = dataUrl
-      image.width = source.width
-      image.height = source.height
+      image.width = frameSize.width
+      image.height = frameSize.height
       image.className = source.className
       image.style.cssText = source.style.cssText
       const style = source.ownerDocument.defaultView?.getComputedStyle(source)
@@ -112,7 +129,10 @@ export async function preserveCanvasFrames(target: HTMLElement) {
       source.replaceWith(image)
       restores.push(() => image.replaceWith(source))
       decodes.push(image.decode().catch(() => undefined))
-    } catch {}
+    } catch {
+      frame.width = 0
+      frame.height = 0
+    }
   })
   await Promise.all(decodes)
   return () => restores.forEach(restore => restore())

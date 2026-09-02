@@ -81,6 +81,7 @@ header {
 .page-favorite-action { position: absolute; height: 26px; pointer-events: auto; white-space: nowrap; box-shadow: 0 2px 7px var(--pageflow-shadow); }
 .page-figma-actions { position: absolute; display: flex; height: 26px; pointer-events: auto; white-space: nowrap; filter: drop-shadow(0 2px 7px var(--pageflow-shadow)); }
 .page-figma-action { height: 26px; border-radius: 6px 0 0 6px; }
+.page-figma-action.has-update::after { content: ''; position: absolute; top: -3px; right: -3px; width: 7px; height: 7px; border: 2px solid var(--pageflow-surface); border-radius: 50%; background: #f59e0b; }
 .figma-brand-icon { width: 10px; height: 15px; flex: none; }
 .page-figma-menu { height: 26px; min-width: 24px; padding-inline: 4px; border-left: 1px solid var(--pageflow-border); border-radius: 0 6px 6px 0; }
 .page-figma-actions > .page-figma-action:last-child { border-radius: 6px; }
@@ -233,7 +234,8 @@ header {
 .page-tree-list { min-height: 0; flex: 1; overflow: auto; padding: 8px 7px 10px; }
 .page-tree-row { --tree-indent: calc(var(--tree-depth) * 16px); display: flex; width: 100%; min-width: 0; cursor: pointer; align-items: center; border: 0; border-radius: 5px; color: var(--pageflow-muted); background: transparent; padding-right: 7px; padding-left: calc(5px + var(--tree-indent)); text-align: left; }
 .page-tree-row:hover, .page-tree-row:focus-visible { color: var(--pageflow-text); background: var(--pageflow-surface-muted); outline: none; }
-.page-tree-row.is-group { height: 29px; gap: 0; font: 11px var(--pageflow-font-sans); }
+.page-tree-row.is-group { position: relative; height: 29px; gap: 0; font: 11px var(--pageflow-font-sans); }
+.page-tree-row.is-group > .page-tree-drag-handle { position: relative; display: grid; width: 14px; min-width: 14px; height: 20px; flex: 0 0 14px; cursor: grab; color: var(--pageflow-muted); place-items: center; }
 .page-tree-toggle { display: grid; width: 17px; height: 100%; flex: none; cursor: pointer; border: 0; color: inherit; background: transparent; padding: 0; place-items: center; }
 .page-tree-group-link { display: flex; min-width: 0; height: 100%; flex: 1; cursor: pointer; align-items: center; gap: 4px; border: 0; color: inherit; background: transparent; padding: 0; text-align: left; }
 .page-tree-toggle:focus-visible, .page-tree-group-link:focus-visible { outline: 1px solid currentColor; outline-offset: -2px; }
@@ -246,17 +248,39 @@ header {
 .page-tree-row.is-group.is-active .page-tree-group-link > span { color: currentColor; }
 .page-tree-node-icon { width: 14px; height: 14px; flex: none; fill: none; stroke: currentColor; stroke-linecap: round; stroke-linejoin: round; stroke-width: 1.25; }
 .page-tree-row.is-page { position: relative; min-height: 31px; gap: 7px; padding-top: 3px; padding-bottom: 3px; }
-.page-tree-row.is-page > span:not(.page-tree-guide) { display: flex; min-width: 0; flex: 1; align-items: center; }
+.page-tree-row.is-page > span:not(.page-tree-guide):not(.page-tree-drag-handle) { display: flex; min-width: 0; flex: 1; align-items: center; }
 .page-tree-title { display: flex; min-width: 0; align-items: center; gap: 4px; }
+.page-tree-title strong { cursor: inherit; }
 .page-tree-row.is-page strong { min-width: 0; overflow: hidden; color: var(--pageflow-text); font-size: 11px; font-weight: 500; text-overflow: ellipsis; white-space: nowrap; }
 .page-tree-title b { flex: none; color: #f59e0b; font-size: 10px; font-weight: 400; }
 .page-tree-figma { width: 8px; height: 12px; }
+.page-tree-figma.has-update { filter: drop-shadow(3px -4px 0 #f59e0b); }
 .page-tree-row.is-page.is-favorite strong { color: #b45309; }
 .dark .page-tree-row.is-page.is-favorite strong { color: #fbbf24; }
 .page-tree-row.is-page em { flex: none; border: 1px solid var(--pageflow-border); border-radius: 3px; padding: 1px 3px; color: var(--pageflow-muted); font: normal 7px var(--pageflow-font-mono); }
 .page-tree-row.is-page.is-active { color: #2563eb; background: color-mix(in srgb, #3b82f6 9%, var(--pageflow-surface)); }
 .dark .page-tree-row.is-page.is-active { color: #60a5fa; }
 .page-tree-row.is-page.is-active::before { position: absolute; top: 6px; bottom: 6px; left: calc(2px + var(--tree-indent)); width: 2px; border-radius: 999px; background: currentColor; content: ''; }
+.page-tree-row.is-page[data-sortable="true"] { touch-action: manipulation; }
+.page-tree-row.is-page > .page-tree-drag-handle { position: relative; display: grid; width: 14px; min-width: 14px; height: 20px; flex: 0 0 14px; cursor: grab; color: var(--pageflow-muted); place-items: center; transition: color 100ms ease; }
+.page-tree-drag-handle svg { position: absolute; transition: opacity 100ms ease; }
+.page-tree-drag-handle .page-tree-page-icon { width: 14px; height: 14px; fill: none; stroke: currentColor; stroke-linecap: round; stroke-linejoin: round; stroke-width: 1.25; }
+.page-tree-drag-handle .page-tree-grip-icon { width: 10px; height: 14px; fill: currentColor; opacity: 0; }
+.page-tree-row:hover > .page-tree-drag-handle .page-tree-page-icon, .page-tree-row:focus-visible > .page-tree-drag-handle .page-tree-page-icon, .page-tree-row.is-sortable-chosen > .page-tree-drag-handle .page-tree-page-icon { opacity: 0; }
+.page-tree-row:hover > .page-tree-drag-handle .page-tree-grip-icon, .page-tree-row:focus-visible > .page-tree-drag-handle .page-tree-grip-icon, .page-tree-row.is-sortable-chosen > .page-tree-drag-handle .page-tree-grip-icon { opacity: 1; }
+.page-tree-drag-handle:hover { color: var(--pageflow-text); }
+.page-tree-row.is-page.is-sortable-chosen .page-tree-drag-handle { cursor: grabbing; }
+.page-tree-row.is-page.is-sortable-ghost { opacity: .28; background: color-mix(in srgb, #3b82f6 16%, var(--pageflow-surface)); }
+.page-tree-row.is-page.is-sortable-drag { border: 1px solid color-mix(in srgb, #3b82f6 60%, var(--pageflow-border)); background: var(--pageflow-surface); box-shadow: 0 8px 22px var(--pageflow-shadow); }
+.page-tree-row.is-page.is-sortable-fallback { z-index: 10000 !important; opacity: .68 !important; border: 1px solid color-mix(in srgb, #3b82f6 55%, var(--pageflow-border)); background: color-mix(in srgb, var(--pageflow-surface) 94%, #3b82f6); box-shadow: 0 10px 28px rgb(15 23 42 / 24%); pointer-events: none; }
+.page-tree-row.is-drop-before::after, .page-tree-row.is-drop-after::after { position: absolute; z-index: 5; right: 5px; left: calc(5px + var(--tree-indent)); height: 2px; border-radius: 999px; background: #3b82f6; box-shadow: 0 0 0 1px color-mix(in srgb, #3b82f6 16%, transparent); content: ''; pointer-events: none; }
+.page-tree-row.is-drop-before::after { top: -1px; }
+.page-tree-row.is-drop-after::after { bottom: -1px; }
+.page-tree-row.is-drop-before::before, .page-tree-row.is-drop-after::before { position: absolute; z-index: 6; left: calc(2px + var(--tree-indent)); width: 7px; height: 7px; border-radius: 50%; background: #3b82f6; content: ''; pointer-events: none; }
+.page-tree-row.is-drop-before::before { top: -3px; }
+.page-tree-row.is-drop-after::before { bottom: -3px; }
+.page-tree-row.is-drop-inside { color: #2563eb; background: color-mix(in srgb, #3b82f6 13%, var(--pageflow-surface)); box-shadow: inset 0 0 0 1px #3b82f6; }
+html.is-page-tree-sorting, html.is-page-tree-sorting * { cursor: grabbing !important; user-select: none !important; }
 .page-tree-row.is-page.is-active strong { color: currentColor; }
 .page-tree-row.is-page.is-active.is-favorite strong { color: #b45309; }
 .dark .page-tree-row.is-page.is-active.is-favorite strong { color: #fbbf24; }
@@ -369,6 +393,10 @@ header {
   gap: 8px;
   transform: translateX(-50%);
 }
+.statusbar-left { display: flex; min-width: 0; align-items: center; gap: 12px; }
+.statusbar-display-toggle { display: flex; flex: 0 0 auto; align-items: center; gap: 4px; cursor: pointer; user-select: none; }
+.statusbar-display-toggle:hover { color: var(--pageflow-text); }
+.statusbar-display-toggle input { width: 12px; height: 12px; margin: 0; accent-color: var(--pageflow-text); }
 .statusbar-xpath-toggle { display: flex; flex: 0 0 auto; align-items: center; gap: 4px; cursor: pointer; }
 .statusbar-xpath-toggle input { width: 12px; height: 12px; margin: 0; accent-color: var(--pageflow-text); }
 .statusbar-page-path {

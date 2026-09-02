@@ -44,7 +44,7 @@ export function parseFigmaLink(value: string): ParsedFigmaLink | undefined {
   return { browserUrl: url.href, desktopUrl: desktop.href, fileKey, nodeId }
 }
 
-export function normalizeFigmaPages(input: Record<string, string> | undefined, labels: Record<string, string> = {}): Record<string, PageFlowFigmaLink> {
+export function normalizeFigmaPages(input: Record<string, string> | undefined, labels: Record<string, string> = {}, versions: Record<string, string> = {}): Record<string, PageFlowFigmaLink> {
   return Object.fromEntries(Object.entries(input ?? {}).flatMap(([path, value]) => {
     const url = figmaUrl(value)
     if (!url) return []
@@ -52,6 +52,7 @@ export function normalizeFigmaPages(input: Record<string, string> | undefined, l
       ref: value,
       url,
       ...(labels[path]?.trim() ? { label: labels[path].trim() } : {}),
+      ...(versions[path]?.trim() ? { version: versions[path].trim() } : {}),
     } satisfies PageFlowFigmaLink]]
   }))
 }

@@ -171,6 +171,18 @@ test('discovers Vue Router routes and reports rendered navigation hotspots', asy
       dynamicParams: {},
     })
 
+    const navigationCountBeforeXPath = parentMessages.filter(item => item.message.type === 'unplugin-pageflow:navigate').length
+    window.dispatchEvent(new window.MessageEvent('message', {
+      data: { type: 'unplugin-pageflow:xpath-mode', enabled: true },
+      origin: 'http://localhost',
+    }))
+    link.dispatchEvent(new window.MouseEvent('click', { bubbles: true, cancelable: true }))
+    assert.equal(parentMessages.filter(item => item.message.type === 'unplugin-pageflow:navigate').length, navigationCountBeforeXPath)
+    const xpathMessage = parentMessages.find(item => item.message.type === 'unplugin-pageflow:xpath-selected')
+    assert(xpathMessage, JSON.stringify(parentMessages.slice(-5)))
+    assert.equal(xpathMessage.message.xpath, '/html/body/div[1]/a')
+    assert.equal(window.document.documentElement.hasAttribute('data-unplugin-pageflow-xpath-mode'), false)
+
     const nestedLink = nestedFrame.contentDocument.querySelector('a')
     const nestedEvent = new nestedFrame.contentWindow.MouseEvent('click', { bubbles: true, cancelable: true })
     assert.equal(runtime.interceptNestedFrameLink(nestedLink, nestedEvent, nestedFrame, {
@@ -323,7 +335,10 @@ test('discovers Vue Router routes and reports rendered navigation hotspots', asy
     const uniButton = window.document.createElement('button')
     uniButton.textContent = 'Open about with uni'
     uniButton.getBoundingClientRect = () => ({ left: 20, top: 260, width: 140, height: 32 })
-    uniButton.addEventListener('click', () => window.uni.navigateTo({ url: '/about?from=uni' }))
+    uniButton.addEventListener('click', () => {
+      window.document.title = 'Demand detail'
+      return window.uni.navigateTo({ url: '/about?from=uni' })
+    })
     container.append(uniButton)
     uniButton.click()
     await new Promise(resolve => setTimeout(resolve, 20))
@@ -331,6 +346,11 @@ test('discovers Vue Router routes and reports rendered navigation hotspots', asy
     assert(parentMessages.some(item => item.message.type === 'unplugin-pageflow:navigate'
       && item.message.to === '/about'
       && item.message.location === '/about?from=uni'))
+    const sourcePageReport = [...requests].reverse()
+      .map(request => request.url.endsWith('/api/page') ? JSON.parse(request.init.body) : undefined)
+      .find(page => page?.links?.some(link => link.location === '/about?from=uni'))
+    assert.equal(sourcePageReport.path, '/')
+    assert.equal('title' in sourcePageReport, false)
 
     const uniInput = window.document.createElement('uni-input')
     const inputWrapper = window.document.createElement('uni-view')
@@ -344,6 +364,19 @@ test('discovers Vue Router routes and reports rendered navigation hotspots', asy
     await new Promise(resolve => setTimeout(resolve, 20))
     assert.equal([...window.document.querySelectorAll('[data-unplugin-pageflow-hotspot="event"]')]
       .some(element => element.style.top === '310px'), false)
+
+    const pendingWdInput = window.document.createElement('uni-view')
+    pendingWdInput.className = 'wd-input'
+    pendingWdInput.textContent = '请输入验证码'
+    pendingWdInput.getBoundingClientRect = () => ({ left: 20, top: 350, width: 180, height: 32 })
+    pendingWdInput.onclick = () => {}
+    pendingWdInput.__vueParentComponent = {
+      vnode: { el: pendingWdInput, props: { onClick: function click() { window.uni.navigateTo({ url: '/about?from=wd-input' }) } } },
+    }
+    container.append(pendingWdInput)
+    await new Promise(resolve => setTimeout(resolve, 20))
+    assert.equal([...window.document.querySelectorAll('[data-unplugin-pageflow-hotspot="event"]')]
+      .some(element => element.style.top === '350px'), false)
 
     const detachedNavigationCount = parentMessages.filter(item => item.message.type === 'unplugin-pageflow:navigate').length
     const navigationResult = await window.uni.navigateTo({ url: '/about?from=login-success' })

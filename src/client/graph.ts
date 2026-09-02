@@ -39,6 +39,38 @@ export async function deletePageFlowFigmaLink(config: ResolvedPageFlowOptions, p
   return response.json() as Promise<{ path: string }>
 }
 
+export interface PageFlowFigmaVersionResult {
+  ref: string
+  version?: string
+  createdAt?: string
+  error?: 'not-configured' | 'unauthorized' | 'unavailable'
+}
+
+export async function fetchPageFlowFigmaVersions(config: ResolvedPageFlowOptions) {
+  const response = await fetch(`${config.previewPath}api/figma-version`, { cache: 'no-store' })
+  if (!response.ok) throw new Error('Failed to check Figma versions')
+  return response.json() as Promise<{ versions: PageFlowFigmaVersionResult[] }>
+}
+
+export async function acknowledgePageFlowFigmaVersion(config: ResolvedPageFlowOptions, path: string, version: string) {
+  const response = await fetch(`${config.previewPath}api/figma-version`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ path, version }),
+  })
+  if (!response.ok) throw new Error((await response.json().catch(() => undefined))?.error || 'Failed to acknowledge Figma version')
+}
+
+export async function initializePageFlowFigmaVersions(config: ResolvedPageFlowOptions, versions: Array<{ ref: string, version: string }>) {
+  const response = await fetch(`${config.previewPath}api/figma-version`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ versions }),
+  })
+  if (!response.ok) throw new Error((await response.json().catch(() => undefined))?.error || 'Failed to initialize Figma versions')
+  return response.json() as Promise<{ initialized: Record<string, string> }>
+}
+
 export async function savePageFlowLocation(config: ResolvedPageFlowOptions, path: string, location: string) {
   const response = await fetch(`${config.previewPath}api/page-location`, {
     method: 'POST',
@@ -46,6 +78,15 @@ export async function savePageFlowLocation(config: ResolvedPageFlowOptions, path
     body: JSON.stringify({ path, location }),
   })
   if (!response.ok) throw new Error((await response.json().catch(() => undefined))?.error || 'Failed to save page location')
+}
+
+export async function savePageFlowPageTreePlacement(config: ResolvedPageFlowOptions, path: string, group: string, order: number) {
+  const response = await fetch(`${config.previewPath}api/page-tree-placement`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ path, group, order }),
+  })
+  if (!response.ok) throw new Error((await response.json().catch(() => undefined))?.error || 'Failed to place page in tree')
 }
 
 export async function reportPageTitle(config: ResolvedPageFlowOptions, path: string, title: string) {

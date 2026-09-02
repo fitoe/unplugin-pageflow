@@ -186,3 +186,16 @@ test('uses modern-screenshot and preserves canvas pages', async () => {
     await window.happyDOM.close()
   }
 })
+
+test('bounds preserved canvas pixels before encoding snapshots', async () => {
+  const server = await createServer({ configFile: false, server: { middlewareMode: true }, appType: 'custom', logLevel: 'silent' })
+  try {
+    const { boundedCanvasFrameSize, PAGEFLOW_PRESERVED_CANVAS_MAX_PIXELS } = await server.ssrLoadModule('/src/client/snapshot-capture.ts')
+    assert.deepEqual(boundedCanvasFrameSize(640, 480), { width: 640, height: 480 })
+    const bounded = boundedCanvasFrameSize(12000, 8000)
+    assert(bounded.width * bounded.height <= PAGEFLOW_PRESERVED_CANVAS_MAX_PIXELS)
+    assert.equal(Math.abs(bounded.width / bounded.height - 1.5) < 0.01, true)
+  } finally {
+    await server.close()
+  }
+})

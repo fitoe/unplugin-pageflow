@@ -8,6 +8,7 @@ export interface PageTreePageNode {
   path: string
   virtual: boolean
   order: number
+  parentKey: string
 }
 
 export interface PageTreeGroupNode {
@@ -19,6 +20,7 @@ export interface PageTreeGroupNode {
   pageCount: number
   order: number
   navigable?: boolean
+  parentKey: string
 }
 
 export type PageTreeNode = PageTreeGroupNode | PageTreePageNode
@@ -33,6 +35,51 @@ interface PageTreeOptions {
   pageNames?: Record<string, string>
   orphanPageIds?: ReadonlySet<string>
   groupPath: (page: PageFlowPage) => string[]
+  placements?: Record<string, { group?: string, order?: number }>
+}
+
+function effectiveGroupPath(path: string[], placements: PageTreeOptions['placements']) {
+  let result = [...path]
+  const visited = new Set<string>()
+  for (let attempt = 0; attempt < 20; attempt++) {
+    let changed = false
+    for (let length = result.length; length > 0; length--) {
+      const key = `group:${result.slice(0, length).join('/')}`
+      const parent = placements?.[key]?.group
+      if (parent === undefined || visited.has(key)) continue
+      visited.add(key)
+      result = [...parent.split('/').filter(Boolean), result[length - 1]!, ...result.slice(length)]
+      changed = true
+      break
+    }
+    if (!changed) break
+  }
+  return result
+}
+
+export function placePageTreePath(paths: string[], path: string, relatedPath?: string, insertAfter = false) {
+  const next = paths.filter(item => item !== path)
+  const relatedIndex = relatedPath ? next.indexOf(relatedPath) : -1
+  next.splice(relatedIndex < 0 ? 0 : relatedIndex + (insertAfter ? 1 : 0), 0, path)
+  return next
+}
+
+function placementKey(node: PageTreeNode) {
+  return node.kind === 'page' ? node.path : node.key
+}
+
+function applyPageOrder(children: PageTreeNode[], placements: PageTreeOptions['placements']) {
+  const placed = children.filter(node => placements?.[placementKey(node)]?.order !== undefined)
+    .sort((left, right) => placements![placementKey(left)]!.order! - placements![placementKey(right)]!.order! || left.order - right.order)
+  if (placed.length) {
+    const placedKeys = new Set(placed.map(page => page.key))
+    const ordered = children.filter(node => !placedKeys.has(node.key))
+    placed.forEach(node => ordered.splice(Math.max(0, Math.min(placements![placementKey(node)]!.order!, ordered.length)), 0, node))
+    children.splice(0, children.length, ...ordered)
+  }
+  for (const node of children) {
+    if (node.kind === 'group') applyPageOrder(node.children, placements)
+  }
 }
 
 export function pageTreePageLabel(page: Pick<PageFlowPage, 'path' | 'title'>, pageNames?: Record<string, string>) {
@@ -52,6 +99,16 @@ export function pageTreePageLabel(page: Pick<PageFlowPage, 'path' | 'title'>, pa
 export function createPageTree(pages: PageFlowPage[], options: PageTreeOptions): PageTreeNode[] {
   const roots: PageTreeNode[] = []
   const groups = new Map<string, PageTreeGroupNode>()
+  const groupIdentities = new Map<string, string>()
+
+  pages.forEach((page) => {
+    const originalPath = options.groupPath(page)
+    originalPath.forEach((_, index) => {
+      const sourcePath = originalPath.slice(0, index + 1)
+      const effectivePath = effectiveGroupPath(sourcePath, options.placements).join('/')
+      groupIdentities.set(effectivePath, `group:${sourcePath.join('/')}`)
+    })
+  })
 
   const orphanPages: Array<{ page: PageFlowPage, order: number }> = []
   pages.forEach((page, order) => {
@@ -59,22 +116,25 @@ export function createPageTree(pages: PageFlowPage[], options: PageTreeOptions):
       orphanPages.push({ page, order })
       return
     }
-    const path = options.groupPath(page)
+    const configuredGroup = options.placements?.[page.path]?.group
+    const basePath = configuredGroup === undefined ? options.groupPath(page) : configuredGroup.split('/').filter(Boolean)
+    const path = effectiveGroupPath(basePath, options.placements)
     let children = roots
     path.forEach((segment, index) => {
       const groupPath = path.slice(0, index + 1)
       const pathKey = groupPath.join('/')
-      const key = `group:${pathKey}`
+      const key = groupIdentities.get(pathKey) ?? `group:${pathKey}`
       let group = groups.get(key)
       if (!group) {
         group = {
           kind: 'group',
           key,
-          label: options.groupNames?.[pathKey] ?? segment,
+          label: options.groupNames?.[key.slice('group:'.length)] ?? options.groupNames?.[pathKey] ?? segment,
           path: groupPath,
           children: [],
           pageCount: 0,
           order,
+          parentKey: path.slice(0, index).join('/'),
         }
         groups.set(key, group)
         children.push(group)
@@ -90,6 +150,7 @@ export function createPageTree(pages: PageFlowPage[], options: PageTreeOptions):
       path: page.path,
       virtual: Boolean(page.virtual),
       order,
+      parentKey: path.join('/'),
     })
   })
 
@@ -107,12 +168,16 @@ export function createPageTree(pages: PageFlowPage[], options: PageTreeOptions):
         path: page.path,
         virtual: Boolean(page.virtual),
         order,
+        parentKey: '__pageflow_orphans__',
       })),
       pageCount: orphanPages.length,
       order: pages.length,
       navigable: false,
+      parentKey: '',
     })
   }
+
+  applyPageOrder(roots, options.placements)
 
   return roots
 }

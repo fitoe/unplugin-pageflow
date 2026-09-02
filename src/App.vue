@@ -26,7 +26,7 @@ import type {
   PageFlowThumbnailRecord,
   ResolvedPageFlowOptions,
 } from './shared/types'
-import { cancelPageFlowTest, deletePageFlowFigmaLink, fetchPageFlowEditor, fetchPageFlowGraph, fetchPageFlowTests, openPageFlowEditor, publishPageFlowAIContext, refreshPageFlowConfig, reportPageTitle, runPageFlowLighthouse, runPageFlowTest, savePageFlowFigmaLink, savePageFlowLocation, startRouteDiscovery, subscribeToPageFlowUpdates, type PageFlowEditorInfo } from './client/graph'
+import { acknowledgePageFlowFigmaVersion, cancelPageFlowTest, deletePageFlowFigmaLink, fetchPageFlowEditor, fetchPageFlowFigmaVersions, fetchPageFlowGraph, fetchPageFlowTests, initializePageFlowFigmaVersions, openPageFlowEditor, publishPageFlowAIContext, refreshPageFlowConfig, reportPageTitle, runPageFlowLighthouse, runPageFlowTest, savePageFlowFigmaLink, savePageFlowLocation, savePageFlowPageTreePlacement, startRouteDiscovery, subscribeToPageFlowUpdates, type PageFlowEditorInfo, type PageFlowFigmaVersionResult } from './client/graph'
 import { planGraphUpdate } from './client/graph-update'
 import { navigatePreviewFrame, previewFrameDisplayPageId, resolvePreviewUrl, shouldInspectPreviewFrame, shouldMountPreviewFrame, syncPreviewHotspotLayerVisibility, touchPreviewCache } from './client/preview'
 import { deletePageFlowInternalParams, hasPageFlowPreview, PAGEFLOW_INSPECT_PARAM, PAGEFLOW_SCAN_MESSAGE, PAGEFLOW_XPATH_MODE_MESSAGE } from './shared/protocol'
@@ -200,10 +200,13 @@ const pages = ref<PageFlowPage[]>([...(props.config.previewPath === '/' ? demoPa
 const routeGroupPath = ref<string[]>([])
 const active = ref('home')
 const status = ref(props.config.previewPath === '/' ? 'Demo data' : 'Discovering routes…')
+const showLinks = ref(localStorage.getItem('unplugin-pageflow:show-links') !== 'false')
+const showConnections = ref(localStorage.getItem('unplugin-pageflow:show-connections') !== 'false')
 const groupNames = ref({ ...props.config.groupNames })
 const pageNames = ref({ ...props.config.pageNames })
 const figmaPages = ref({ ...props.config.figmaPages })
 const canvasLayouts = ref({ ...props.config.canvasLayouts })
+const pageTreePlacements = ref({ ...props.config.pageTreePlacements })
 const configPopoverOpen = ref(false)
 const configRefreshing = ref(false)
 const configFileStatus = ref(props.config.configFile ?? {
@@ -326,6 +329,52 @@ function pageFigmaLink(page: PageFlowPage) {
   return figmaLinkForPage(page, figmaPages.value)
 }
 const figmaPageIds = computed(() => new Set(pages.value.filter(page => pageFigmaLink(page)).map(page => page.id)))
+const figmaVersions = ref<Record<string, PageFlowFigmaVersionResult>>({})
+const figmaVersionChecking = ref(false)
+const figmaUpdatedPageIds = computed(() => new Set(pages.value.filter((page) => {
+  const link = pageFigmaLink(page)
+  const latest = link ? figmaVersions.value[link.ref]?.version : undefined
+  return Boolean(link?.version && latest && link.version !== latest)
+}).map(page => page.id)))
+
+function pageFigmaConfigPath(page: PageFlowPage) {
+  const link = pageFigmaLink(page)
+  return Object.entries(figmaPages.value).find(([, candidate]) => candidate === link)?.[0] ?? page.path.split(/[?#]/, 1)[0]
+}
+
+async function checkFigmaVersions() {
+  if (props.host || figmaVersionChecking.value || !Object.keys(figmaPages.value).length) return
+  figmaVersionChecking.value = true
+  try {
+    const result = await fetchPageFlowFigmaVersions(props.config)
+    figmaVersions.value = Object.fromEntries(result.versions.map(version => [version.ref, version]))
+    const available = result.versions.flatMap(version => version.version ? [{ ref: version.ref, version: version.version }] : [])
+    if (available.length && Object.values(figmaPages.value).some(link => !link.version)) {
+      const { initialized } = await initializePageFlowFigmaVersions(props.config, available)
+      figmaPages.value = Object.fromEntries(Object.entries(figmaPages.value).map(([path, link]) => [
+        path,
+        initialized[path] ? { ...link, version: initialized[path] } : link,
+      ]))
+    }
+  } catch (error) {
+    status.value = error instanceof Error ? error.message : 'Figma version check failed'
+  } finally {
+    figmaVersionChecking.value = false
+  }
+}
+
+async function acknowledgeFigmaVersion(page: PageFlowPage) {
+  const link = pageFigmaLink(page)
+  const latest = link ? figmaVersions.value[link.ref]?.version : undefined
+  if (!link || !latest || props.host) return
+  try {
+    const path = pageFigmaConfigPath(page)
+    await acknowledgePageFlowFigmaVersion(props.config, path, latest)
+    figmaPages.value = { ...figmaPages.value, [path]: { ...link, version: latest } }
+  } catch (error) {
+    status.value = error instanceof Error ? error.message : 'Figma version acknowledgement failed'
+  }
+}
 
 function openPageInFigma(page: PageFlowPage) {
   const link = pageFigmaLink(page)
@@ -358,7 +407,13 @@ async function deletePageFigma(page: PageFlowPage) {
 }
 
 function pageFigmaMenuItems(page: PageFlowPage) {
+  const link = pageFigmaLink(page)
+  const remote = link ? figmaVersions.value[link.ref] : undefined
+  const changed = Boolean(link?.version && remote?.version && link.version !== remote.version)
   return [[
+    ...(changed ? [{ label: '绑定的 Figma 文件有更新', icon: 'i-lucide-circle-alert', disabled: true }] : []),
+    ...(remote?.version && link?.version ? [{ label: '标记为已同步', icon: 'i-lucide-check', onSelect: () => acknowledgeFigmaVersion(page) }] : []),
+    { label: figmaVersionChecking.value ? '正在检查更新' : '检查设计更新', icon: 'i-lucide-refresh-cw', disabled: figmaVersionChecking.value, onSelect: () => checkFigmaVersions() },
     { label: '编辑绑定', icon: 'i-lucide-pencil', onSelect: () => editPageFigma(page) },
     { label: '删除绑定', icon: 'i-lucide-trash-2', color: 'error' as const, onSelect: () => deletePageFigma(page) },
   ]]
@@ -668,7 +723,20 @@ const pageTreeNodes = computed(() => createPageTree(pages.value, {
   pageNames: pageNames.value,
   orphanPageIds: orphanPageIds.value,
   groupPath: page => routeDeckPathForPage(pages.value, page.id),
+  placements: pageTreePlacements.value,
 }))
+
+async function placePageTreePage(path: string, parentKey: string, order: number) {
+  const previous = pageTreePlacements.value
+  const next = { ...previous, [path]: { ...previous[path], group: parentKey || '/', order } }
+  pageTreePlacements.value = next
+  try {
+    await savePageFlowPageTreePlacement(props.config, path, parentKey, order)
+  } catch (error) {
+    pageTreePlacements.value = previous
+    status.value = error instanceof Error ? error.message : '页面位置保存失败'
+  }
+}
 const canvasPages = computed(() => [...routeDeckView.value.directPages, ...routeDeckView.value.decks.map(deck => deck.representative)])
 const routeDeckByPageId = computed(() => new Map(routeDeckView.value.decks.map(deck => [deck.representative.id, deck])))
 const focusedPage = computed(() => pages.value.find(page => page.id === focusedPageId.value))
@@ -1655,6 +1723,7 @@ async function refreshProjectConfig() {
     figmaPages.value = { ...(refreshed.figmaPages ?? {}) }
     navigationLocations.value = { ...(refreshed.pageLocations ?? {}) }
     canvasLayouts.value = { ...refreshed.canvasLayouts }
+    pageTreePlacements.value = { ...(refreshed.pageTreePlacements ?? {}) }
     configFileStatus.value = { loaded: refreshed.loaded, source: refreshed.source }
     if (props.host) applyHostState(await props.host.loadState())
     else {
@@ -2160,6 +2229,15 @@ function syncOverlay(updateVisiblePages = true) {
     thumbnailTier.value = thumbnailTierForZoom(zoomPercent.value)
   }
   overlayWorld.value.style.transform = `translate(${transform.x}px, ${transform.y}px) scale(${transform.scaleX}, ${transform.scaleY})`
+  const focusedScaleX = Math.max(transform.scaleX * SELECTED_PAGE_SCALE, 0.01)
+  const focusedScaleY = Math.max(transform.scaleY * SELECTED_PAGE_SCALE, 0.01)
+  overlayWorld.value.style.setProperty('--pageflow-focused-inverse-scale-x', String(1 / focusedScaleX))
+  overlayWorld.value.style.setProperty('--pageflow-focused-inverse-scale-y', String(1 / focusedScaleY))
+  overlayWorld.value.style.setProperty('--pageflow-focused-gap-x', `${16 / focusedScaleX}px`)
+  overlayWorld.value.style.setProperty('--pageflow-focused-user-top', `${16 / focusedScaleY}px`)
+  overlayWorld.value.style.setProperty('--pageflow-focused-form-top', `${50 / focusedScaleY}px`)
+  overlayWorld.value.style.setProperty('--pageflow-focused-favorite-top', `${(focusedFormAvailable.value ? 84 : 50) / focusedScaleY}px`)
+  overlayWorld.value.style.setProperty('--pageflow-focused-figma-top', `${(focusedFormAvailable.value ? 118 : 84) / focusedScaleY}px`)
   connectionLeafer?.zoomLayer.set(transform)
   if (!updateVisiblePages) return
   settledTransform.value = transform
@@ -2505,9 +2583,10 @@ function syncXPathSelectionMode(pageId = focusedPageId.value) {
   }, window.location.origin)
 }
 
-function toggleXPathSelection() {
+function toggleXPathSelection(event: Event) {
+  xpathSelectionEnabled.value = (event.target as HTMLInputElement).checked
   selectedXPath.value = ''
-  syncXPathSelectionMode()
+  void nextTick(() => syncXPathSelectionMode())
 }
 
 function requestFocusedDiagnostics(force = false) {
@@ -2930,8 +3009,12 @@ function handleCanvasContextMenu(event: MouseEvent) {
   const page = focusedHit?.page ?? [...pages.value].reverse().find(item => {
     if (!item.virtual || !visiblePageIds.value.has(item.id)) return false
     const position = positions.value.get(item.id)
-    return Boolean(position && worldX >= position[0] && worldX <= position[0] + PAGE_CARD_WIDTH
-      && worldY >= position[1] && worldY <= position[1] + pageCardHeight(item.id))
+    if (!position) return false
+    const scale = item.id === active.value ? SELECTED_PAGE_SCALE : 1
+    const x = position[0] - PAGE_CARD_WIDTH * (scale - 1) / 2
+    const y = position[1] - pagePreviewHeight(item.id) * (scale - 1) / 2
+    return worldX >= x && worldX <= x + PAGE_CARD_WIDTH * scale
+      && worldY >= y && worldY <= y + pageCardHeight(item.id) * scale
   })
   if (!page) {
     virtualPageMenu.value = undefined
@@ -3249,7 +3332,30 @@ function handleCaptureFrameLoad(frame: HTMLIFrameElement) {
 function syncPreviewHotspots(pageId: string) {
   const layer = previewFrameForPage(pageId)?.contentDocument?.querySelector<HTMLElement>('[data-unplugin-pageflow-hotspot-layer]')
   if (!layer) return
-  syncPreviewHotspotLayerVisibility(layer, focusedPageId.value === previewDisplayPageId(pageId))
+  syncPreviewHotspotLayerVisibility(layer, showLinks.value && focusedPageId.value === previewDisplayPageId(pageId))
+}
+
+function openVirtualPageMenu(pageId: string, x: number, y: number) {
+  if (!virtualPages.value.some(page => page.id === pageId)) return
+  virtualPageMenu.value = { pageId, x, y }
+}
+
+function editPageTreeName(pageId: string) {
+  const page = pages.value.find(item => item.id === pageId)
+  if (page) void editPageName(page)
+}
+
+function toggleLinkVisibility(event: Event) {
+  showLinks.value = (event.target as HTMLInputElement).checked
+  localStorage.setItem('unplugin-pageflow:show-links', String(showLinks.value))
+  previewFrames.forEach((_frame, pageId) => syncPreviewHotspots(pageId))
+  scheduleCanvasRender()
+}
+
+function toggleConnectionVisibility(event: Event) {
+  showConnections.value = (event.target as HTMLInputElement).checked
+  localStorage.setItem('unplugin-pageflow:show-connections', String(showConnections.value))
+  scheduleCanvasRender()
 }
 
 function applyDetectedPcPreviewSize(frame: HTMLIFrameElement) {
@@ -3290,13 +3396,20 @@ async function handlePreviewLoad(pageId: string, frame: HTMLIFrameElement) {
     if (!applyDetectedPcPreviewSize(frame)) schedulePcPreviewSizeDetection(logicalPageId, frame)
     else return
     await waitForPreviewReady(frame, PREVIEW_READY_QUIET_MS)
-    syncPreviewHotspots(logicalPageId)
+    let settledPage = page
+    try {
+      const settledUrl = frame.contentWindow?.location.href
+      const settledLocation = settledUrl && previewRouteLocation(settledUrl, routeMode.value, window.location.origin)
+      settledPage = settledLocation ? pageForPreviewLocation(settledLocation) ?? page : page
+    } catch {}
+    const settledPageId = settledPage.id
+    syncPreviewHotspots(settledPageId)
     readyPreviewIds.value = new Set(readyPreviewIds.value).add(pageId)
-    requestFocusedPageScan(logicalPageId)
-    if (logicalPageId === focusedPageId.value && !cachedPageDiagnostics(page)) requestFocusedDiagnostics()
+    requestFocusedPageScan(settledPageId)
+    if (settledPageId === focusedPageId.value && !cachedPageDiagnostics(settledPage)) requestFocusedDiagnostics()
     const title = frame.contentDocument?.title.trim()
-    if (page && title && title !== page.title) await reportPageTitle(props.config, page.path, title)
-    await capturePreview(logicalPageId, frame, true)
+    if (title && title !== settledPage.title) await reportPageTitle(props.config, settledPage.path, title)
+    await capturePreview(settledPageId, frame, true)
   } catch {}
 }
 
@@ -3735,7 +3848,7 @@ function renderCanvasScene() {
     }
   })
   const visibleConnectionIds = new Set<string>()
-  if (focus && focusLayoutProgress > 0.85) {
+  if (showConnections.value && focus && focusLayoutProgress > 0.85) {
     connectionPaths.value.forEach(connection => {
       visibleConnectionIds.add(connection.id)
       const hover = hoveredHotspot.value
@@ -3757,7 +3870,7 @@ function renderCanvasScene() {
   }
   connectionNodes?.retain(visibleConnectionIds)
   const visibleHotspotIds = new Set<string>()
-  if (props.host && focus && focusLayoutProgress > 0.85) {
+  if (showLinks.value && props.host && focus && focusLayoutProgress > 0.85) {
     const previewHeight = pagePreviewHeight(focus.source.id)
     const scale = focus.source.id === active.value ? SELECTED_PAGE_SCALE : 1
     const originX = focus.sourcePosition[0] - PAGE_CARD_WIDTH * (scale - 1) / 2
@@ -4036,6 +4149,7 @@ watch(requiredThumbnailRecords, records => {
 }, { immediate: true })
 
 watch([active, copiedPath], scheduleCanvasRender)
+watch(focusedFormAvailable, () => syncOverlay(false))
 watch([focusedPageId, routeGroupPath, previewMode, activeUser, panelTab, workbenchView], scheduleWorkbenchLocationSync, { deep: true })
 watch(panelCollapsed, (collapsed) => {
   try {
@@ -4116,6 +4230,7 @@ function applyHostState(state: PageFlowHostState) {
 }
 
 onMounted(async () => {
+  void checkFigmaVersions()
   pageTodos.value = await loadPageFlowTodos(pageFlowHost)
   if (!props.host) void fetchPageFlowEditor(props.config).then(value => { editorInfo.value = value }).catch(() => undefined)
   refreshSessionUsers()
@@ -4563,11 +4678,13 @@ onUnmounted(() => {
                 @pointerenter="keepUserLabelVisible(page.id)"
                 @pointerleave="clearHoveredUserPage(120)"
                 :style="{
-                  left: page.id === focusedPageId ? `${PAGE_CARD_WIDTH + 16 / Math.max(settledTransform.scaleX, 0.01)}px` : 'auto',
+                  left: page.id === focusedPageId ? `calc(${PAGE_CARD_WIDTH}px + var(--pageflow-focused-gap-x))` : 'auto',
                   right: page.id === focusedPageId ? 'auto' : '0',
-                  top: page.id === focusedPageId ? `${16 / Math.max(settledTransform.scaleY, 0.01)}px` : 'auto',
+                  top: page.id === focusedPageId ? 'var(--pageflow-focused-user-top)' : 'auto',
                   bottom: page.id === focusedPageId ? 'auto' : `${8 / Math.max(settledTransform.scaleY, 0.01)}px`,
-                  transform: `scale(${1 / Math.max(settledTransform.scaleX, 0.01)}, ${1 / Math.max(settledTransform.scaleY, 0.01)})`,
+                  transform: page.id === focusedPageId
+                    ? 'scale(var(--pageflow-focused-inverse-scale-x), var(--pageflow-focused-inverse-scale-y))'
+                    : `scale(${1 / Math.max(settledTransform.scaleX, 0.01)}, ${1 / Math.max(settledTransform.scaleY, 0.01)})`,
                   transformOrigin: page.id === focusedPageId ? 'top left' : 'bottom right',
                 }"
               />
@@ -4585,9 +4702,9 @@ onUnmounted(() => {
               :disabled="formLoading"
               aria-label="自动填充当前页面"
               :style="{
-                left: `${PAGE_CARD_WIDTH + 16 / Math.max(settledTransform.scaleX, 0.01)}px`,
-                top: `${50 / Math.max(settledTransform.scaleY, 0.01)}px`,
-                transform: `scale(${1 / Math.max(settledTransform.scaleX, 0.01)}, ${1 / Math.max(settledTransform.scaleY, 0.01)})`,
+                left: `calc(${PAGE_CARD_WIDTH}px + var(--pageflow-focused-gap-x))`,
+                top: 'var(--pageflow-focused-form-top)',
+                transform: 'scale(var(--pageflow-focused-inverse-scale-x), var(--pageflow-focused-inverse-scale-y))',
                 transformOrigin: 'top left',
               }"
               @click.stop="smartFillFocusedForm"
@@ -4604,9 +4721,9 @@ onUnmounted(() => {
               :aria-pressed="favoritePageIds.has(page.id)"
               :aria-label="favoritePageIds.has(page.id) ? '取消收藏当前页面' : '收藏当前页面'"
               :style="{
-                left: `${PAGE_CARD_WIDTH + 16 / Math.max(settledTransform.scaleX, 0.01)}px`,
-                top: `${(focusedFormAvailable ? 84 : 50) / Math.max(settledTransform.scaleY, 0.01)}px`,
-                transform: `scale(${1 / Math.max(settledTransform.scaleX, 0.01)}, ${1 / Math.max(settledTransform.scaleY, 0.01)})`,
+                left: `calc(${PAGE_CARD_WIDTH}px + var(--pageflow-focused-gap-x))`,
+                top: 'var(--pageflow-focused-favorite-top)',
+                transform: 'scale(var(--pageflow-focused-inverse-scale-x), var(--pageflow-focused-inverse-scale-y))',
                 transformOrigin: 'top left',
               }"
               @click.stop="toggleFavoritePage(page.id)"
@@ -4615,16 +4732,16 @@ onUnmounted(() => {
               v-if="page.id === focusedPageId"
               class="page-figma-actions"
               :style="{
-                left: `${PAGE_CARD_WIDTH + 16 / Math.max(settledTransform.scaleX, 0.01)}px`,
-                top: `${(focusedFormAvailable ? 118 : 84) / Math.max(settledTransform.scaleY, 0.01)}px`,
-                transform: `scale(${1 / Math.max(settledTransform.scaleX, 0.01)}, ${1 / Math.max(settledTransform.scaleY, 0.01)})`,
+                left: `calc(${PAGE_CARD_WIDTH}px + var(--pageflow-focused-gap-x))`,
+                top: 'var(--pageflow-focused-figma-top)',
+                transform: 'scale(var(--pageflow-focused-inverse-scale-x), var(--pageflow-focused-inverse-scale-y))',
                 transformOrigin: 'top left',
               }"
             >
               <UButton
                 type="button"
                 class="page-figma-action"
-                :class="{ 'is-bound': Boolean(pageFigmaLink(page)) }"
+                :class="{ 'is-bound': Boolean(pageFigmaLink(page)), 'has-update': figmaUpdatedPageIds.has(page.id) }"
                 :label="pageFigmaLink(page) ? 'Figma' : '绑定 Figma'"
                 color="neutral"
                 variant="soft"
@@ -4755,10 +4872,14 @@ onUnmounted(() => {
             :active-group-path="focusedPageId ? undefined : routeGroupPath"
             :favorite-page-ids="favoritePageIds"
             :figma-page-ids="figmaPageIds"
+            :figma-updated-page-ids="figmaUpdatedPageIds"
             :refreshing="pageTreeRefreshing"
             @select="selectPageTreePage"
             @select-group="enterRouteGroup"
             @refresh="refreshPageTree"
+            @place="placePageTreePage"
+            @edit-page-name="editPageTreeName"
+            @page-context-menu="openVirtualPageMenu"
           />
         </template>
         <template #api>
@@ -5158,7 +5279,17 @@ onUnmounted(() => {
       </button>
     </div>
     <footer class="app-statusbar">
-      <button type="button" class="route-sync-status" :aria-expanded="configPopoverOpen" @click="configPopoverOpen = !configPopoverOpen"><i></i> {{ status }}</button>
+      <div class="statusbar-left">
+        <button type="button" class="route-sync-status" :aria-expanded="configPopoverOpen" @click="configPopoverOpen = !configPopoverOpen"><i></i> {{ status }}</button>
+        <label class="statusbar-display-toggle" title="显示或隐藏页面内的链接热点">
+          <input v-model="showLinks" type="checkbox" @change="toggleLinkVisibility">
+          <span>显示链接</span>
+        </label>
+        <label class="statusbar-display-toggle" title="显示或隐藏页面之间的连接线">
+          <input v-model="showConnections" type="checkbox" @change="toggleConnectionVisibility">
+          <span>显示连线</span>
+        </label>
+      </div>
       <div v-if="statusbarRoute" class="statusbar-page-location">
         <label v-if="focusedEditorPage" class="statusbar-xpath-toggle" title="选取页面节点并在复制路径中附带 XPath">
           <input v-model="xpathSelectionEnabled" type="checkbox" @change="toggleXPathSelection">

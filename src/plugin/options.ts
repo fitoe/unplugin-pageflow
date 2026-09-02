@@ -11,6 +11,7 @@ function normalizePreviewPath(path: string) {
 export function resolveOptions(options: PageFlowOptions = {}): ResolvedPageFlowOptions {
   const pageNames = Object.fromEntries(Object.entries(options.pages ?? {}).flatMap(([path, page]) => page.name?.trim() ? [[path, page.name.trim()]] : []))
   const pageFigma = Object.fromEntries(Object.entries(options.pages ?? {}).flatMap(([path, page]) => page.figma ? [[path, page.figma]] : []))
+  const pageFigmaVersions = Object.fromEntries(Object.entries(options.pages ?? {}).flatMap(([path, page]) => page.figmaVersion?.trim() ? [[path, page.figmaVersion.trim()]] : []))
   const pageLocations = Object.fromEntries(Object.entries(options.pages ?? {}).flatMap(([path, page]) => page.location?.trim() ? [[path, page.location.trim()]] : []))
   const resolvedPageNames = { ...(options.pageNames ?? {}), ...pageNames }
   return {
@@ -24,8 +25,9 @@ export function resolveOptions(options: PageFlowOptions = {}): ResolvedPageFlowO
     previewRoles: options.previewRoles ?? [],
     groupNames: options.groupNames ?? {},
     pageNames: resolvedPageNames,
-    figmaPages: normalizeFigmaPages(pageFigma, resolvedPageNames),
+    figmaPages: normalizeFigmaPages(pageFigma, resolvedPageNames, pageFigmaVersions),
     pageLocations,
+    pageTreePlacements: options.pageTree?.placements ?? {},
     canvasLayouts: options.canvasLayouts ?? {},
     pageTests: options.pageTests ?? {},
     testCommands: options.testCommands ?? {},
@@ -83,6 +85,7 @@ export async function loadProjectOptions(root: string, options: PageFlowOptions 
       pageNames: { ...(options.pageNames ?? {}), ...(stored.pageNames ?? {}) },
       pages: { ...(options.pages ?? {}), ...(stored.pages ?? {}) },
       canvasLayouts: { ...(options.canvasLayouts ?? {}), ...(stored.canvasLayouts ?? {}) },
+      pageTree: { placements: { ...(options.pageTree?.placements ?? {}), ...(stored.pageTree?.placements ?? {}) } },
       pageTests: options.pageTests ?? stored.pageTests,
       testCommands: options.testCommands ?? stored.testCommands,
       diagnostics: {

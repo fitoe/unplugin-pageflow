@@ -90,3 +90,34 @@ test('updates the highlighted child while the pointer moves within one retargeti
     await server.close()
   }
 })
+
+test('selects the application element through PageFlow hotspot overlays', async () => {
+  const server = await createServer({ configFile: false, server: { middlewareMode: true }, appType: 'custom', logLevel: 'silent' })
+  try {
+    const { createXPathSelectionController } = await server.ssrLoadModule('/src/runtime/xpath-selector.ts')
+    const window = new Window({ url: 'http://localhost/page' })
+    const messages = []
+    Object.defineProperty(window, 'parent', { configurable: true, value: { postMessage: message => messages.push(message) } })
+    window.document.body.innerHTML = '<input class="verification"><div data-unplugin-pageflow-hotspot-layer><a data-unplugin-pageflow-hotspot="link">Hotspot</a></div>'
+    const input = window.document.querySelector('input')
+    const layer = window.document.querySelector('[data-unplugin-pageflow-hotspot-layer]')
+    const hotspot = layer.querySelector('a')
+    for (const element of [input, layer, hotspot])
+      element.getBoundingClientRect = () => ({ width: 100, height: 20 })
+    window.document.elementsFromPoint = () => [hotspot, layer, input]
+
+    const controller = createXPathSelectionController(window)
+    controller.setEnabled(true)
+    assert.equal(window.document.documentElement.hasAttribute('data-unplugin-pageflow-xpath-mode'), true)
+    assert.match([...window.document.styleSheets].flatMap(sheet => [...sheet.cssRules]).map(rule => rule.cssText).join('\n'), /hotspot-layer/)
+    hotspot.dispatchEvent(new window.MouseEvent('pointermove', { bubbles: true, clientX: 10, clientY: 10 }))
+    assert.equal(hotspot.hasAttribute('data-unplugin-pageflow-xpath-target'), false)
+    assert.equal(input.hasAttribute('data-unplugin-pageflow-xpath-target'), true)
+    hotspot.dispatchEvent(new window.MouseEvent('click', { bubbles: true, cancelable: true, clientX: 10, clientY: 10 }))
+    assert.deepEqual(messages, [{ type: 'unplugin-pageflow:xpath-selected', xpath: '/html/body/input' }])
+    controller.setEnabled(false)
+    assert.equal(window.document.documentElement.hasAttribute('data-unplugin-pageflow-xpath-mode'), false)
+  } finally {
+    await server.close()
+  }
+})

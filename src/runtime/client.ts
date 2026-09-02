@@ -1,5 +1,6 @@
 import type {
   PageFlowRuntimeLink,
+  PageFlowRuntimePage,
   ResolvedPageFlowOptions,
 } from '../shared/types'
 import { startPageFlowDomStatePersistence } from './state.ts'
@@ -12,7 +13,7 @@ import { findBrowserHistoryAdapter } from './adapters/browser-history'
 import { mountPageFlowLauncher } from './launcher'
 import { isLocalBusinessApiResponse } from './api-filter'
 import { collectApiFields } from './api-fields'
-import { createXPathSelectionController } from './xpath-selector'
+import { createXPathSelectionController, XPATH_MODE_ATTRIBUTE } from './xpath-selector'
 import { instrumentPageFlowNetwork, observePageFlowScroll, pageFlowHotspotCenter, pageFlowInternalLinks, pageFlowLinkLabel } from '@pageflow/runtime'
 
 const pageFlowSearchParams = () => new URLSearchParams(window.location.search)
@@ -372,6 +373,11 @@ function addHotspot(layer: HTMLElement, element: Element, type: 'link' | 'event'
       return true
     }
     const navigate = (event: Event) => {
+      if (document.documentElement.hasAttribute(XPATH_MODE_ATTRIBUTE)) {
+        event.preventDefault()
+        event.stopImmediatePropagation()
+        return
+      }
       if (forwardStaleInteraction(event)) return
       event.preventDefault()
       event.stopImmediatePropagation()
@@ -441,7 +447,8 @@ function nestedFrameLinks() {
 }
 
 function isFormControlRegion(element: Element) {
-  if (element.matches('input, textarea, select, option, [contenteditable="true"]')) return true
+  const formControlSelector = 'input, textarea, select, option, uni-input, uni-textarea, uni-picker, .wd-input, .wd-textarea, [contenteditable="true"]'
+  if (element.matches(formControlSelector) || element.closest(formControlSelector)) return true
   if (element.matches('a[href], button, [role="link"], [role="button"], uni-button')) return false
   return element.matches('label') || element.querySelector('input, textarea, select, [contenteditable="true"]') != null
 }
@@ -555,11 +562,12 @@ function collectLinks(router: PageFlowRouterAdapter, visibleOnly = false) {
   return [...uniqueLinks.values()]
 }
 
-async function publishPage(router: PageFlowRouterAdapter, config: ResolvedPageFlowOptions) {
+async function publishPage(router: PageFlowRouterAdapter, config: ResolvedPageFlowOptions, includeTitle = true) {
   if (!isPageFlowPreview()) return
   await new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve())))
   const path = router.currentPath()
-  const page = { path, title: document.title, links: collectLinks(router) }
+  const page: PageFlowRuntimePage = { path, links: collectLinks(router) }
+  if (includeTitle) page.title = document.title
   await fetch(`${config.previewPath}api/page`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -626,6 +634,7 @@ function protectPreviewInteractions(router: PageFlowRouterAdapter, config: Resol
   if (!isPageFlowPreview()) return
   protectNestedFrameLinks(router)
   document.addEventListener('click', event => {
+    if (document.documentElement.hasAttribute(XPATH_MODE_ATTRIBUTE)) return
     lastClickedElement = event.target as Element | null
     setTimeout(() => { lastClickedElement = null })
     const anchor = lastClickedElement?.closest<HTMLAnchorElement>('a[href]')
@@ -639,6 +648,7 @@ function protectPreviewInteractions(router: PageFlowRouterAdapter, config: Resol
   document.addEventListener('submit', event => event.preventDefault(), true)
 
   router.interceptNavigation((navigation, method) => {
+      if (document.documentElement.hasAttribute(XPATH_MODE_ATTRIBUTE)) return
       const target = navigation.path
       if (target) {
         const element = programmaticNavigationElement()
@@ -652,7 +662,7 @@ function protectPreviewInteractions(router: PageFlowRouterAdapter, config: Resol
         })
         if (element) associateProgrammaticElement(element, target, navigation.location)
         notifyNavigation(target, navigation.location)
-        void publishPage(router, config)
+        void publishPage(router, config, false)
       }
   })
 
@@ -661,6 +671,7 @@ function protectPreviewInteractions(router: PageFlowRouterAdapter, config: Resol
     if (!uni?.[method]) return
     const navigate = uni[method].bind(uni)
     uni[method] = (options: UniNavigationOptions) => {
+      if (document.documentElement.hasAttribute(XPATH_MODE_ATTRIBUTE)) return
       const location = options?.url
       const target = location && router.resolve(location)?.path
       if (target) {
@@ -675,7 +686,7 @@ function protectPreviewInteractions(router: PageFlowRouterAdapter, config: Resol
         })
         if (element) associateProgrammaticElement(element, target, location)
         notifyNavigation(target, location)
-        void publishPage(router, config)
+        void publishPage(router, config, false)
       }
       return navigate(options)
     }

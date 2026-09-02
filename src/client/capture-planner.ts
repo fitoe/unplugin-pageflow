@@ -25,10 +25,9 @@ export function planNextCapture(options: CapturePlanOptions): CapturePlan {
   const pagesById = new Map(options.pages.map(page => [page.id, page]))
   const pageIds = new Set(pagesById.keys())
   const manualIds = [...options.manualIds].filter(id => pageIds.has(id))
-  const automaticIds = new Set([...options.priorityIds].filter((id) => {
-    const page = pagesById.get(id)
-    return page && options.canCaptureAutomatically(page)
-  }))
+  const automaticIds = new Set(options.pages
+    .filter(page => options.canCaptureAutomatically(page))
+    .map(page => page.id))
   let batchIds = new Set([...options.batchIds].filter(id => automaticIds.has(id) || manualIds.includes(id)))
   if (!batchIds.size) {
     batchIds = new Set(options.pages

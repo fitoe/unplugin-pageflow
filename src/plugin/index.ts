@@ -794,7 +794,9 @@ const factory: UnpluginFactory<PageFlowOptions | undefined> = (options) => {
           const groupNamePath = `${resolved.previewPath}api/group-name`
           const pageNamePath = `${resolved.previewPath}api/page-name`
           const figmaPagePath = `${resolved.previewPath}api/figma-page`
+          const figmaVersionPath = `${resolved.previewPath}api/figma-version`
           const pageLocationPath = `${resolved.previewPath}api/page-location`
+          const pageTreePlacementPath = `${resolved.previewPath}api/page-tree-placement`
           const canvasLayoutPath = `${resolved.previewPath}api/canvas-layout`
           const testsPath = `${resolved.previewPath}api/tests`
           const lighthousePath = `${resolved.previewPath}api/lighthouse`
@@ -811,6 +813,7 @@ const factory: UnpluginFactory<PageFlowOptions | undefined> = (options) => {
               pageNames: resolved.pageNames,
               figmaPages: resolved.figmaPages,
               pageLocations: resolved.pageLocations,
+              pageTreePlacements: resolved.pageTreePlacements,
               canvasLayouts: resolved.canvasLayouts,
             }))
             return
@@ -831,6 +834,7 @@ const factory: UnpluginFactory<PageFlowOptions | undefined> = (options) => {
                 pageNames: resolved.pageNames,
                 figmaPages: resolved.figmaPages,
                 pageLocations: resolved.pageLocations,
+                pageTreePlacements: resolved.pageTreePlacements,
                 canvasLayouts: resolved.canvasLayouts,
               }))
             } catch (error) {
@@ -1085,10 +1089,20 @@ const factory: UnpluginFactory<PageFlowOptions | undefined> = (options) => {
               if (name.length > 80) throw new Error('Page name is too long')
               const configFile = resolve(projectRoot, '.pageflow')
               const stored = JSON.parse(stripJsonComments(await readFile(configFile, 'utf8'))) as PageFlowOptions
-              const pageNames = { ...(stored.pageNames ?? {}) }
+              const pages = { ...(stored.pages ?? {}) }
+              const page = { ...(pages[key] ?? {}) }
+              if (name) page.name = name
+              else delete page.name
+              if (Object.keys(page).length) pages[key] = page
+              else delete pages[key]
+              stored.pages = pages
+              const legacyPageNames = { ...(stored.pageNames ?? {}) }
+              delete legacyPageNames[key]
+              if (Object.keys(legacyPageNames).length) stored.pageNames = legacyPageNames
+              else delete stored.pageNames
+              const pageNames = { ...resolved.pageNames }
               if (name) pageNames[key] = name
               else delete pageNames[key]
-              stored.pageNames = pageNames
               await writeFile(configFile, `${JSON.stringify(stored, null, 2)}\n`)
               resolved.pageNames = pageNames
               const configModule = server.moduleGraph.getModuleById(PAGEFLOW_CONFIG_RESOLVED_ID)
@@ -1115,13 +1129,89 @@ const factory: UnpluginFactory<PageFlowOptions | undefined> = (options) => {
               if (!link) throw new Error('Figma 节点链接无效')
               const configFile = resolve(projectRoot, '.pageflow')
               const stored = JSON.parse(stripJsonComments(await readFile(configFile, 'utf8'))) as PageFlowOptions
-              stored.pages = { ...(stored.pages ?? {}), [path]: { ...(stored.pages?.[path] ?? {}), figma: ref } }
+              const page = { ...(stored.pages?.[path] ?? {}) }
+              if (page.figma !== ref) delete page.figmaVersion
+              stored.pages = { ...(stored.pages ?? {}), [path]: { ...page, figma: ref } }
               await writeFile(configFile, `${JSON.stringify(stored, null, 2)}\n`)
               resolved.figmaPages = { ...resolved.figmaPages, [path]: link }
               const configModule = server.moduleGraph.getModuleById(PAGEFLOW_CONFIG_RESOLVED_ID)
               if (configModule) server.moduleGraph.invalidateModule(configModule)
               response.setHeader('Content-Type', 'application/json; charset=utf-8')
               response.end(JSON.stringify({ path, link }))
+            } catch (error) {
+              response.statusCode = 400
+              response.setHeader('Content-Type', 'application/json; charset=utf-8')
+              response.end(JSON.stringify({ error: error instanceof Error ? error.message : 'Invalid request' }))
+            }
+            return
+          }
+
+          if (pathname === figmaVersionPath && request.method === 'GET') {
+            const token = process.env.FIGMA_ACCESS_TOKEN ?? process.env.FIGMA_TOKEN
+            const refs = [...new Set(Object.values(resolved.figmaPages).map(link => link.ref))]
+            const versions = await Promise.all(refs.map(async (ref) => {
+              if (!token) return { ref, error: 'not-configured' as const }
+              const fileKey = ref.split('#', 1)[0]
+              try {
+                const figmaResponse = await fetch(`https://api.figma.com/v1/files/${encodeURIComponent(fileKey)}/versions?page_size=1`, {
+                  headers: { 'X-Figma-Token': token },
+                })
+                if (figmaResponse.status === 401 || figmaResponse.status === 403) return { ref, error: 'unauthorized' as const }
+                if (!figmaResponse.ok) return { ref, error: 'unavailable' as const }
+                const data = await figmaResponse.json() as { versions?: Array<{ id?: string, created_at?: string }> }
+                const latest = data.versions?.[0]
+                return latest?.id ? { ref, version: latest.id, createdAt: latest.created_at } : { ref, error: 'unavailable' as const }
+              } catch {
+                return { ref, error: 'unavailable' as const }
+              }
+            }))
+            response.setHeader('Content-Type', 'application/json; charset=utf-8')
+            response.end(JSON.stringify({ versions }))
+            return
+          }
+
+          if (pathname === figmaVersionPath && request.method === 'POST') {
+            try {
+              const body = await readJson(request)
+              if (Array.isArray(body.versions)) {
+                const versions = new Map(body.versions.flatMap((entry: unknown) => {
+                  if (!entry || typeof entry !== 'object') return []
+                  const ref = typeof (entry as { ref?: unknown }).ref === 'string' ? (entry as { ref: string }).ref.trim() : ''
+                  const version = typeof (entry as { version?: unknown }).version === 'string' ? (entry as { version: string }).version.trim() : ''
+                  return ref && version && ref.length <= 500 && version.length <= 200 ? [[ref, version] as const] : []
+                }))
+                const configFile = resolve(projectRoot, '.pageflow')
+                const stored = JSON.parse(stripJsonComments(await readFile(configFile, 'utf8'))) as PageFlowOptions
+                const initialized: Record<string, string> = {}
+                stored.pages = { ...(stored.pages ?? {}) }
+                for (const [path, pageConfig] of Object.entries(stored.pages)) {
+                  if (!pageConfig.figma || pageConfig.figmaVersion) continue
+                  const version = versions.get(pageConfig.figma)
+                  if (!version) continue
+                  stored.pages[path] = { ...pageConfig, figmaVersion: version }
+                  initialized[path] = version
+                  const link = resolved.figmaPages[path]
+                  if (link) resolved.figmaPages[path] = { ...link, version }
+                }
+                if (Object.keys(initialized).length) await writeFile(configFile, `${JSON.stringify(stored, null, 2)}\n`)
+                response.setHeader('Content-Type', 'application/json; charset=utf-8')
+                response.end(JSON.stringify({ initialized }))
+                return
+              }
+              const path = typeof body.path === 'string' ? body.path.trim() : ''
+              const version = typeof body.version === 'string' ? body.version.trim() : ''
+              if (!path || path.length > 500 || !version || version.length > 200) throw new Error('Invalid Figma version')
+              const configFile = resolve(projectRoot, '.pageflow')
+              const stored = JSON.parse(stripJsonComments(await readFile(configFile, 'utf8'))) as PageFlowOptions
+              const page = { ...(stored.pages?.[path] ?? {}) }
+              if (!page.figma) throw new Error('Page has no Figma binding')
+              page.figmaVersion = version
+              stored.pages = { ...(stored.pages ?? {}), [path]: page }
+              await writeFile(configFile, `${JSON.stringify(stored, null, 2)}\n`)
+              const link = resolved.figmaPages[path]
+              if (link) resolved.figmaPages = { ...resolved.figmaPages, [path]: { ...link, version } }
+              response.setHeader('Content-Type', 'application/json; charset=utf-8')
+              response.end(JSON.stringify({ path, version }))
             } catch (error) {
               response.statusCode = 400
               response.setHeader('Content-Type', 'application/json; charset=utf-8')
@@ -1164,6 +1254,7 @@ const factory: UnpluginFactory<PageFlowOptions | undefined> = (options) => {
               const stored = JSON.parse(stripJsonComments(await readFile(configFile, 'utf8'))) as PageFlowOptions
               const page = { ...(stored.pages?.[path] ?? {}) }
               delete page.figma
+              delete page.figmaVersion
               stored.pages = { ...(stored.pages ?? {}) }
               if (Object.keys(page).length) stored.pages[path] = page
               else delete stored.pages[path]
@@ -1175,6 +1266,34 @@ const factory: UnpluginFactory<PageFlowOptions | undefined> = (options) => {
               if (configModule) server.moduleGraph.invalidateModule(configModule)
               response.setHeader('Content-Type', 'application/json; charset=utf-8')
               response.end(JSON.stringify({ path }))
+            } catch (error) {
+              response.statusCode = 400
+              response.setHeader('Content-Type', 'application/json; charset=utf-8')
+              response.end(JSON.stringify({ error: error instanceof Error ? error.message : 'Invalid request' }))
+            }
+            return
+          }
+
+          if (pathname === pageTreePlacementPath && request.method === 'POST') {
+            try {
+              const body = await readJson(request)
+              const path = typeof body.path === 'string' ? body.path.trim() : ''
+              const group = typeof body.group === 'string' ? body.group.trim().replace(/^\/+|\/+$/g, '') : ''
+              const order = typeof body.order === 'number' ? body.order : Number.NaN
+              if (!path || path.length > 500 || group.length > 500 || (group && group.split('/').some(segment => !segment || segment === '.' || segment === '..'))
+                || !Number.isInteger(order) || order < 0 || order > 1000)
+                throw new Error('Invalid page tree placement')
+              const configFile = resolve(projectRoot, '.pageflow')
+              const stored = JSON.parse(stripJsonComments(await readFile(configFile, 'utf8'))) as PageFlowOptions
+              const placements = { ...(stored.pageTree?.placements ?? {}) }
+              placements[path] = { ...placements[path], group: group || '/', order }
+              stored.pageTree = { placements }
+              await writeFile(configFile, `${JSON.stringify(stored, null, 2)}\n`)
+              resolved.pageTreePlacements = placements
+              const configModule = server.moduleGraph.getModuleById(PAGEFLOW_CONFIG_RESOLVED_ID)
+              if (configModule) server.moduleGraph.invalidateModule(configModule)
+              response.setHeader('Content-Type', 'application/json; charset=utf-8')
+              response.end(JSON.stringify({ path, group: group || '/', order }))
             } catch (error) {
               response.statusCode = 400
               response.setHeader('Content-Type', 'application/json; charset=utf-8')

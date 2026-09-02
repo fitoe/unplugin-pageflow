@@ -40,6 +40,11 @@ test('persists edited group and page names and refreshes the virtual client conf
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ key: '/screen/legacy/yuye', name: '渔业演示' }),
     })
+    const savePageTreeOrder = await fetch(`${origin}/__unplugin-pageflow/api/page-tree-placement`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ path: '/screen/legacy/yuye', group: 'materials/farmer', order: 1 }),
+    })
     const saveFigmaPage = await fetch(`${origin}/__unplugin-pageflow/api/figma-page`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -58,16 +63,36 @@ test('persists edited group and page names and refreshes the virtual client conf
     assert.equal(save.status, 200)
     assert.equal(saveLayout.status, 200)
     assert.equal(savePageName.status, 200)
+    assert.equal(savePageTreeOrder.status, 200)
     assert.equal(saveFigmaPage.status, 200)
     assert.equal(savePageLocation.status, 200)
     assert.match(refreshedConfig, /业务流程/)
     assert.match(refreshedConfig, /overview/)
     assert.match(refreshedConfig, /渔业演示/)
     assert.equal(stored.groupNames.business, '业务流程')
-    assert.equal(stored.pageNames['/screen/legacy/yuye'], '渔业演示')
+    assert.equal(stored.pages['/screen/legacy/yuye'].name, '渔业演示')
+    assert.equal(stored.pageNames?.['/screen/legacy/yuye'], undefined)
     assert.equal(stored.pages['/orders/42'].figma, 'AbCdEf#123:456')
+    assert.deepEqual(stored.pageTree.placements['/screen/legacy/yuye'], { group: 'materials/farmer', order: 1 })
     assert.equal(stored.pages['/orders/42'].location, '/orders/42?tab=history#latest')
     assert.equal(stored.figmaPages?.['/orders/42'], undefined)
+    const figmaVersions = await (await fetch(`${origin}/__unplugin-pageflow/api/figma-version`)).json()
+    assert.deepEqual(figmaVersions.versions, [{ ref: 'AbCdEf#123:456', error: 'not-configured' }])
+    const initializeFigma = await fetch(`${origin}/__unplugin-pageflow/api/figma-version`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ versions: [{ ref: 'AbCdEf#123:456', version: 'initial-version' }] }),
+    })
+    assert.equal(initializeFigma.status, 200)
+    assert.deepEqual((await initializeFigma.json()).initialized, { '/orders/42': 'initial-version' })
+    const acknowledgeFigma = await fetch(`${origin}/__unplugin-pageflow/api/figma-version`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ path: '/orders/42', version: 'version-42' }),
+    })
+    assert.equal(acknowledgeFigma.status, 200)
+    const storedAfterAcknowledge = JSON.parse(await readFile(resolve(root, '.pageflow'), 'utf8'))
+    assert.equal(storedAfterAcknowledge.pages['/orders/42'].figmaVersion, 'version-42')
     assert.deepEqual(stored.canvasLayouts['/business'].overview, [120, 240])
     const deleteFigmaPage = await fetch(`${origin}/__unplugin-pageflow/api/figma-page`, {
       method: 'DELETE',
@@ -83,6 +108,7 @@ test('persists edited group and page names and refreshes the virtual client conf
       groupNames: { refreshed: '重新读取' },
       pages: { '/orders/:id': { figma: 'AbCdEf#123:456', location: '/orders/:id?id=42' } },
       canvasLayouts: { '/': { home: [320, 180] } },
+      pageTree: { placements: { '/pages/materials/b': { group: 'materials', order: 0 }, '/pages/materials/a': { group: 'materials', order: 1 } } },
     }))
     const refreshResponse = await fetch(`${origin}/__unplugin-pageflow/api/config`, { method: 'POST' })
     const refreshed = await refreshResponse.json()
@@ -93,6 +119,7 @@ test('persists edited group and page names and refreshes the virtual client conf
     assert.equal(refreshed.figmaPages['/orders/:id'].ref, 'AbCdEf#123:456')
     assert.equal(refreshed.pageLocations['/orders/:id'], '/orders/:id?id=42')
     assert.deepEqual(refreshed.canvasLayouts['/'].home, [320, 180])
+    assert.deepEqual(refreshed.pageTreePlacements['/pages/materials/a'], { group: 'materials', order: 1 })
   } finally {
     await server.close()
     await rm(root, { recursive: true, force: true })

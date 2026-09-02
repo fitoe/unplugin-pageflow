@@ -1,7 +1,9 @@
 import { PAGEFLOW_XPATH_SELECTED_MESSAGE } from '../shared/protocol'
 
 const XPATH_HIGHLIGHT_ATTRIBUTE = 'data-unplugin-pageflow-xpath-target'
+export const XPATH_MODE_ATTRIBUTE = 'data-unplugin-pageflow-xpath-mode'
 const BLOCKED_INTERACTION_EVENTS = ['pointerdown', 'pointerup', 'mousedown', 'mouseup', 'touchstart', 'touchend'] as const
+const PAGEFLOW_OVERLAY_SELECTOR = '[data-unplugin-pageflow-hotspot-layer], [data-unplugin-pageflow-diagnostic-highlight], [data-unplugin-pageflow-launcher]'
 
 function xpathLiteral(value: string) {
   if (!value.includes('"')) return `"${value}"`
@@ -34,12 +36,14 @@ export function createXPathSelectionController(windowRef: Window) {
   }
   const eventElement = (event: Event) => {
     const target = event.target
-    const fallback = target && (target as Node).nodeType === 1 ? target as Element : undefined
+    const targetElement = target && (target as Node).nodeType === 1 ? target as Element : undefined
+    const fallback = targetElement && !targetElement.closest(PAGEFLOW_OVERLAY_SELECTOR) ? targetElement : undefined
     if (!('clientX' in event) || !('clientY' in event)
       || typeof event.clientX !== 'number' || typeof event.clientY !== 'number'
       || typeof documentRef.elementsFromPoint !== 'function') return fallback
     const candidates = documentRef.elementsFromPoint(event.clientX, event.clientY)
       .filter((element) => {
+        if (element.closest(PAGEFLOW_OVERLAY_SELECTOR)) return false
         const rect = element.getBoundingClientRect()
         return rect.width > 0 && rect.height > 0
       })
@@ -58,27 +62,35 @@ export function createXPathSelectionController(windowRef: Window) {
     event.preventDefault()
     event.stopImmediatePropagation()
   }
+  const applyEnabled = (next: boolean) => {
+    if (enabled === next) return
+    enabled = next
+    documentRef.documentElement.toggleAttribute(XPATH_MODE_ATTRIBUTE, next)
+    const action = next ? 'addEventListener' : 'removeEventListener'
+    documentRef[action]('pointermove', onPointerMove, true)
+    documentRef[action]('click', onClick, true)
+    for (const eventName of BLOCKED_INTERACTION_EVENTS)
+      documentRef[action](eventName, blockInteraction, true)
+    if (!next) clearHighlight()
+  }
   const onClick = (event: Event) => {
     if (!enabled) return
     const target = highlighted ?? eventElement(event)
     blockInteraction(event)
     if (!target || windowRef.parent === windowRef) return
+    applyEnabled(false)
     windowRef.parent.postMessage({ type: PAGEFLOW_XPATH_SELECTED_MESSAGE, xpath: elementXPath(target) }, windowRef.location.origin)
   }
   const style = documentRef.createElement('style')
-  style.textContent = `[${XPATH_HIGHLIGHT_ATTRIBUTE}] { outline: 2px solid #2563eb !important; outline-offset: -2px !important; background-color: rgb(37 99 235 / 12%) !important; cursor: crosshair !important; }`
+  style.textContent = `
+    [${XPATH_HIGHLIGHT_ATTRIBUTE}] { outline: 2px solid #2563eb !important; outline-offset: -2px !important; background-color: rgb(37 99 235 / 12%) !important; cursor: crosshair !important; }
+    html[${XPATH_MODE_ATTRIBUTE}] [data-unplugin-pageflow-hotspot-layer] { pointer-events: none !important; }
+  `
   documentRef.head.append(style)
 
   return {
     setEnabled(next: boolean) {
-      if (enabled === next) return
-      enabled = next
-      const action = next ? 'addEventListener' : 'removeEventListener'
-      documentRef[action]('pointermove', onPointerMove, true)
-      documentRef[action]('click', onClick, true)
-      for (const eventName of BLOCKED_INTERACTION_EVENTS)
-        documentRef[action](eventName, blockInteraction, true)
-      if (!next) clearHighlight()
+      applyEnabled(next)
     },
   }
 }

@@ -64,3 +64,86 @@ test('page tree always provides a readable label for untitled pages', async () =
     await server.close()
   }
 })
+
+test('page tree applies page order across mixed page and directory siblings', async () => {
+  const server = await createServer({ configFile: false, server: { middlewareMode: true }, appType: 'custom', logLevel: 'silent' })
+  try {
+    const { createPageTree } = await server.ssrLoadModule('/src/client/page-tree.ts')
+    const pages = [
+      { id: 'a', title: 'A', path: '/pages/a', accent: '#000', links: [] },
+      { id: 'nested', title: 'Nested', path: '/pages/nested/index', accent: '#000', links: [] },
+      { id: 'b', title: 'B', path: '/pages/b', accent: '#000', links: [] },
+    ]
+    const nodes = createPageTree(pages, {
+      groupPath: page => page.id === 'nested' ? ['pages', 'nested'] : ['pages'],
+      placements: {
+        '/pages/b': { group: 'pages', order: 0 },
+        '/pages/a': { group: 'pages', order: 1 },
+      },
+    })
+    const pageGroup = nodes[0]
+    assert.equal(pageGroup.kind, 'group')
+    assert.deepEqual(pageGroup.children.map(node => node.kind === 'page' ? node.path : node.key), [
+      '/pages/b', '/pages/a', 'group:pages/nested',
+    ])
+    assert.equal(pageGroup.children[0].parentKey, 'pages')
+  } finally {
+    await server.close()
+  }
+})
+
+test('places a dragged page exactly before or after the indicated row', async () => {
+  const server = await createServer({ configFile: false, server: { middlewareMode: true }, appType: 'custom', logLevel: 'silent' })
+  try {
+    const { placePageTreePath } = await server.ssrLoadModule('/src/client/page-tree.ts')
+    assert.deepEqual(placePageTreePath(['/a', '/b', '/c'], '/x', '/b', false), ['/a', '/x', '/b', '/c'])
+    assert.deepEqual(placePageTreePath(['/a', '/b', '/c'], '/x', '/b', true), ['/a', '/b', '/x', '/c'])
+    assert.deepEqual(placePageTreePath(['/a', '/b', '/c'], '/a', '/c', true), ['/b', '/c', '/a'])
+  } finally {
+    await server.close()
+  }
+})
+
+test('places pages before or after child directories using one mixed order', async () => {
+  const server = await createServer({ configFile: false, server: { middlewareMode: true }, appType: 'custom', logLevel: 'silent' })
+  try {
+    const { createPageTree } = await server.ssrLoadModule('/src/client/page-tree.ts')
+    const pages = [
+      { id: 'folder-page', title: 'Folder page', path: '/folder/index', links: [] },
+      { id: 'loose', title: 'Loose', path: '/loose', links: [] },
+    ]
+    const groupPath = page => page.id === 'folder-page' ? ['folder'] : []
+    assert.deepEqual(createPageTree(pages, {
+      groupPath,
+      placements: { '/loose': { group: '/', order: 0 } },
+    }).map(node => node.label), ['Loose', 'folder'])
+    assert.deepEqual(createPageTree(pages, {
+      groupPath,
+      placements: { '/loose': { group: '/', order: 1 } },
+    }).map(node => node.label), ['folder', 'Loose'])
+  } finally {
+    await server.close()
+  }
+})
+
+test('moves a directory virtually while preserving its stable placement key', async () => {
+  const server = await createServer({ configFile: false, server: { middlewareMode: true }, appType: 'custom', logLevel: 'silent' })
+  try {
+    const { createPageTree } = await server.ssrLoadModule('/src/client/page-tree.ts')
+    const pages = [
+      { id: 'a', title: 'A', path: '/alpha/a', links: [] },
+      { id: 'b', title: 'B', path: '/beta/b', links: [] },
+    ]
+    const nodes = createPageTree(pages, {
+      groupPath: page => page.id === 'a' ? ['alpha'] : ['beta'],
+      placements: { 'group:alpha': { group: 'beta', order: 0 } },
+    })
+    const beta = nodes.find(node => node.kind === 'group' && node.key === 'group:beta')
+    assert(beta)
+    assert.equal(beta.children[0].key, 'group:alpha')
+    assert.equal(beta.children[0].parentKey, 'beta')
+    assert.equal(beta.children[0].children[0].path, '/alpha/a')
+  } finally {
+    await server.close()
+  }
+})
