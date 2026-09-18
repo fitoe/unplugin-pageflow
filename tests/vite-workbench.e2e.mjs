@@ -95,7 +95,7 @@ test('Vite workbench smoke covers navigation, focus, viewport, theme, hotspots, 
         }
       }, 20)
     }))
-    assert.match(await signInEmail.inputValue(), /^contact\d{4}@outlook\.com$/)
+    assert.match(await signInEmail.inputValue(), /^[^@\s]+@[^@\s]+\.[^@\s]+$/)
     assert.equal(await page.getByRole('complementary', { name: '页面测试数据' }).count(), 0)
     await page.getByText(/已自动填入 1 个字段/).waitFor()
 

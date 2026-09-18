@@ -51,8 +51,9 @@ header {
   white-space: nowrap;
 }
 .quick-search { position: relative; width: min(320px, 30vw); }
-.search-result-item { min-width: 0; width: 100%; }
+.search-result-item { display: flex; min-width: 0; width: 100%; flex-direction: column; }
 .search-result-item strong { min-width: 0; overflow: hidden; color: var(--pageflow-text); font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
+.search-result-item small { min-width: 0; overflow: hidden; color: var(--pageflow-muted); font-size: 10px; text-overflow: ellipsis; white-space: nowrap; }
 .mode {
   padding: 3px 7px;
   border: 1px solid #474b4f;

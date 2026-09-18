@@ -4519,6 +4519,7 @@ onUnmounted(() => {
             <template #item="{ item }">
               <div class="search-result-item">
                 <strong>{{ item.label }}</strong>
+                <small>{{ item.description }}</small>
               </div>
             </template>
             <template #empty>没有匹配页面</template>

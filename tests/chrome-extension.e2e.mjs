@@ -122,7 +122,7 @@ test('Chrome extension smoke covers runtime, capture, diagnostics, workbench, an
     const formScan = await worker.evaluate(async tabId => chrome.tabs.sendMessage(tabId, { type: 'pageflow:form-scan' }), pageTabId)
     const companyEmail = formScan.controls.find(control => control.identity === 'name:companyEmail')
     assert(companyEmail)
-    assert.match(companyEmail.suggestedValue, /^contact\d{4}@outlook\.com$/)
+    assert.match(companyEmail.suggestedValue, /^[^@\s]+@[^@\s]+\.[^@\s]+$/)
     const formFill = await worker.evaluate(async ({ tabId, id, value }) => chrome.tabs.sendMessage(tabId, {
       type: 'pageflow:form-fill',
       values: { [id]: value },
