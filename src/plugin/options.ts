@@ -28,6 +28,7 @@ export function resolveOptions(options: PageFlowOptions = {}): ResolvedPageFlowO
     figmaPages: normalizeFigmaPages(pageFigma, resolvedPageNames, pageFigmaVersions),
     pageLocations,
     pageTreePlacements: options.pageTree?.placements ?? {},
+    pageTreeCollapsed: options.pageTree?.collapsed ?? [],
     canvasLayouts: options.canvasLayouts ?? {},
     pageTests: options.pageTests ?? {},
     testCommands: options.testCommands ?? {},
@@ -85,7 +86,10 @@ export async function loadProjectOptions(root: string, options: PageFlowOptions 
       pageNames: { ...(options.pageNames ?? {}), ...(stored.pageNames ?? {}) },
       pages: { ...(options.pages ?? {}), ...(stored.pages ?? {}) },
       canvasLayouts: { ...(options.canvasLayouts ?? {}), ...(stored.canvasLayouts ?? {}) },
-      pageTree: { placements: { ...(options.pageTree?.placements ?? {}), ...(stored.pageTree?.placements ?? {}) } },
+      pageTree: {
+        placements: { ...(options.pageTree?.placements ?? {}), ...(stored.pageTree?.placements ?? {}) },
+        collapsed: stored.pageTree?.collapsed ?? options.pageTree?.collapsed,
+      },
       pageTests: options.pageTests ?? stored.pageTests,
       testCommands: options.testCommands ?? stored.testCommands,
       diagnostics: {

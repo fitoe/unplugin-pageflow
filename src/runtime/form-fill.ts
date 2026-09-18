@@ -12,7 +12,7 @@ type FormControl = HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement
 interface ScannedControl {
   descriptor: PageFlowFormControlDescriptor
   element: FormControl | HTMLElement
-  picker?: boolean
+  picker?: 'selector' | 'date'
 }
 
 interface FormControlSnapshot {
@@ -252,6 +252,27 @@ function pickerDescriptor(element: HTMLElement, id: string): PageFlowFormControl
     }
   }
   const items = [...element.querySelectorAll<HTMLElement>('.uni-picker-select > .uni-picker-item')]
+  const mode = element.getAttribute('mode')?.toLowerCase()
+  const dateContainer = element.querySelector<HTMLElement>('.uni-picker-container[class*="uni-date-"]')
+  const yearItems = items.filter(item => /^(?:18|19|20|21)\d{2}(?:年)?$/.test(normalizedText(item.textContent)))
+  if (mode === 'date' || dateContainer || yearItems.length >= 2) {
+    const dateInput = element.ownerDocument.createElement('input')
+    dateInput.type = 'date'
+    dateInput.min = element.getAttribute('start') ?? dateContainer?.getAttribute('data-start') ?? ''
+    dateInput.max = element.getAttribute('end') ?? dateContainer?.getAttribute('data-end') ?? ''
+    return {
+      id,
+      identity: pageFlowFormControlIdentity(element),
+      selector: selectorFor(element),
+      label: accessibleName(element),
+      kind: 'picker',
+      required: element.hasAttribute('required'),
+      value: element.getAttribute('value') ?? '',
+      suggestedValue: dateValue(dateInput, 'date'),
+      min: normalizedText(dateInput.min) || undefined,
+      max: normalizedText(dateInput.max) || undefined,
+    }
+  }
   if (!items.length) return undefined
   const selectedIndex = items.findIndex(item => item.classList.contains('selected'))
   return {
@@ -267,11 +288,19 @@ function pickerDescriptor(element: HTMLElement, id: string): PageFlowFormControl
   }
 }
 
-function applyPickerValue(element: HTMLElement, value: string) {
+function applyPickerValue(element: HTMLElement, value: string, picker: 'selector' | 'date') {
   const systemInput = element.querySelector<HTMLInputElement>('.uni-picker-system_input')
   if (systemInput) {
     setNativeValue(systemInput, value)
     dispatchFormEvents(systemInput)
+    return
+  }
+  if (picker === 'date') {
+    const EventConstructor = element.ownerDocument.defaultView?.CustomEvent ?? CustomEvent
+    const event = new EventConstructor('change', { bubbles: true, detail: { value } })
+    element.dispatchEvent(event)
+    const vueInstance = (element as HTMLElement & { __vueParentComponent?: { emit?: (name: string, event: Event) => void } }).__vueParentComponent
+    vueInstance?.emit?.('change', event)
     return
   }
   const container = element.querySelector<HTMLElement>('.uni-picker-container')
@@ -351,7 +380,8 @@ function scanControls(document: Document): { controls: ScannedControl[], skipped
       skipped.unsupported++
       return
     }
-    controls.push({ descriptor, element, picker: true })
+    const dateLike = typeof descriptor.suggestedValue === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(descriptor.suggestedValue)
+    controls.push({ descriptor, element, picker: dateLike ? 'date' : 'selector' })
   })
   return { controls, skipped }
 }
@@ -425,7 +455,7 @@ export function applyPageFlowFormValues(
     let snapshotAdded = false
     try {
       if (item.picker) {
-        applyPickerValue(element as HTMLElement, value as string)
+        applyPickerValue(element as HTMLElement, value as string, item.picker)
         result.applied.push(id)
         return
       }

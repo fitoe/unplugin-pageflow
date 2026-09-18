@@ -36,6 +36,7 @@ interface PageTreeOptions {
   orphanPageIds?: ReadonlySet<string>
   groupPath: (page: PageFlowPage) => string[]
   placements?: Record<string, { group?: string, order?: number }>
+  favoritePageIds?: ReadonlySet<string>
 }
 
 function effectiveGroupPath(path: string[], placements: PageTreeOptions['placements']) {
@@ -179,6 +180,34 @@ export function createPageTree(pages: PageFlowPage[], options: PageTreeOptions):
 
   applyPageOrder(roots, options.placements)
 
+  if (options.favoritePageIds) {
+    const pagesById = new Map(pages.map(page => [page.id, page]))
+    const favoritePages = [...options.favoritePageIds].flatMap((pageId, order) => {
+      const page = pagesById.get(pageId)
+      return page ? [{
+        kind: 'page' as const,
+        key: `favorite:${page.id}`,
+        label: pageTreePageLabel(page, options.pageNames),
+        pageId: page.id,
+        path: page.path,
+        virtual: Boolean(page.virtual),
+        order,
+        parentKey: '__pageflow_favorites__',
+      }] : []
+    })
+    roots.unshift({
+      kind: 'group',
+      key: 'group:__pageflow_favorites__',
+      label: '收藏夹',
+      path: ['__pageflow_favorites__'],
+      children: favoritePages,
+      pageCount: favoritePages.length,
+      order: -1,
+      navigable: false,
+      parentKey: '',
+    })
+  }
+
   return roots
 }
 
@@ -191,7 +220,8 @@ export function flattenPageTree(nodes: PageTreeNode[], expandedKeys: ReadonlySet
 }
 
 export function pageTreeAncestorKeys(nodes: PageTreeNode[], pageId: string): string[] {
-  for (const node of nodes) {
+  const ordered = [...nodes].sort((left, right) => Number(left.key === 'group:__pageflow_favorites__') - Number(right.key === 'group:__pageflow_favorites__'))
+  for (const node of ordered) {
     if (node.kind === 'page') {
       if (node.pageId === pageId) return []
       continue

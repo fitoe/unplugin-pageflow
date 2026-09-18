@@ -65,6 +65,31 @@ test('page tree always provides a readable label for untitled pages', async () =
   }
 })
 
+test('page tree exposes a read-only favorites collection at the top', async () => {
+  const server = await createServer({ configFile: false, server: { middlewareMode: true }, appType: 'custom', logLevel: 'silent' })
+  try {
+    const tree = await server.ssrLoadModule('/src/client/page-tree.ts')
+    const pages = [
+      { id: 'a', title: 'A', path: '/a', links: [] },
+      { id: 'b', title: 'B', path: '/b', links: [] },
+    ]
+    const nodes = tree.createPageTree(pages, {
+      groupPath: () => [],
+      favoritePageIds: new Set(['b']),
+    })
+    assert.equal(nodes[0].key, 'group:__pageflow_favorites__')
+    assert.equal(nodes[0].label, '收藏夹')
+    assert.equal(nodes[0].pageCount, 1)
+    assert.deepEqual(nodes[0].children.map(node => [node.key, node.pageId, node.parentKey]), [
+      ['favorite:b', 'b', '__pageflow_favorites__'],
+    ])
+    assert.deepEqual(nodes.slice(1).map(node => node.pageId), ['a', 'b'])
+    assert.deepEqual(tree.pageTreeAncestorKeys(nodes, 'b'), [])
+  } finally {
+    await server.close()
+  }
+})
+
 test('page tree applies page order across mixed page and directory siblings', async () => {
   const server = await createServer({ configFile: false, server: { middlewareMode: true }, appType: 'custom', logLevel: 'silent' })
   try {

@@ -203,6 +203,53 @@ test('scans and selects uni-app selector pickers through their component items',
   window.close()
 })
 
+test('generates a recent date for uni-app date pickers without selecting the earliest year', () => {
+  faker.seed(20260907)
+  const window = new Window({ url: 'http://localhost/pages/machinery/farmer/demands/create' })
+  Object.assign(globalThis, { window, document: window.document })
+  window.document.body.innerHTML = `
+    <uni-picker mode="date" start="2025-09-07">
+      <div class="uni-picker-container">
+        <div class="uni-picker-select">
+          <div class="uni-picker-item">1800年</div>
+          <div class="uni-picker-item">1801年</div>
+        </div>
+      </div>
+    </uni-picker>
+  `
+  const picker = window.document.querySelector('uni-picker')
+  let selected = ''
+  picker.addEventListener('change', event => { selected = event.detail.value })
+  const scan = formFill.scanPageFlowFormControls(window.document)
+  const value = scan.controls[0].suggestedValue
+  assert.match(value, /^20\d{2}-\d{2}-\d{2}$/)
+  const result = formFill.applyPageFlowFormValues({ [scan.controls[0].id]: value }, window.document)
+  assert.deepEqual(result.applied, [scan.controls[0].id])
+  assert.equal(selected, value)
+  window.close()
+})
+
+test('fills a closed uni-app date picker through its component change event', () => {
+  const window = new Window({ url: 'http://localhost/pages/machinery/farmer/demands/create' })
+  Object.assign(globalThis, { window, document: window.document })
+  window.document.body.innerHTML = `
+    <uni-picker>
+      <div class="uni-picker-container uni-date-date"></div>
+      <div>请选择开始日期</div>
+    </uni-picker>
+  `
+  const picker = window.document.querySelector('uni-picker')
+  let selected = ''
+  picker.__vueParentComponent = { emit(name, event) { if (name === 'change') selected = event.detail.value } }
+  const scan = formFill.scanPageFlowFormControls(window.document)
+  assert.equal(scan.controls.length, 1)
+  const value = scan.controls[0].suggestedValue
+  const result = formFill.applyPageFlowFormValues({ [scan.controls[0].id]: value }, window.document)
+  assert.deepEqual(result.applied, [scan.controls[0].id])
+  assert.equal(selected, value)
+  window.close()
+})
+
 test('applies edited values through native events and restores the pre-fill state', () => {
   const window = createFormWindow()
   const scan = formFill.scanPageFlowFormControls(window.document)

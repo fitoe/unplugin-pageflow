@@ -3,10 +3,10 @@ import type { UnpluginFactory } from 'unplugin'
 import { createHash } from 'node:crypto'
 import { spawn, type ChildProcess } from 'node:child_process'
 import { createRequire } from 'node:module'
-import { readFile, readdir, stat, writeFile } from 'node:fs/promises'
+import { mkdir, readFile, readdir, rename, stat, writeFile } from 'node:fs/promises'
 import { existsSync, readFileSync } from 'node:fs'
 import type { ServerResponse } from 'node:http'
-import { dirname, isAbsolute, relative, resolve } from 'node:path'
+import { basename, dirname, isAbsolute, relative, resolve } from 'node:path'
 import { StringDecoder } from 'node:string_decoder'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { stripVTControlCharacters } from 'node:util'
@@ -125,6 +125,10 @@ async function readUniAppConfig(root: string) {
       const addPage = (page: PageConfig, packageRoot = '') => {
         if (typeof page.path !== 'string' || !page.path.trim()) return
         const path = normalizePath(`${packageRoot}/${page.path}`)
+        const vueFile = resolve(root, 'src', `${path.slice(1)}.vue`)
+        const nvueFile = resolve(root, 'src', `${path.slice(1)}.nvue`)
+        const componentFile = existsSync(vueFile) ? vueFile : existsSync(nvueFile) ? nvueFile : undefined
+        if (!componentFile) return
         routeOrderByPath.set(path, routeOrderByPath.size)
         const title = page.style?.navigationBarTitleText
         if (typeof title === 'string' && title.trim())
@@ -133,7 +137,7 @@ async function readUniAppConfig(root: string) {
           id: path,
           path,
           title: typeof title === 'string' ? title.trim() : '',
-          componentFile: resolve(root, 'src', `${path.slice(1)}.vue`),
+          componentFile,
         })
       }
       config.pages?.forEach(page => addPage(page))
@@ -141,11 +145,11 @@ async function readUniAppConfig(root: string) {
         const packageRoot = typeof pkg.root === 'string' ? pkg.root : ''
         pkg.pages?.forEach(page => addPage(page, packageRoot))
       })
-      const home = config.pages?.[0]?.path
+      const homePath = routes[0]?.path
       const globalTitle = config.globalStyle?.navigationBarTitleText
       return {
         globalTitle: typeof globalTitle === 'string' ? globalTitle.trim() : '',
-        homePath: typeof home === 'string' && home.trim() ? normalizePath(home) : undefined,
+        homePath,
         routes,
         titlesByPath,
         routeOrderByPath,
@@ -183,12 +187,14 @@ function mergeUniAppRoutes(
     consumedPaths.add(path)
     return next
   })
-  for (const layer of [configured, runtime]) {
-    for (const route of layer) {
-      if (consumedPaths.has(route.path)) continue
-      consumedPaths.add(route.path)
-      merged.push(route)
-    }
+  // pages.json is authoritative for uni-app. Runtime adapters can enrich a
+  // discovered route, but stale generated route tables must not resurrect a
+  // page that has been removed from pages.json. Explicit Pageflow routes remain
+  // the supported way to add virtual pages.
+  for (const route of [...configured, ...runtime.filter(route => route.componentFile)]) {
+    if (consumedPaths.has(route.path)) continue
+    consumedPaths.add(route.path)
+    merged.push(route)
   }
   return merged
 }
@@ -624,6 +630,49 @@ const factory: UnpluginFactory<PageFlowOptions | undefined> = (options) => {
       for (const path of reportedPages.keys()) {
         if (!activePaths.has(path)) reportedPages.delete(path)
       }
+      const configFile = resolve(projectRoot, '.pageflow')
+      try {
+        const stored = JSON.parse(stripJsonComments(await readFile(configFile, 'utf8'))) as PageFlowOptions
+        const validPaths = new Set(routes.map(route => route.path === '/' && uniAppHomePath ? uniAppHomePath : route.path))
+        const validIds = new Set(routes.flatMap(route => [route.id, route.path]))
+        const nativeGroups = new Set<string>()
+        for (const path of validPaths) {
+          const segments = path.split(/[/?#]/).filter(Boolean)
+          if (segments[0] === 'pages') segments.shift()
+          segments.pop()
+          for (let length = 1; length <= segments.length; length++) nativeGroups.add(segments.slice(0, length).join('/'))
+        }
+        const placements = Object.fromEntries(Object.entries(stored.pageTree?.placements ?? {}).filter(([key]) =>
+          key.startsWith('group:') ? nativeGroups.has(key.slice(6)) : validPaths.has(key)))
+        const placedGroups = new Set(Object.values(placements).map(placement => placement.group).filter((group): group is string => Boolean(group && group !== '/')))
+        for (const group of placedGroups) {
+          const segments = group.split('/').filter(Boolean)
+          for (let length = 1; length <= segments.length; length++) nativeGroups.add(segments.slice(0, length).join('/'))
+        }
+        const pages = Object.fromEntries(Object.entries(stored.pages ?? {}).filter(([path]) => validPaths.has(path)))
+        const groupNames = Object.fromEntries(Object.entries(stored.groupNames ?? {}).filter(([group]) => nativeGroups.has(group)))
+        const collapsed = (stored.pageTree?.collapsed ?? []).filter(group => nativeGroups.has(group.replace(/^group:/, '')))
+        const canvasLayouts = Object.fromEntries(Object.entries(stored.canvasLayouts ?? {}).flatMap(([group, positions]) => {
+          const filtered = Object.fromEntries(Object.entries(positions).filter(([id]) => validIds.has(id) || validPaths.has(id)))
+          return Object.keys(filtered).length ? [[group, filtered]] : []
+        }))
+        const changed = JSON.stringify(pages) !== JSON.stringify(stored.pages ?? {})
+          || JSON.stringify(groupNames) !== JSON.stringify(stored.groupNames ?? {})
+          || JSON.stringify(placements) !== JSON.stringify(stored.pageTree?.placements ?? {})
+          || JSON.stringify(collapsed) !== JSON.stringify(stored.pageTree?.collapsed ?? [])
+          || JSON.stringify(canvasLayouts) !== JSON.stringify(stored.canvasLayouts ?? {})
+        if (changed) {
+          stored.pages = pages
+          stored.groupNames = groupNames
+          stored.pageTree = { ...stored.pageTree, placements, collapsed }
+          stored.canvasLayouts = canvasLayouts
+          await writeFile(configFile, `${JSON.stringify(stored, null, 2)}\n`)
+          Object.assign(resolved, await loadProjectOptions(projectRoot, options))
+        }
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== 'ENOENT')
+          console.warn(`unplugin-pageflow could not clean stale page config: ${error instanceof Error ? error.message : error}`)
+      }
     }
 
     staticLinksByFile.clear()
@@ -633,6 +682,42 @@ const factory: UnpluginFactory<PageFlowOptions | undefined> = (options) => {
     await Promise.all([resolve(projectRoot, 'src'), resolve(projectRoot, 'app')].map(directory => scanVueSources(directory, false)))
     pageTestIndex?.setRoutes(routes)
     rebuildGraph()
+  }
+  const movePageSource = async (pagePath: string, targetGroup: string) => {
+    const route = routes.find(candidate => candidate.path === pagePath)
+    if (!route?.componentFile) throw new Error('Page source file was not found')
+    const sourceFile = resolve(projectRoot, route.componentFile)
+    const leaf = pagePath.split('/').filter(Boolean).at(-1)
+    if (!leaf) throw new Error('Invalid page path')
+    const normalizedGroup = targetGroup.replace(/^\/+|\/+$/g, '')
+    const nextPath = `/pages/${[normalizedGroup, leaf].filter(Boolean).join('/')}`
+    if (nextPath === pagePath) return { oldPath: pagePath, nextPath, moved: false }
+    const targetFile = resolve(projectRoot, 'src/pages', normalizedGroup, basename(sourceFile))
+    const relativeTarget = normalizeFile(relative(projectRoot, targetFile))
+    if (relativeTarget.startsWith('../') || isAbsolute(relativeTarget)) throw new Error('Target page path is outside the project')
+    if (existsSync(targetFile)) throw new Error(`Target page already exists: ${relativeTarget}`)
+    await mkdir(dirname(targetFile), { recursive: true })
+    await rename(sourceFile, targetFile)
+    const replaceRouteReferences = async (directory: string) => {
+      for (const entry of await readdir(directory, { withFileTypes: true }).catch(() => [])) {
+        const file = resolve(directory, entry.name)
+        if (entry.isDirectory()) await replaceRouteReferences(file)
+        else if (entry.isFile() && /\.(?:vue|ts|tsx|js|jsx|json)$/.test(entry.name)) {
+          const source = await readFile(file, 'utf8')
+          if (source.includes(pagePath)) await writeFile(file, source.replaceAll(pagePath, nextPath))
+        }
+      }
+    }
+    await replaceRouteReferences(resolve(projectRoot, 'src'))
+    return { oldPath: pagePath, nextPath, moved: true }
+  }
+  let projectRefreshTimer: ReturnType<typeof setTimeout> | undefined
+  const scheduleProjectGraphRefresh = () => {
+    if (projectRefreshTimer) clearTimeout(projectRefreshTimer)
+    projectRefreshTimer = setTimeout(() => {
+      projectRefreshTimer = undefined
+      void refreshProjectGraph()
+    }, 80)
   }
 
   const sendEvent = (event: string, data: unknown) => {
@@ -713,6 +798,10 @@ const factory: UnpluginFactory<PageFlowOptions | undefined> = (options) => {
           pageTestIndexReady = pageTestIndex.update(file).then(() => sendEvent(PAGEFLOW_TEST_EVENT, { file }))
           return []
         }
+        if (file.endsWith('/pages.json')) {
+          scheduleProjectGraphRefresh()
+          return []
+        }
         if (file.endsWith('.vue')) updateSource(await readFile(file, 'utf8'), file)
       },
       transformIndexHtml: {
@@ -730,6 +819,11 @@ const factory: UnpluginFactory<PageFlowOptions | undefined> = (options) => {
       async configureServer(server) {
         let servedRuntimeVersion = 0
         projectRoot = resolve(options?.projectRoot ?? server.config.root)
+        const handleDeletedFile = (file: string) => {
+          const normalized = normalizeFile(file)
+          if (normalized.endsWith('.vue') || normalized.endsWith('/pages.json')) scheduleProjectGraphRefresh()
+        }
+        server.watcher.on('unlink', handleDeletedFile)
         if (projectRoot !== pluginRoot || packaged) {
           try {
             Object.assign(resolved, await loadProjectOptions(projectRoot, options))
@@ -797,6 +891,7 @@ const factory: UnpluginFactory<PageFlowOptions | undefined> = (options) => {
           const figmaVersionPath = `${resolved.previewPath}api/figma-version`
           const pageLocationPath = `${resolved.previewPath}api/page-location`
           const pageTreePlacementPath = `${resolved.previewPath}api/page-tree-placement`
+          const pageTreeCollapsedPath = `${resolved.previewPath}api/page-tree-collapsed`
           const canvasLayoutPath = `${resolved.previewPath}api/canvas-layout`
           const testsPath = `${resolved.previewPath}api/tests`
           const lighthousePath = `${resolved.previewPath}api/lighthouse`
@@ -814,6 +909,7 @@ const factory: UnpluginFactory<PageFlowOptions | undefined> = (options) => {
               figmaPages: resolved.figmaPages,
               pageLocations: resolved.pageLocations,
               pageTreePlacements: resolved.pageTreePlacements,
+              pageTreeCollapsed: resolved.pageTreeCollapsed,
               canvasLayouts: resolved.canvasLayouts,
             }))
             return
@@ -835,6 +931,7 @@ const factory: UnpluginFactory<PageFlowOptions | undefined> = (options) => {
                 figmaPages: resolved.figmaPages,
                 pageLocations: resolved.pageLocations,
                 pageTreePlacements: resolved.pageTreePlacements,
+                pageTreeCollapsed: resolved.pageTreeCollapsed,
                 canvasLayouts: resolved.canvasLayouts,
               }))
             } catch (error) {
@@ -1277,23 +1374,63 @@ const factory: UnpluginFactory<PageFlowOptions | undefined> = (options) => {
           if (pathname === pageTreePlacementPath && request.method === 'POST') {
             try {
               const body = await readJson(request)
-              const path = typeof body.path === 'string' ? body.path.trim() : ''
-              const group = typeof body.group === 'string' ? body.group.trim().replace(/^\/+|\/+$/g, '') : ''
-              const order = typeof body.order === 'number' ? body.order : Number.NaN
-              if (!path || path.length > 500 || group.length > 500 || (group && group.split('/').some(segment => !segment || segment === '.' || segment === '..'))
-                || !Number.isInteger(order) || order < 0 || order > 1000)
-                throw new Error('Invalid page tree placement')
+              const requested = Array.isArray(body.placements) ? body.placements : [body]
+              const normalized = requested.map((placement) => {
+                const path = typeof placement.path === 'string' ? placement.path.trim() : ''
+                const group = typeof placement.group === 'string' ? placement.group.trim().replace(/^\/+|\/+$/g, '') : ''
+                const order = typeof placement.order === 'number' ? placement.order : Number.NaN
+                if (!path || path.length > 500 || group.length > 500 || (group && group.split('/').some((segment: string) => !segment || segment === '.' || segment === '..'))
+                  || !Number.isInteger(order) || order < 0 || order > 1000)
+                  throw new Error('Invalid page tree placement')
+                return { path, group: group || '/', order }
+              })
+              if (!normalized.length || normalized.length > 1000) throw new Error('Invalid page tree placement')
+              const movedPath = typeof body.movedPath === 'string' ? body.movedPath.trim() : ''
+              const sourceGroup = typeof body.sourceGroup === 'string' ? body.sourceGroup.trim().replace(/^\/+|\/+$/g, '') : ''
+              const targetGroup = normalized.find(placement => placement.path === movedPath)?.group.replace(/^\/+|\/+$/g, '')
+              const sourceMove = movedPath && !movedPath.startsWith('group:') && targetGroup !== undefined && targetGroup !== sourceGroup
+                ? await movePageSource(movedPath, targetGroup)
+                : { oldPath: movedPath, nextPath: movedPath, moved: false }
+              const savedPlacements = normalized.map(placement => placement.path === sourceMove.oldPath
+                ? { ...placement, path: sourceMove.nextPath }
+                : placement)
               const configFile = resolve(projectRoot, '.pageflow')
-              const stored = JSON.parse(stripJsonComments(await readFile(configFile, 'utf8'))) as PageFlowOptions
+              const storedSource = stripJsonComments(await readFile(configFile, 'utf8'))
+              const stored = JSON.parse(sourceMove.moved ? storedSource.replaceAll(sourceMove.oldPath, sourceMove.nextPath) : storedSource) as PageFlowOptions
               const placements = { ...(stored.pageTree?.placements ?? {}) }
-              placements[path] = { ...placements[path], group: group || '/', order }
-              stored.pageTree = { placements }
+              if (sourceMove.moved) delete placements[sourceMove.oldPath]
+              for (const { path, group, order } of savedPlacements) placements[path] = { ...placements[path], group, order }
+              stored.pageTree = { ...stored.pageTree, placements }
               await writeFile(configFile, `${JSON.stringify(stored, null, 2)}\n`)
               resolved.pageTreePlacements = placements
               const configModule = server.moduleGraph.getModuleById(PAGEFLOW_CONFIG_RESOLVED_ID)
               if (configModule) server.moduleGraph.invalidateModule(configModule)
               response.setHeader('Content-Type', 'application/json; charset=utf-8')
-              response.end(JSON.stringify({ path, group: group || '/', order }))
+              response.end(JSON.stringify({ placements: savedPlacements, move: sourceMove }))
+            } catch (error) {
+              response.statusCode = 400
+              response.setHeader('Content-Type', 'application/json; charset=utf-8')
+              response.end(JSON.stringify({ error: error instanceof Error ? error.message : 'Invalid request' }))
+            }
+            return
+          }
+
+          if (pathname === pageTreeCollapsedPath && request.method === 'POST') {
+            try {
+              const body = await readJson(request)
+              if (!Array.isArray(body.collapsed) || body.collapsed.length > 1000
+                || body.collapsed.some((key: unknown) => typeof key !== 'string' || !key.startsWith('group:') || key.length > 500))
+                throw new Error('Invalid page tree state')
+              const collapsed = [...new Set<string>(body.collapsed)]
+              const configFile = resolve(projectRoot, '.pageflow')
+              const stored = JSON.parse(stripJsonComments(await readFile(configFile, 'utf8'))) as PageFlowOptions
+              stored.pageTree = { ...stored.pageTree, collapsed }
+              await writeFile(configFile, `${JSON.stringify(stored, null, 2)}\n`)
+              resolved.pageTreeCollapsed = collapsed
+              const configModule = server.moduleGraph.getModuleById(PAGEFLOW_CONFIG_RESOLVED_ID)
+              if (configModule) server.moduleGraph.invalidateModule(configModule)
+              response.setHeader('Content-Type', 'application/json; charset=utf-8')
+              response.end(JSON.stringify({ collapsed }))
             } catch (error) {
               response.statusCode = 400
               response.setHeader('Content-Type', 'application/json; charset=utf-8')
@@ -1504,6 +1641,8 @@ const factory: UnpluginFactory<PageFlowOptions | undefined> = (options) => {
         })
 
         server.httpServer?.once('close', () => {
+          server.watcher.off('unlink', handleDeletedFile)
+          if (projectRefreshTimer) clearTimeout(projectRefreshTimer)
           eventResponses.forEach(response => response.end())
           eventResponses.clear()
         })

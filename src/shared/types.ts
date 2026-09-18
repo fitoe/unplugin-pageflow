@@ -42,7 +42,11 @@ export interface PageFlowOptions {
   pages?: Record<string, PageFlowPageConfig>
   canvasLayouts?: Record<string, Record<string, [number, number]>>
   /** Page-tree placement overrides. These do not move or rename source files. */
-  pageTree?: { placements?: Record<string, { group?: string, order?: number }> }
+  pageTree?: {
+    placements?: Record<string, { group?: string, order?: number }>
+    /** Group keys that are collapsed in the Pageflow page tree. */
+    collapsed?: string[]
+  }
   /** Explicit route or route-glob to test file/glob mappings. */
   pageTests?: Record<string, string[]>
   /** Explicit test commands. Placeholders: {file}, {name}. Commands run without a shell. */
@@ -93,6 +97,7 @@ export interface ResolvedPageFlowOptions {
   figmaPages: Record<string, PageFlowFigmaLink>
   pageLocations: Record<string, string>
   pageTreePlacements: Record<string, { group?: string, order?: number }>
+  pageTreeCollapsed: string[]
   canvasLayouts: Record<string, Record<string, [number, number]>>
   pageTests: Record<string, string[]>
   testCommands: Partial<Record<PageFlowTestKind, PageFlowTestCommand>>
@@ -113,6 +118,7 @@ export interface PageFlowProjectConfig extends PageFlowConfigFileStatus {
   figmaPages: Record<string, PageFlowFigmaLink>
   pageLocations: Record<string, string>
   pageTreePlacements: Record<string, { group?: string, order?: number }>
+  pageTreeCollapsed: string[]
   canvasLayouts: Record<string, Record<string, [number, number]>>
 }
 

@@ -134,6 +134,7 @@ test('refreshing project config rescans uni-app routes and removes deleted pages
   await writeFile(resolve(root, 'src/pages.json'), JSON.stringify({
     pages: [
       { path: 'pages/home', style: { navigationBarTitleText: '首页' } },
+      { path: 'pages/missing', style: { navigationBarTitleText: '已删除页面' } },
       { path: 'pages/legacy', style: { navigationBarTitleText: '旧页面' } },
     ],
   }))
@@ -155,19 +156,86 @@ test('refreshing project config rescans uni-app routes and removes deleted pages
     const graphUrl = `${origin}/__unplugin-pageflow/api/graph`
     assert.deepEqual((await (await fetch(graphUrl)).json()).pages.map(page => page.path), ['/pages/home', '/pages/legacy'])
 
+    await fetch(`${origin}/__unplugin-pageflow/api/routes`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        routeMode: 'hash',
+        routes: [
+          { id: '/pages/home', path: '/pages/home', title: '首页' },
+          { id: '/pages/deleted', path: '/pages/deleted', title: '已删除页面' },
+        ],
+      }),
+    })
+    assert.deepEqual((await (await fetch(graphUrl)).json()).pages.map(page => page.path), ['/pages/home', '/pages/legacy'])
+
     await writeFile(resolve(root, 'src/pages.json'), JSON.stringify({
       pages: [
         { path: 'pages/home', style: { navigationBarTitleText: '新首页' } },
+        { path: 'pages/missing', style: { navigationBarTitleText: '已删除页面' } },
         { path: 'pages/current', style: { navigationBarTitleText: '当前页面' } },
       ],
     }))
     await writeFile(resolve(pagesDirectory, 'current.vue'), '<template><view>current</view></template>')
+    await writeFile(resolve(root, '.pageflow'), JSON.stringify({
+      enabled: true,
+      previewPath: '/__unplugin-pageflow/',
+      pages: { '/pages/legacy': { name: 'Legacy' }, '/pages/current': { name: 'Current' } },
+      canvasLayouts: { '/': { '/pages/legacy': [100, 100], '/pages/current': [200, 100] } },
+      pageTree: { placements: { '/pages/legacy': { group: '/', order: 0 }, '/pages/current': { group: '/', order: 1 } } },
+    }))
 
     const refreshResponse = await fetch(`${origin}/__unplugin-pageflow/api/config`, { method: 'POST' })
     const refreshedGraph = await (await fetch(graphUrl)).json()
+    const cleanedConfig = JSON.parse(await readFile(resolve(root, '.pageflow'), 'utf8'))
     assert.equal(refreshResponse.status, 200)
     assert.deepEqual(refreshedGraph.pages.map(page => page.path), ['/pages/home', '/pages/current'])
+    assert.equal(cleanedConfig.pages['/pages/legacy'], undefined)
+    assert.deepEqual(cleanedConfig.pages['/pages/current'], { name: 'Current' })
+    assert.equal(cleanedConfig.pageTree.placements['/pages/legacy'], undefined)
+    assert.equal(cleanedConfig.canvasLayouts['/']['/pages/legacy'], undefined)
     assert.equal(refreshedGraph.pages.find(page => page.path === '/pages/home')?.title, '新首页')
+  } finally {
+    await server.close()
+    await rm(root, { recursive: true, force: true })
+  }
+})
+
+test('moves a uni-app page source when dropped into another tree directory', async () => {
+  const root = await mkdtemp(resolve(os.tmpdir(), 'pageflow-uni-move-'))
+  await mkdir(resolve(root, 'src/pages/source'), { recursive: true })
+  await writeFile(resolve(root, '.pageflow'), JSON.stringify({
+    enabled: true,
+    previewPath: '/__unplugin-pageflow/',
+    pages: { '/pages/source/detail': { name: 'Detail' } },
+  }))
+  await writeFile(resolve(root, 'src/pages.json'), JSON.stringify({
+    pages: [{ path: 'pages/source/detail', style: { navigationBarTitleText: 'Detail' } }],
+  }))
+  await writeFile(resolve(root, 'src/pages/source/detail.vue'), '<template><view>detail</view></template>')
+  await writeFile(resolve(root, 'src/pages/source/index.vue'), '<template><navigator url="/pages/source/detail" /></template>')
+  const server = await createServer({ root, configFile: resolve('vite.config.ts'), logLevel: 'silent', server: { host: '127.0.0.1', port: 0 } })
+  await server.listen()
+  try {
+    const address = server.httpServer?.address()
+    assert(address && typeof address === 'object')
+    const origin = `http://127.0.0.1:${address.port}`
+    const response = await fetch(`${origin}/__unplugin-pageflow/api/page-tree-placement`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        movedPath: '/pages/source/detail',
+        sourceGroup: 'source',
+        placements: [{ path: '/pages/source/detail', group: 'target', order: 0 }],
+      }),
+    })
+    assert.equal(response.status, 200)
+    assert.equal(await readFile(resolve(root, 'src/pages/target/detail.vue'), 'utf8'), '<template><view>detail</view></template>')
+    await assert.rejects(readFile(resolve(root, 'src/pages/source/detail.vue'), 'utf8'))
+    assert.match(await readFile(resolve(root, 'src/pages/source/index.vue'), 'utf8'), /\/pages\/target\/detail/)
+    const stored = JSON.parse(await readFile(resolve(root, '.pageflow'), 'utf8'))
+    assert.deepEqual(stored.pages['/pages/target/detail'], { name: 'Detail' })
+    assert.equal(stored.pages['/pages/source/detail'], undefined)
   } finally {
     await server.close()
     await rm(root, { recursive: true, force: true })

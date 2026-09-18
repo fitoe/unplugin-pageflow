@@ -15,6 +15,7 @@ mountPageFlow(document.querySelector('#app'), {
   figmaPages: {},
   pageLocations: {},
   pageTreePlacements: {},
+  pageTreeCollapsed: [],
   canvasLayouts: {},
   pageTests: {},
   testCommands: {},

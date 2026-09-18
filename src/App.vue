@@ -26,7 +26,7 @@ import type {
   PageFlowThumbnailRecord,
   ResolvedPageFlowOptions,
 } from './shared/types'
-import { acknowledgePageFlowFigmaVersion, cancelPageFlowTest, deletePageFlowFigmaLink, fetchPageFlowEditor, fetchPageFlowFigmaVersions, fetchPageFlowGraph, fetchPageFlowTests, initializePageFlowFigmaVersions, openPageFlowEditor, publishPageFlowAIContext, refreshPageFlowConfig, reportPageTitle, runPageFlowLighthouse, runPageFlowTest, savePageFlowFigmaLink, savePageFlowLocation, savePageFlowPageTreePlacement, startRouteDiscovery, subscribeToPageFlowUpdates, type PageFlowEditorInfo, type PageFlowFigmaVersionResult } from './client/graph'
+import { acknowledgePageFlowFigmaVersion, cancelPageFlowTest, deletePageFlowFigmaLink, fetchPageFlowEditor, fetchPageFlowFigmaVersions, fetchPageFlowGraph, fetchPageFlowTests, initializePageFlowFigmaVersions, openPageFlowEditor, publishPageFlowAIContext, refreshPageFlowConfig, reportPageTitle, runPageFlowLighthouse, runPageFlowTest, savePageFlowFigmaLink, savePageFlowLocation, savePageFlowPageTreeCollapsed, savePageFlowPageTreePlacement, startRouteDiscovery, subscribeToPageFlowUpdates, type PageFlowEditorInfo, type PageFlowFigmaVersionResult } from './client/graph'
 import { planGraphUpdate } from './client/graph-update'
 import { navigatePreviewFrame, previewFrameDisplayPageId, resolvePreviewUrl, shouldInspectPreviewFrame, shouldMountPreviewFrame, syncPreviewHotspotLayerVisibility, touchPreviewCache } from './client/preview'
 import { deletePageFlowInternalParams, hasPageFlowPreview, PAGEFLOW_INSPECT_PARAM, PAGEFLOW_SCAN_MESSAGE, PAGEFLOW_XPATH_MODE_MESSAGE } from './shared/protocol'
@@ -207,6 +207,7 @@ const pageNames = ref({ ...props.config.pageNames })
 const figmaPages = ref({ ...props.config.figmaPages })
 const canvasLayouts = ref({ ...props.config.canvasLayouts })
 const pageTreePlacements = ref({ ...props.config.pageTreePlacements })
+const pageTreeCollapsed = ref([...(props.config.pageTreeCollapsed ?? [])])
 const configPopoverOpen = ref(false)
 const configRefreshing = ref(false)
 const configFileStatus = ref(props.config.configFile ?? {
@@ -724,17 +725,32 @@ const pageTreeNodes = computed(() => createPageTree(pages.value, {
   orphanPageIds: orphanPageIds.value,
   groupPath: page => routeDeckPathForPage(pages.value, page.id),
   placements: pageTreePlacements.value,
+  favoritePageIds: favoritePageIds.value,
 }))
 
-async function placePageTreePage(path: string, parentKey: string, order: number) {
+async function placePageTreePage(move: { placements: Array<{ key: string, parentKey: string, order: number }>, movedKey: string, sourceParentKey: string }) {
+  const { placements, movedKey, sourceParentKey } = move
   const previous = pageTreePlacements.value
-  const next = { ...previous, [path]: { ...previous[path], group: parentKey || '/', order } }
+  const next = { ...previous }
+  for (const { key, parentKey, order } of placements) next[key] = { ...next[key], group: parentKey || '/', order }
   pageTreePlacements.value = next
   try {
-    await savePageFlowPageTreePlacement(props.config, path, parentKey, order)
+    await savePageFlowPageTreePlacement(props.config, placements.map(({ key, parentKey, order }) => ({ path: key, group: parentKey, order })), movedKey, sourceParentKey)
   } catch (error) {
     pageTreePlacements.value = previous
     status.value = error instanceof Error ? error.message : '页面位置保存失败'
+  }
+}
+
+async function updatePageTreeCollapsed(collapsed: string[]) {
+  const previous = pageTreeCollapsed.value
+  pageTreeCollapsed.value = collapsed
+  if (props.host) return
+  try {
+    await savePageFlowPageTreeCollapsed(props.config, collapsed)
+  } catch (error) {
+    pageTreeCollapsed.value = previous
+    status.value = error instanceof Error ? error.message : '页面树状态保存失败'
   }
 }
 const canvasPages = computed(() => [...routeDeckView.value.directPages, ...routeDeckView.value.decks.map(deck => deck.representative)])
@@ -1724,6 +1740,7 @@ async function refreshProjectConfig() {
     navigationLocations.value = { ...(refreshed.pageLocations ?? {}) }
     canvasLayouts.value = { ...refreshed.canvasLayouts }
     pageTreePlacements.value = { ...(refreshed.pageTreePlacements ?? {}) }
+    pageTreeCollapsed.value = [...(refreshed.pageTreeCollapsed ?? [])]
     configFileStatus.value = { loaded: refreshed.loaded, source: refreshed.source }
     if (props.host) applyHostState(await props.host.loadState())
     else {
@@ -2178,7 +2195,7 @@ async function selectPageTreePage(pageId: string) {
     return
   }
   if (pageId === focusedPageId.value) return
-  activatePreview(pageId)
+  activatePreview(pageId, true, undefined, false)
 }
 
 function resizePanelBy(delta: number) {
@@ -2392,7 +2409,7 @@ function cacheCurrentFocusedLinks() {
   )
 }
 
-function activatePreview(pageId: string, animate = true, navigationFramePageId?: string) {
+function activatePreview(pageId: string, animate = true, navigationFramePageId?: string, animateRouteSteps = true) {
   // In-page navigation (tabs, filters, query changes, etc.) can report the
   // current route again. The live iframe already owns that transition, so
   // replaying the canvas flight only makes the page shrink and grow without
@@ -2408,7 +2425,7 @@ function activatePreview(pageId: string, animate = true, navigationFramePageId?:
   if (animate && focusedPageId.value && focusedPageId.value !== pageId) {
     focusAnimation.cancel()
     clearFocus(Boolean(navigationFramePageId))
-    activatePreview(pageId, false, navigationFramePageId)
+    activatePreview(pageId, false, navigationFramePageId, animateRouteSteps)
     return
   }
   const page = pages.value.find(item => item.id === pageId)
@@ -2418,7 +2435,7 @@ function activatePreview(pageId: string, animate = true, navigationFramePageId?:
   const groupChanged = targetGroupPath.length !== routeGroupPath.value.length
     || targetGroupPath.some((segment, index) => segment !== routeGroupPath.value[index])
   const next = groupChanged || !positions.value.has(pageId) ? layoutRouteGroup(targetGroupPath) : undefined
-  if (animate && groupChanged) {
+  if (animate && groupChanged && animateRouteSteps) {
     if (routeTransitionTargetId) {
       routeTransitionTargetId = pageId
       return
@@ -2427,7 +2444,7 @@ function activatePreview(pageId: string, animate = true, navigationFramePageId?:
     animateToRouteGroup(targetGroupPath, () => {
       const targetId = routeTransitionTargetId ?? pageId
       routeTransitionTargetId = undefined
-      activatePreview(targetId, true, navigationFramePageId)
+      activatePreview(targetId, true, navigationFramePageId, animateRouteSteps)
     })
     return
   }
@@ -2891,7 +2908,7 @@ async function editGroupName(key: string, fallback: string) {
 
 async function editPageName(page: PageFlowPage) {
   const key = page.path
-  const input = window.prompt('编辑页面名称（留空恢复原始名称）', pageDisplayName(page))
+  const input = window.prompt('备注（作为 Pageflow 页面名称，留空恢复项目标题）', pageNames.value[key] ?? '')
   if (input == null) return
   const name = input.trim()
   const next = { ...pageNames.value }
@@ -3336,8 +3353,13 @@ function syncPreviewHotspots(pageId: string) {
 }
 
 function openVirtualPageMenu(pageId: string, x: number, y: number) {
-  if (!virtualPages.value.some(page => page.id === pageId)) return
+  if (!pages.value.some(page => page.id === pageId)) return
   virtualPageMenu.value = { pageId, x, y }
+}
+
+function annotatePageTreePage(pageId: string) {
+  virtualPageMenu.value = undefined
+  editPageTreeName(pageId)
 }
 
 function editPageTreeName(pageId: string) {
@@ -4590,6 +4612,16 @@ onUnmounted(() => {
         <UButton
           type="button"
           role="menuitem"
+          icon="i-lucide-sticky-note"
+          label="备注"
+          color="neutral"
+          variant="ghost"
+          @click="annotatePageTreePage(virtualPageMenu.pageId)"
+        />
+        <UButton
+          v-if="virtualPages.some(page => page.id === virtualPageMenu?.pageId)"
+          type="button"
+          role="menuitem"
           icon="i-lucide-trash-2"
           label="删除页面"
           color="error"
@@ -4868,6 +4900,7 @@ onUnmounted(() => {
         <template #tree>
           <PageTreePanel
             :nodes="pageTreeNodes"
+            :collapsed-keys="pageTreeCollapsed"
             :active-page-id="focusedPageId"
             :active-group-path="focusedPageId ? undefined : routeGroupPath"
             :favorite-page-ids="favoritePageIds"
@@ -4878,6 +4911,7 @@ onUnmounted(() => {
             @select-group="enterRouteGroup"
             @refresh="refreshPageTree"
             @place="placePageTreePage"
+            @update-collapsed="updatePageTreeCollapsed"
             @edit-page-name="editPageTreeName"
             @page-context-menu="openVirtualPageMenu"
           />

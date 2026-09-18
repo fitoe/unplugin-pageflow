@@ -80,13 +80,22 @@ export async function savePageFlowLocation(config: ResolvedPageFlowOptions, path
   if (!response.ok) throw new Error((await response.json().catch(() => undefined))?.error || 'Failed to save page location')
 }
 
-export async function savePageFlowPageTreePlacement(config: ResolvedPageFlowOptions, path: string, group: string, order: number) {
+export async function savePageFlowPageTreePlacement(config: ResolvedPageFlowOptions, placements: Array<{ path: string, group: string, order: number }>, movedPath: string, sourceGroup: string) {
   const response = await fetch(`${config.previewPath}api/page-tree-placement`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ path, group, order }),
+    body: JSON.stringify({ placements, movedPath, sourceGroup }),
   })
   if (!response.ok) throw new Error((await response.json().catch(() => undefined))?.error || 'Failed to place page in tree')
+}
+
+export async function savePageFlowPageTreeCollapsed(config: ResolvedPageFlowOptions, collapsed: string[]) {
+  const response = await fetch(`${config.previewPath}api/page-tree-collapsed`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ collapsed }),
+  })
+  if (!response.ok) throw new Error((await response.json().catch(() => undefined))?.error || 'Failed to save page tree state')
 }
 
 export async function reportPageTitle(config: ResolvedPageFlowOptions, path: string, title: string) {
