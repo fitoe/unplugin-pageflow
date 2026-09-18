@@ -298,8 +298,9 @@ test('Chrome extension smoke covers runtime, capture, diagnostics, workbench, an
           && value?.pages?.some(page => new URL(page.url).pathname === '/products/1'))
     }, undefined, { timeout: 20_000 })
     const stored = await worker.evaluate(async () => chrome.storage.local.get(null))
+    const aboutPageId = `${origin}/about`
     const storedAboutWorldPosition = Object.values(stored)
-      .map(value => value?.canvasLayouts?.['/']?.['/about'])
+      .map(value => value?.canvasLayouts?.['/']?.[aboutPageId])
       .find(position => Array.isArray(position))
     assert(storedAboutWorldPosition)
     const thumbnails = Object.values(stored).flatMap(value => Array.isArray(value?.thumbnails) ? value.thumbnails : [])
