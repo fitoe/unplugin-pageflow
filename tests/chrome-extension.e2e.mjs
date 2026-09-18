@@ -250,7 +250,7 @@ test('Chrome extension smoke covers runtime, capture, diagnostics, workbench, an
     await dashboard.waitForTimeout(1_000)
     const apiPanelText = await dashboard.locator('.api-panel-content').innerText()
     assert.match(apiPanelText, /\/orders/, apiPanelText)
-    const focusedRequest = dashboard.getByText('/orders', { exact: true })
+    const focusedRequest = dashboard.locator('.api-panel-content').getByText('/orders', { exact: true })
     await focusedRequest.waitFor()
     await focusedRequest.click()
     await dashboard.locator('.api-field-tree').waitFor()
@@ -373,6 +373,13 @@ test('Chrome extension performance smoke keeps a large grouped canvas responsive
     await dashboard.goto(`chrome-extension://${extensionId}/panel.html?tabId=${tabId}`)
     await dashboard.getByText(/\d+ 组 \/ 127 页/).waitFor()
     const readyDuration = performance.now() - startedAt
+    // Startup rendering is covered by readyDuration. Reset the responsiveness
+    // samples here so startup work is not misreported as an interaction stall.
+    await dashboard.evaluate(() => {
+      window.__pageflowPerformance.frameGaps = []
+      window.__pageflowPerformance.longTasks = []
+    })
+    await dashboard.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))))
 
     const search = dashboard.getByPlaceholder('搜索页面…')
     const interactionDurations = []
