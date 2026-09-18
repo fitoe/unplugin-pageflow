@@ -287,7 +287,7 @@ test('Chrome extension smoke covers runtime, capture, diagnostics, workbench, an
     const aboutWorldPosition = await aboutPreview.evaluate(element => [Number.parseFloat(element.style.left), Number.parseFloat(element.style.top)])
     const movedAbout = await aboutPreview.boundingBox()
     assert(movedAbout)
-    const openedPagePromise = dashboard.waitForEvent('popup')
+    const openedPagePromise = context.waitForEvent('page')
     await dashboard.getByRole('button', { name: '打开 About 页面' }).click()
     const openedPage = await openedPagePromise
     await openedPage.waitForLoadState('domcontentloaded')
