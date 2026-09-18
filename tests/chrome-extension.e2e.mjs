@@ -287,12 +287,17 @@ test('Chrome extension smoke covers runtime, capture, diagnostics, workbench, an
     const aboutWorldPosition = await aboutPreview.evaluate(element => [Number.parseFloat(element.style.left), Number.parseFloat(element.style.top)])
     const movedAbout = await aboutPreview.boundingBox()
     assert(movedAbout)
-    const openedPagePromise = context.waitForEvent('page')
+    await dashboard.evaluate(() => {
+      window.__pageflowOpenedUrl = undefined
+      window.open = url => {
+        window.__pageflowOpenedUrl = String(url)
+        return null
+      }
+    })
     await dashboard.getByRole('button', { name: '打开 About 页面' }).click()
-    const openedPage = await openedPagePromise
-    await openedPage.waitForLoadState('domcontentloaded')
-    assert.equal(new URL(openedPage.url()).pathname, '/about')
-    await openedPage.close()
+    await dashboard.waitForFunction(() => Boolean(window.__pageflowOpenedUrl))
+    const openedUrl = await dashboard.evaluate(() => window.__pageflowOpenedUrl)
+    assert.equal(new URL(openedUrl).pathname, '/about')
     dashboard.once('dialog', dialog => dialog.accept('关于页面自定义名'))
     await dashboard.mouse.click(movedAbout.x + movedAbout.width / 2, movedAbout.y + movedAbout.height + 18)
 
