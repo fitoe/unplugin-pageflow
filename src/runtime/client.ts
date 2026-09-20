@@ -642,7 +642,7 @@ function protectPreviewInteractions(router: PageFlowRouterAdapter, config: Resol
       if (anchor.closest('[data-unplugin-pageflow-hotspot-layer]')) return
       event.preventDefault()
       const navigation = router.resolveAnchor(new URL(anchor.href, window.location.href))
-      notifyNavigation(navigation.path, navigation.location)
+      notifyNavigation(navigation.path, navigation.location, 'hotspot')
     }
   }, true)
   document.addEventListener('submit', event => event.preventDefault(), true)

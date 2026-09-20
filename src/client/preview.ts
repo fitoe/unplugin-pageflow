@@ -60,7 +60,9 @@ export function syncPreviewHotspotLayerVisibility(layer: HTMLElement, visible: b
   layer.style.display = visible ? 'block' : 'none'
 }
 
-export function navigatePreviewFrame(frame: HTMLIFrameElement, url: string, origin = window.location.origin) {
+export function navigatePreviewFrame(frame: HTMLIFrameElement, url: string, origin = window.location.origin, navigateFrame = true) {
+  // Application navigation owns its history and page stack; only hotspots need a frame load.
+  if (!navigateFrame) return false
   const target = new URL(url, origin).href
   try {
     if (frame.contentWindow?.location.href === target) return false

@@ -2046,7 +2046,7 @@ function schedulePreviewNavigationTimeout(navigation: PendingPreviewNavigation) 
   }, PREVIEW_NAVIGATION_TIMEOUT_MS)
 }
 
-function activatePreviewNavigation(to: string, location = to, animate = true, reason = '应用导航', framePageId = livePreviewFrameId.value) {
+function activatePreviewNavigation(to: string, location = to, animate = true, reason = '应用导航', framePageId = livePreviewFrameId.value, navigateFrame = false) {
   const locationPath = location.split(/[?#]/, 1)[0]
   const target = pages.value.find(page => page.id === to || page.path === to || page.path === locationPath)
   if (!target) return false
@@ -2079,7 +2079,7 @@ function activatePreviewNavigation(to: string, location = to, animate = true, re
     })
     pendingPreviewNavigation.value = navigation
     schedulePreviewNavigationTimeout(navigation)
-    if (navigatePreviewFrame(frame, expectedUrl, window.location.origin)) {
+    if (navigatePreviewFrame(frame, expectedUrl, window.location.origin, navigateFrame)) {
       loadedPreviewIds.value = new Set([...loadedPreviewIds.value].filter(id => id !== framePageId))
       readyPreviewIds.value = new Set([...readyPreviewIds.value].filter(id => id !== framePageId))
     }
@@ -3700,7 +3700,7 @@ function handlePreviewMessage(event: MessageEvent) {
     return
   }
   if (!sourcePageId || sourcePageId !== focusedPageId.value || sourcePageId !== livePreviewId.value) return
-  activatePreviewNavigation(message.to, message.location, true, '应用导航', livePreviewFrameId.value)
+  activatePreviewNavigation(message.to, message.location, true, '应用导航', livePreviewFrameId.value, message.interaction === 'hotspot')
 }
 
 function createCardGroup(page: PageFlowPage, x: number, y: number, scale = 1, highlighted = false, compactOnly = false) {
