@@ -7,7 +7,9 @@ import { buildApiFieldTree } from '../client/api-field-tree'
 
 const props = defineProps<{ results: PageFlowApiResult[], issues: PageFlowApiIssue[], pagePath?: string, previewPath: string, host?: boolean }>()
 function apiPath(url: string) {
-  try { return new URL(url, window.location.origin).pathname } catch { return url.split('?')[0] }
+  let path = url.split(/[?#]/, 1)[0] ?? '/'
+  try { path = new URL(url, window.location.origin).pathname } catch { /* Keep non-standard request paths. */ }
+  return path.replace(/^\/(?:api|(?:prod|dev|test|stage)-api)(?=\/|$)/, '') || '/'
 }
 const requests = computed(() => props.results.map(result => ({
   result,
