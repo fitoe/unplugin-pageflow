@@ -37,6 +37,27 @@ interface PageTreeOptions {
   groupPath: (page: PageFlowPage) => string[]
   placements?: Record<string, { group?: string, order?: number }>
   favoritePageIds?: ReadonlySet<string>
+  recentPageIds?: readonly string[]
+}
+
+const RECENT_GROUP = '__pageflow_recent__'
+const FAVORITES_GROUP = '__pageflow_favorites__'
+
+function virtualCollection(pages: PageFlowPage[], pageIds: Iterable<string>, parentKey: string, prefix: string, pageNames?: Record<string, string>) {
+  const pagesById = new Map(pages.map(page => [page.id, page]))
+  return [...pageIds].flatMap((pageId, order) => {
+    const page = pagesById.get(pageId)
+    return page ? [{
+      kind: 'page' as const,
+      key: `${prefix}:${page.id}`,
+      label: pageTreePageLabel(page, pageNames),
+      pageId: page.id,
+      path: page.path,
+      virtual: Boolean(page.virtual),
+      order,
+      parentKey,
+    }] : []
+  })
 }
 
 function effectiveGroupPath(path: string[], placements: PageTreeOptions['placements']) {
@@ -181,28 +202,30 @@ export function createPageTree(pages: PageFlowPage[], options: PageTreeOptions):
   applyPageOrder(roots, options.placements)
 
   if (options.favoritePageIds) {
-    const pagesById = new Map(pages.map(page => [page.id, page]))
-    const favoritePages = [...options.favoritePageIds].flatMap((pageId, order) => {
-      const page = pagesById.get(pageId)
-      return page ? [{
-        kind: 'page' as const,
-        key: `favorite:${page.id}`,
-        label: pageTreePageLabel(page, options.pageNames),
-        pageId: page.id,
-        path: page.path,
-        virtual: Boolean(page.virtual),
-        order,
-        parentKey: '__pageflow_favorites__',
-      }] : []
-    })
+    const favoritePages = virtualCollection(pages, options.favoritePageIds, FAVORITES_GROUP, 'favorite', options.pageNames)
     roots.unshift({
       kind: 'group',
-      key: 'group:__pageflow_favorites__',
+      key: `group:${FAVORITES_GROUP}`,
       label: '收藏夹',
-      path: ['__pageflow_favorites__'],
+      path: [FAVORITES_GROUP],
       children: favoritePages,
       pageCount: favoritePages.length,
       order: -1,
+      navigable: false,
+      parentKey: '',
+    })
+  }
+
+  if (options.recentPageIds) {
+    const recentPages = virtualCollection(pages, options.recentPageIds.slice(0, 10), RECENT_GROUP, 'recent', options.pageNames)
+    roots.unshift({
+      kind: 'group',
+      key: `group:${RECENT_GROUP}`,
+      label: '最近访问',
+      path: [RECENT_GROUP],
+      children: recentPages,
+      pageCount: recentPages.length,
+      order: -2,
       navigable: false,
       parentKey: '',
     })
@@ -220,7 +243,7 @@ export function flattenPageTree(nodes: PageTreeNode[], expandedKeys: ReadonlySet
 }
 
 export function pageTreeAncestorKeys(nodes: PageTreeNode[], pageId: string): string[] {
-  const ordered = [...nodes].sort((left, right) => Number(left.key === 'group:__pageflow_favorites__') - Number(right.key === 'group:__pageflow_favorites__'))
+  const ordered = [...nodes].sort((left, right) => Number(left.key.includes('__pageflow_')) - Number(right.key.includes('__pageflow_')))
   for (const node of ordered) {
     if (node.kind === 'page') {
       if (node.pageId === pageId) return []

@@ -1,4 +1,5 @@
 import { createUnplugin } from 'unplugin'
+import { inspectApiUsage } from './api-usage.ts'
 import type { UnpluginFactory } from 'unplugin'
 import { createHash } from 'node:crypto'
 import { spawn, type ChildProcess } from 'node:child_process'
@@ -633,6 +634,7 @@ const factory: UnpluginFactory<PageFlowOptions | undefined> = (options) => {
       const configFile = resolve(projectRoot, '.pageflow')
       try {
         const stored = JSON.parse(stripJsonComments(await readFile(configFile, 'utf8'))) as PageFlowOptions
+        const legacyPageTree = (stored.pageTree ?? {}) as PageFlowOptions['pageTree'] & { collapsed?: unknown, scrollTop?: unknown }
         const validPaths = new Set(routes.map(route => route.path === '/' && uniAppHomePath ? uniAppHomePath : route.path))
         const validIds = new Set(routes.flatMap(route => [route.id, route.path]))
         const nativeGroups = new Set<string>()
@@ -651,7 +653,6 @@ const factory: UnpluginFactory<PageFlowOptions | undefined> = (options) => {
         }
         const pages = Object.fromEntries(Object.entries(stored.pages ?? {}).filter(([path]) => validPaths.has(path)))
         const groupNames = Object.fromEntries(Object.entries(stored.groupNames ?? {}).filter(([group]) => nativeGroups.has(group)))
-        const collapsed = (stored.pageTree?.collapsed ?? []).filter(group => nativeGroups.has(group.replace(/^group:/, '')))
         const canvasLayouts = Object.fromEntries(Object.entries(stored.canvasLayouts ?? {}).flatMap(([group, positions]) => {
           const filtered = Object.fromEntries(Object.entries(positions).filter(([id]) => validIds.has(id) || validPaths.has(id)))
           return Object.keys(filtered).length ? [[group, filtered]] : []
@@ -659,12 +660,14 @@ const factory: UnpluginFactory<PageFlowOptions | undefined> = (options) => {
         const changed = JSON.stringify(pages) !== JSON.stringify(stored.pages ?? {})
           || JSON.stringify(groupNames) !== JSON.stringify(stored.groupNames ?? {})
           || JSON.stringify(placements) !== JSON.stringify(stored.pageTree?.placements ?? {})
-          || JSON.stringify(collapsed) !== JSON.stringify(stored.pageTree?.collapsed ?? [])
+          || Object.hasOwn(legacyPageTree, 'recent')
+          || Object.hasOwn(legacyPageTree, 'collapsed')
+          || Object.hasOwn(legacyPageTree, 'scrollTop')
           || JSON.stringify(canvasLayouts) !== JSON.stringify(stored.canvasLayouts ?? {})
         if (changed) {
           stored.pages = pages
           stored.groupNames = groupNames
-          stored.pageTree = { ...stored.pageTree, placements, collapsed }
+          stored.pageTree = { placements }
           stored.canvasLayouts = canvasLayouts
           await writeFile(configFile, `${JSON.stringify(stored, null, 2)}\n`)
           Object.assign(resolved, await loadProjectOptions(projectRoot, options))
@@ -891,7 +894,6 @@ const factory: UnpluginFactory<PageFlowOptions | undefined> = (options) => {
           const figmaVersionPath = `${resolved.previewPath}api/figma-version`
           const pageLocationPath = `${resolved.previewPath}api/page-location`
           const pageTreePlacementPath = `${resolved.previewPath}api/page-tree-placement`
-          const pageTreeCollapsedPath = `${resolved.previewPath}api/page-tree-collapsed`
           const canvasLayoutPath = `${resolved.previewPath}api/canvas-layout`
           const testsPath = `${resolved.previewPath}api/tests`
           const lighthousePath = `${resolved.previewPath}api/lighthouse`
@@ -909,7 +911,6 @@ const factory: UnpluginFactory<PageFlowOptions | undefined> = (options) => {
               figmaPages: resolved.figmaPages,
               pageLocations: resolved.pageLocations,
               pageTreePlacements: resolved.pageTreePlacements,
-              pageTreeCollapsed: resolved.pageTreeCollapsed,
               canvasLayouts: resolved.canvasLayouts,
             }))
             return
@@ -931,7 +932,6 @@ const factory: UnpluginFactory<PageFlowOptions | undefined> = (options) => {
                 figmaPages: resolved.figmaPages,
                 pageLocations: resolved.pageLocations,
                 pageTreePlacements: resolved.pageTreePlacements,
-                pageTreeCollapsed: resolved.pageTreeCollapsed,
                 canvasLayouts: resolved.canvasLayouts,
               }))
             } catch (error) {
@@ -949,13 +949,26 @@ const factory: UnpluginFactory<PageFlowOptions | undefined> = (options) => {
             return
           }
 
+          if (pathname === `${resolved.previewPath}api/api-usage` && request.method === 'GET') {
+            try {
+              const source = routes.find(route => route.path === requestUrl.searchParams.get('path'))?.componentFile
+              response.setHeader('Content-Type', 'application/json; charset=utf-8')
+              response.setHeader('Cache-Control', 'no-store')
+              response.end(JSON.stringify(source ? await inspectApiUsage(projectRoot, source) : { references: [], interfaces: [], limited: false }))
+            } catch {
+              response.statusCode = 500
+              response.end(JSON.stringify({ error: '页面代码分析失败' }))
+            }
+            return
+          }
+
           if (pathname === editorPath && request.method === 'POST') {
             try {
               const body = await readJson(request)
               const pagePath = typeof body.path === 'string' ? body.path : ''
               const sourceFile = routes.find(route => route.path === pagePath)?.componentFile
               if (!sourceFile) throw new Error('No source file is registered for this page')
-              const file = resolve(projectRoot, sourceFile)
+              const file = resolve(projectRoot, typeof body.file === 'string' ? body.file : sourceFile)
               const relativeFile = relative(projectRoot, file)
               if (relativeFile.startsWith('..') || isAbsolute(relativeFile) || !existsSync(file)) throw new Error('Page source file is unavailable')
               await openInEditor(file)
@@ -1407,30 +1420,6 @@ const factory: UnpluginFactory<PageFlowOptions | undefined> = (options) => {
               if (configModule) server.moduleGraph.invalidateModule(configModule)
               response.setHeader('Content-Type', 'application/json; charset=utf-8')
               response.end(JSON.stringify({ placements: savedPlacements, move: sourceMove }))
-            } catch (error) {
-              response.statusCode = 400
-              response.setHeader('Content-Type', 'application/json; charset=utf-8')
-              response.end(JSON.stringify({ error: error instanceof Error ? error.message : 'Invalid request' }))
-            }
-            return
-          }
-
-          if (pathname === pageTreeCollapsedPath && request.method === 'POST') {
-            try {
-              const body = await readJson(request)
-              if (!Array.isArray(body.collapsed) || body.collapsed.length > 1000
-                || body.collapsed.some((key: unknown) => typeof key !== 'string' || !key.startsWith('group:') || key.length > 500))
-                throw new Error('Invalid page tree state')
-              const collapsed = [...new Set<string>(body.collapsed)]
-              const configFile = resolve(projectRoot, '.pageflow')
-              const stored = JSON.parse(stripJsonComments(await readFile(configFile, 'utf8'))) as PageFlowOptions
-              stored.pageTree = { ...stored.pageTree, collapsed }
-              await writeFile(configFile, `${JSON.stringify(stored, null, 2)}\n`)
-              resolved.pageTreeCollapsed = collapsed
-              const configModule = server.moduleGraph.getModuleById(PAGEFLOW_CONFIG_RESOLVED_ID)
-              if (configModule) server.moduleGraph.invalidateModule(configModule)
-              response.setHeader('Content-Type', 'application/json; charset=utf-8')
-              response.end(JSON.stringify({ collapsed }))
             } catch (error) {
               response.statusCode = 400
               response.setHeader('Content-Type', 'application/json; charset=utf-8')

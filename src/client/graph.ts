@@ -89,14 +89,6 @@ export async function savePageFlowPageTreePlacement(config: ResolvedPageFlowOpti
   if (!response.ok) throw new Error((await response.json().catch(() => undefined))?.error || 'Failed to place page in tree')
 }
 
-export async function savePageFlowPageTreeCollapsed(config: ResolvedPageFlowOptions, collapsed: string[]) {
-  const response = await fetch(`${config.previewPath}api/page-tree-collapsed`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ collapsed }),
-  })
-  if (!response.ok) throw new Error((await response.json().catch(() => undefined))?.error || 'Failed to save page tree state')
-}
 
 export async function reportPageTitle(config: ResolvedPageFlowOptions, path: string, title: string) {
   const response = await fetch(`${config.previewPath}api/page`, {

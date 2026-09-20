@@ -12,6 +12,9 @@ docs/.vitepress/cache/
 docs/.vitepress/dist/
 
 # Local diagnostics and generated scratch artifacts
+/.cdp-profile/
+/.cdp-pageflow.png
+/.ci-live.log
 /.tmp-*
 /([{]name
 /\[p.path

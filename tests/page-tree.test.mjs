@@ -90,6 +90,35 @@ test('page tree exposes a read-only favorites collection at the top', async () =
   }
 })
 
+test('page tree exposes the ten most recent pages above favorites', async () => {
+  const server = await createServer({ configFile: false, server: { middlewareMode: true }, appType: 'custom', logLevel: 'silent' })
+  try {
+    const tree = await server.ssrLoadModule('/src/client/page-tree.ts')
+    const pages = Array.from({ length: 12 }, (_, index) => ({
+      id: `page-${index}`,
+      title: `Page ${index}`,
+      path: `/page-${index}`,
+      links: [],
+    }))
+    const nodes = tree.createPageTree(pages, {
+      groupPath: () => [],
+      favoritePageIds: new Set(['page-11']),
+      recentPageIds: pages.map(page => page.id).reverse(),
+    })
+
+    assert.deepEqual(nodes.slice(0, 2).map(node => [node.key, node.label]), [
+      ['group:__pageflow_recent__', '最近访问'],
+      ['group:__pageflow_favorites__', '收藏夹'],
+    ])
+    assert.equal(nodes[0].pageCount, 10)
+    assert.deepEqual(nodes[0].children.map(node => node.pageId), pages.map(page => page.id).reverse().slice(0, 10))
+    assert.ok(nodes[0].children.every(node => node.parentKey === '__pageflow_recent__'))
+    assert.deepEqual(tree.pageTreeAncestorKeys(nodes, 'page-11'), [])
+  } finally {
+    await server.close()
+  }
+})
+
 test('page tree applies page order across mixed page and directory siblings', async () => {
   const server = await createServer({ configFile: false, server: { middlewareMode: true }, appType: 'custom', logLevel: 'silent' })
   try {

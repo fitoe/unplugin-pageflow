@@ -26,7 +26,7 @@ import type {
   PageFlowThumbnailRecord,
   ResolvedPageFlowOptions,
 } from './shared/types'
-import { acknowledgePageFlowFigmaVersion, cancelPageFlowTest, deletePageFlowFigmaLink, fetchPageFlowEditor, fetchPageFlowFigmaVersions, fetchPageFlowGraph, fetchPageFlowTests, initializePageFlowFigmaVersions, openPageFlowEditor, publishPageFlowAIContext, refreshPageFlowConfig, reportPageTitle, runPageFlowLighthouse, runPageFlowTest, savePageFlowFigmaLink, savePageFlowLocation, savePageFlowPageTreeCollapsed, savePageFlowPageTreePlacement, startRouteDiscovery, subscribeToPageFlowUpdates, type PageFlowEditorInfo, type PageFlowFigmaVersionResult } from './client/graph'
+import { acknowledgePageFlowFigmaVersion, cancelPageFlowTest, deletePageFlowFigmaLink, fetchPageFlowEditor, fetchPageFlowFigmaVersions, fetchPageFlowGraph, fetchPageFlowTests, initializePageFlowFigmaVersions, openPageFlowEditor, publishPageFlowAIContext, refreshPageFlowConfig, reportPageTitle, runPageFlowLighthouse, runPageFlowTest, savePageFlowFigmaLink, savePageFlowLocation, savePageFlowPageTreePlacement, startRouteDiscovery, subscribeToPageFlowUpdates, type PageFlowEditorInfo, type PageFlowFigmaVersionResult } from './client/graph'
 import { planGraphUpdate } from './client/graph-update'
 import { navigatePreviewFrame, previewFrameDisplayPageId, resolvePreviewUrl, shouldInspectPreviewFrame, shouldMountPreviewFrame, syncPreviewHotspotLayerVisibility, touchPreviewCache } from './client/preview'
 import { deletePageFlowInternalParams, hasPageFlowPreview, PAGEFLOW_INSPECT_PARAM, PAGEFLOW_SCAN_MESSAGE, PAGEFLOW_XPATH_MODE_MESSAGE } from './shared/protocol'
@@ -48,12 +48,11 @@ import { writeClipboardText } from './client/clipboard'
 import { createPageFlowAIContext, createPageFlowAIPrompt } from './client/ai-context'
 import { createPageChecks, isOrphanPage, mergePageLinks, type PageFlowPageCheckStatus } from './client/page-checks'
 import { createPageHealth, previewStatusLabels, type PageFlowPreviewStatus } from './client/page-health'
-import { buildApiFieldTree } from './client/api-field-tree'
 import { createPageTree } from './client/page-tree'
 import PageTreePanel from './components/PageTreePanel.vue'
 
 const pageFlowVersion = __PAGEFLOW_VERSION__
-import { createApiIssues, mergeApiResult, type PageFlowApiIssue } from './client/api-diagnostics'
+import { createApiIssues, mergeApiResult } from './client/api-diagnostics'
 import { figmaLinkForPage, openFigmaLink } from './client/figma'
 import { isPreviewUserStorageKey } from './client/user-sessions'
 import { usePageUsers } from './client/page-users'
@@ -115,7 +114,7 @@ import {
 const props = defineProps<{ config: ResolvedPageFlowOptions, host?: PageFlowHost }>()
 const ACCENTS = ['#3b82f6', '#8b5cf6', '#06b6d4', '#10b981', '#f59e0b', '#ef4444']
 const MAX_HOST_AUTO_THUMBNAILS = 50
-const ApiFieldTree = defineAsyncComponent(() => import('./components/ApiFieldTree.vue'))
+const PageApiUsage = defineAsyncComponent(() => import('./components/PageApiUsage.vue'))
 
 const previewModes = {
   mobile: { label: '手机', width: 393, height: 852 },
@@ -141,7 +140,11 @@ const PREVIEW_MODE_STORAGE_KEY = 'unplugin-pageflow:preview-mode'
 const PANEL_COLLAPSED_STORAGE_KEY = 'unplugin-pageflow:panel-collapsed'
 const PANEL_WIDTH_STORAGE_KEY = 'unplugin-pageflow:panel-width'
 const VIRTUAL_PAGES_STORAGE_KEY = 'unplugin-pageflow:virtual-pages'
+const RECENT_PAGES_STORAGE_KEY = 'unplugin-pageflow:recent-pages'
 const FAVORITE_PAGES_STORAGE_KEY = 'unplugin-pageflow:favorite-pages'
+const PAGE_TREE_COLLAPSED_STORAGE_KEY = 'unplugin-pageflow:page-tree-collapsed'
+const PAGE_TREE_SCROLL_STORAGE_KEY = 'unplugin-pageflow:page-tree-scroll-top'
+const SEARCH_RECENT_PAGES_STORAGE_KEY = 'unplugin-pageflow:search-recent-pages'
 
 function storedVirtualPages(): PageFlowPage[] {
   try {
@@ -207,7 +210,16 @@ const pageNames = ref({ ...props.config.pageNames })
 const figmaPages = ref({ ...props.config.figmaPages })
 const canvasLayouts = ref({ ...props.config.canvasLayouts })
 const pageTreePlacements = ref({ ...props.config.pageTreePlacements })
-const pageTreeCollapsed = ref([...(props.config.pageTreeCollapsed ?? [])])
+const pageTreeCollapsed = ref(storedPageTreeCollapsed())
+const pageTreeScrollTop = ref(storedPageTreeScrollTop())
+const pageTreeRecent = ref<string[]>(storedRecentPages())
+function storedRecentPages(): string[] {
+  try {
+    const value: unknown = JSON.parse(localStorage.getItem(RECENT_PAGES_STORAGE_KEY) ?? '[]')
+    return Array.isArray(value) ? [...new Set(value.filter((id): id is string => typeof id === 'string'))].slice(0, 10) : []
+  } catch { return [] }
+}
+let pageTreeScrollSaveTimer: ReturnType<typeof setTimeout> | undefined
 const configPopoverOpen = ref(false)
 const configRefreshing = ref(false)
 const configFileStatus = ref(props.config.configFile ?? {
@@ -258,9 +270,6 @@ const focusedLinks = ref<PageFlowLink[]>([])
 const apiResultsByPage = ref<Record<string, PageFlowApiResult[]>>({})
 const pendingApiResultsByPage = new Map<string, PageFlowApiResult[]>()
 let apiResultFrame = 0
-const expandedApiResults = ref(new Set<string>())
-const openApiResultId = ref<string>()
-const openApiIssueResultId = ref<string>()
 const panelTab = ref<'tree' | 'api' | 'tests' | 'diagnostics' | 'todos'>('tree')
 const panelCollapsed = ref(storedPanelCollapsed())
 const panelWidth = ref(storedPanelWidth())
@@ -299,6 +308,7 @@ const darkMode = ref(document.documentElement.classList.contains('dark'))
 const searchOpen = ref(false)
 const searchSelection = ref<string>()
 const searchTerm = ref('')
+const searchRecentPageIds = ref(storedSearchRecentPages())
 const searchResetKey = ref(0)
 const searchRoot = ref<HTMLDivElement>()
 const searchShortcutLabel = /Mac|iPhone|iPad/.test(navigator.userAgent) ? '⌘K' : 'Ctrl K'
@@ -324,6 +334,33 @@ function toggleFavoritePage(pageId: string) {
   else next.add(pageId)
   favoritePageIds.value = next
   localStorage.setItem(FAVORITE_PAGES_STORAGE_KEY, JSON.stringify([...next]))
+}
+
+function storedPageTreeCollapsed() {
+  try {
+    const value = JSON.parse(localStorage.getItem(PAGE_TREE_COLLAPSED_STORAGE_KEY) ?? '[]')
+    return Array.isArray(value) ? value.filter(key => typeof key === 'string' && key.startsWith('group:')) : []
+  } catch {
+    return []
+  }
+}
+
+function storedPageTreeScrollTop() {
+  try {
+    const value = Number(localStorage.getItem(PAGE_TREE_SCROLL_STORAGE_KEY))
+    return Number.isFinite(value) && value >= 0 ? value : 0
+  } catch {
+    return 0
+  }
+}
+
+function storedSearchRecentPages() {
+  try {
+    const value = JSON.parse(localStorage.getItem(SEARCH_RECENT_PAGES_STORAGE_KEY) ?? '[]')
+    return Array.isArray(value) ? value.filter(pageId => typeof pageId === 'string').slice(0, 10) : []
+  } catch {
+    return []
+  }
 }
 
 function pageFigmaLink(page: PageFlowPage) {
@@ -726,6 +763,7 @@ const pageTreeNodes = computed(() => createPageTree(pages.value, {
   groupPath: page => routeDeckPathForPage(pages.value, page.id),
   placements: pageTreePlacements.value,
   favoritePageIds: favoritePageIds.value,
+  recentPageIds: pageTreeRecent.value,
 }))
 
 async function placePageTreePage(move: { placements: Array<{ key: string, parentKey: string, order: number }>, movedKey: string, sourceParentKey: string }) {
@@ -742,17 +780,29 @@ async function placePageTreePage(move: { placements: Array<{ key: string, parent
   }
 }
 
-async function updatePageTreeCollapsed(collapsed: string[]) {
-  const previous = pageTreeCollapsed.value
+function updatePageTreeCollapsed(collapsed: string[]) {
   pageTreeCollapsed.value = collapsed
-  if (props.host) return
-  try {
-    await savePageFlowPageTreeCollapsed(props.config, collapsed)
-  } catch (error) {
-    pageTreeCollapsed.value = previous
-    status.value = error instanceof Error ? error.message : '页面树状态保存失败'
-  }
+  localStorage.setItem(PAGE_TREE_COLLAPSED_STORAGE_KEY, JSON.stringify(collapsed))
 }
+
+function updatePageTreeScrollTop(scrollTop: number) {
+  pageTreeScrollTop.value = scrollTop
+  clearTimeout(pageTreeScrollSaveTimer)
+  pageTreeScrollSaveTimer = setTimeout(() => {
+    localStorage.setItem(PAGE_TREE_SCROLL_STORAGE_KEY, String(Math.round(scrollTop)))
+  }, 100)
+}
+
+function recordRecentPage(pageId: string) {
+  pageTreeRecent.value = [pageId, ...pageTreeRecent.value.filter(id => id !== pageId)].slice(0, 10)
+  try {
+    localStorage.setItem(RECENT_PAGES_STORAGE_KEY, JSON.stringify(pageTreeRecent.value))
+  } catch { /* Keep in-memory history if browser storage is unavailable. */ }
+}
+
+watch(focusedPageId, (pageId) => {
+  if (pageId) recordRecentPage(pageId)
+})
 const canvasPages = computed(() => [...routeDeckView.value.directPages, ...routeDeckView.value.decks.map(deck => deck.representative)])
 const routeDeckByPageId = computed(() => new Map(routeDeckView.value.decks.map(deck => [deck.representative.id, deck])))
 const focusedPage = computed(() => pages.value.find(page => page.id === focusedPageId.value))
@@ -773,6 +823,13 @@ const searchItems = computed(() => pages.value.map((page) => {
     user: resolution.user,
     userSource: pageUserResolutionSourceLabel(resolution),
   }
+}).sort((left, right) => {
+  const leftIndex = searchRecentPageIds.value.indexOf(left.id)
+  const rightIndex = searchRecentPageIds.value.indexOf(right.id)
+  if (leftIndex < 0 && rightIndex < 0) return 0
+  if (leftIndex < 0) return 1
+  if (rightIndex < 0) return -1
+  return leftIndex - rightIndex
 }))
 
 const pageTableRows = computed(() => {
@@ -1253,20 +1310,6 @@ async function stopAllFocusedPageTests() {
   await Promise.all([...runningPageTestIds.value].map(id => cancelPageFlowTest(props.config, id).catch(() => undefined)))
 }
 
-function toggleApiResult(id: string) {
-  const next = new Set(expandedApiResults.value)
-  if (next.has(id)) next.delete(id)
-  else next.add(id)
-  expandedApiResults.value = next
-}
-
-function visibleApiFields(result: PageFlowApiResult) {
-  return expandedApiResults.value.has(result.id) ? result.fields : result.fields.filter(field => field.used)
-}
-
-function apiResultById(id: string) {
-  return focusedApiResults.value.find(result => result.id === id)
-}
 
 function queueApiResult(pageId: string, result: PageFlowApiResult) {
   pendingApiResultsByPage.set(pageId, [...pendingApiResultsByPage.get(pageId) ?? [], result])
@@ -1287,59 +1330,6 @@ function queueApiResult(pageId: string, result: PageFlowApiResult) {
   })
 }
 
-function apiFieldTreeByResultId(id: string) {
-  const result = apiResultById(id)
-  return result ? visibleApiFieldTree(result) : []
-}
-
-function unusedApiFieldCount(id: string) {
-  return apiResultById(id)?.fields.filter(field => !field.used).length ?? 0
-}
-
-function toggleApiIssueResult(id: string) {
-  openApiIssueResultId.value = openApiIssueResultId.value === id ? undefined : id
-}
-
-function apiRoute(url: string) {
-  let pathname = url.split(/[?#]/, 1)[0]
-  try {
-    pathname = new URL(url, 'http://pageflow.local').pathname
-  } catch {
-    // Keep the path extracted from malformed or non-standard request URLs.
-  }
-  return pathname.replace(/^\/(?:api|(?:prod|dev|test|stage)-api)(?=\/|$)/, '') || '/'
-}
-
-const apiAccordionItems = computed(() => focusedApiResults.value.map(result => ({
-  ...result,
-  value: result.id,
-  label: apiRoute(result.url),
-})))
-
-const apiMethodColors = {
-  GET: 'success',
-  POST: 'info',
-  PUT: 'warning',
-  PATCH: 'secondary',
-  DELETE: 'error',
-} as const
-
-function apiMethodColor(method: string) {
-  return apiMethodColors[method.toUpperCase() as keyof typeof apiMethodColors] ?? 'neutral'
-}
-
-function apiIssueColor(status: PageFlowApiIssue['status']) {
-  return status === 'failed' ? 'error' : 'warning'
-}
-
-function apiIssueLabel(issue: PageFlowApiIssue) {
-  const result = focusedApiResults.value.find(item => item.id === issue.resultId)
-  return result ? `${result.method.toUpperCase()} ${apiRoute(result.url)}` : issue.title
-}
-
-function visibleApiFieldTree(result: PageFlowApiResult) {
-  return buildApiFieldTree(visibleApiFields(result))
-}
 const connectionCountsByTarget = computed(() => connectionPaths.value.reduce((counts, connection) => {
   counts.set(connection.targetId, (counts.get(connection.targetId) ?? 0) + 1)
   return counts
@@ -1740,7 +1730,6 @@ async function refreshProjectConfig() {
     navigationLocations.value = { ...(refreshed.pageLocations ?? {}) }
     canvasLayouts.value = { ...refreshed.canvasLayouts }
     pageTreePlacements.value = { ...(refreshed.pageTreePlacements ?? {}) }
-    pageTreeCollapsed.value = [...(refreshed.pageTreeCollapsed ?? [])]
     configFileStatus.value = { loaded: refreshed.loaded, source: refreshed.source }
     if (props.host) applyHostState(await props.host.loadState())
     else {
@@ -2495,6 +2484,8 @@ function activatePreview(pageId: string, animate = true, navigationFramePageId?:
 }
 
 function selectSearchPage(pageId: string) {
+  searchRecentPageIds.value = [pageId, ...searchRecentPageIds.value.filter(id => id !== pageId)].slice(0, 10)
+  localStorage.setItem(SEARCH_RECENT_PAGES_STORAGE_KEY, JSON.stringify(searchRecentPageIds.value))
   searchOpen.value = false
   activatePreview(pageId)
   window.setTimeout(() => {
@@ -4407,6 +4398,7 @@ onMounted(async () => {
 })
 
 onUnmounted(() => {
+  clearTimeout(pageTreeScrollSaveTimer)
   cancelAnimationFrame(apiResultFrame)
   clearPendingPreviewNavigation()
   pendingApiResultsByPage.clear()
@@ -4902,6 +4894,7 @@ onUnmounted(() => {
           <PageTreePanel
             :nodes="pageTreeNodes"
             :collapsed-keys="pageTreeCollapsed"
+            :scroll-top="pageTreeScrollTop"
             :active-page-id="focusedPageId"
             :active-group-path="focusedPageId ? undefined : routeGroupPath"
             :favorite-page-ids="favoritePageIds"
@@ -4913,83 +4906,13 @@ onUnmounted(() => {
             @refresh="refreshPageTree"
             @place="placePageTreePage"
             @update-collapsed="updatePageTreeCollapsed"
+            @update-scroll-top="updatePageTreeScrollTop"
             @edit-page-name="editPageTreeName"
             @page-context-menu="openVirtualPageMenu"
           />
         </template>
         <template #api>
-          <div v-if="focusedApiResults.length" class="api-panel-list">
-            <div v-if="focusedApiIssues.length" class="border-b border-default py-3">
-              <div class="text-sm font-medium text-highlighted">接口检查</div>
-              <div class="mt-2 divide-y divide-default">
-                <div
-                  v-for="issue in focusedApiIssues"
-                  :key="issue.resultId"
-                  class="cursor-pointer py-2"
-                  role="button"
-                  tabindex="0"
-                  @click="toggleApiIssueResult(issue.resultId)"
-                  @keydown.enter="toggleApiIssueResult(issue.resultId)"
-                  @keydown.space.prevent="toggleApiIssueResult(issue.resultId)"
-                >
-                  <div class="flex items-center gap-2">
-                    <div class="min-w-0 flex-1 truncate text-sm text-highlighted">{{ apiIssueLabel(issue) }}</div>
-                    <UBadge :label="issue.status === 'failed' ? '失败' : '警告'" :color="apiIssueColor(issue.status)" variant="soft" size="sm" />
-                  </div>
-                  <div class="mt-1 text-xs leading-5 text-muted">{{ issue.descriptions.join(' · ') }}</div>
-                  <div v-if="openApiIssueResultId === issue.resultId" class="mt-2 border-t border-default pt-2" @click.stop>
-                    <ApiFieldTree v-if="apiFieldTreeByResultId(issue.resultId).length" :nodes="apiFieldTreeByResultId(issue.resultId)" />
-                    <div v-else class="api-empty">页面暂未展示返回字段</div>
-                    <UButton
-                      v-if="unusedApiFieldCount(issue.resultId)"
-                      color="neutral"
-                      variant="link"
-                      size="xs"
-                      :trailing-icon="expandedApiResults.has(issue.resultId) ? 'i-lucide-chevron-up' : 'i-lucide-chevron-down'"
-                      @click="toggleApiResult(issue.resultId)"
-                    >
-                      {{ expandedApiResults.has(issue.resultId) ? '隐藏未使用字段' : `显示未使用字段（${unusedApiFieldCount(issue.resultId)}）` }}
-                    </UButton>
-                  </div>
-                </div>
-              </div>
-            </div>
-            <UAccordion v-model="openApiResultId" :items="apiAccordionItems">
-              <template #leading="{ item: result }">
-                <UBadge :label="result.method" :color="apiMethodColor(result.method)" variant="soft" size="sm" />
-              </template>
-              <template #default="{ item: result }">
-                <span class="min-w-0">
-                  <span class="flex min-w-0 items-center gap-1.5">
-                    <span class="min-w-0 flex-1 truncate">{{ result.label }}</span>
-                    <UBadge v-if="(result.occurrences ?? 1) > 1" :label="`×${result.occurrences}`" color="warning" variant="soft" size="sm" />
-                  </span>
-                  <span class="block text-xs text-muted">
-                    {{ result.status }} · {{ result.duration }}ms<span v-if="result.lastIntervalMs != null"> · 最近间隔 {{ result.lastIntervalMs }}ms</span>
-                  </span>
-                </span>
-              </template>
-              <template #body="{ item: result }">
-                <div>
-                  <div v-if="visibleApiFields(result).length" class="api-fields">
-                    <ApiFieldTree :nodes="visibleApiFieldTree(result)" />
-                  </div>
-                  <div v-else class="api-empty">页面暂未展示返回字段</div>
-                  <UButton
-                    v-if="result.fields.some(field => !field.used)"
-                    color="neutral"
-                    variant="link"
-                    size="xs"
-                    :trailing-icon="expandedApiResults.has(result.id) ? 'i-lucide-chevron-up' : 'i-lucide-chevron-down'"
-                    @click="toggleApiResult(result.id)"
-                  >
-                    {{ expandedApiResults.has(result.id) ? '隐藏未使用字段' : `显示未使用字段（${result.fields.filter(field => !field.used).length}）` }}
-                  </UButton>
-                </div>
-              </template>
-            </UAccordion>
-          </div>
-          <div v-else class="api-panel-waiting">等待页面接口响应…</div>
+          <PageApiUsage :results="focusedApiResults" :issues="focusedApiIssues" :page-path="focusedPage?.path" :preview-path="props.config.previewPath" :host="Boolean(props.host)" />
         </template>
         <template #tests>
           <div class="api-panel-list">
