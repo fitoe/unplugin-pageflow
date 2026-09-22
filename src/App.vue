@@ -259,6 +259,7 @@ const hasUserSystem = computed(() => props.config.previewRoles.length > 0)
 const settledTransform = ref<CanvasTransform>({ x: 0, y: 0, scaleX: 1, scaleY: 1 })
 const livePreviewId = ref<string>()
 const livePreviewFrameId = ref<string>()
+const focusedRoleRevision = ref(0)
 const pendingPreviewNavigation = ref<PendingPreviewNavigation>()
 let previewNavigationSequence = 0
 const focusedPageId = ref<string>()
@@ -2538,6 +2539,10 @@ function applyWorkbenchLocation() {
 }
 
 function handleEscape() {
+  if (virtualPageMenu.value) {
+    virtualPageMenu.value = undefined
+    return true
+  }
   if (focusedPageId.value) {
     exitFocusedPage()
     return true
@@ -3345,7 +3350,19 @@ function syncPreviewHotspots(pageId: string) {
 
 function openVirtualPageMenu(pageId: string, x: number, y: number) {
   if (!pages.value.some(page => page.id === pageId)) return
-  virtualPageMenu.value = { pageId, x, y }
+  virtualPageMenu.value = { pageId, x: Math.max(8, Math.min(x, window.innerWidth - 166)), y: Math.max(8, Math.min(y, window.innerHeight - 146)) }
+}
+
+function togglePageTreeFavorite(pageId: string) {
+  virtualPageMenu.value = undefined
+  toggleFavoritePage(pageId)
+}
+
+async function copyPageTreeUrl(pageId: string) {
+  virtualPageMenu.value = undefined
+  const page = pages.value.find(item => item.id === pageId)
+  if (!page) return
+  status.value = await writeClipboardText(page.path) ? '已复制页面路由' : '复制失败，请重试'
 }
 
 function annotatePageTreePage(pageId: string) {
@@ -4162,6 +4179,29 @@ watch(requiredThumbnailRecords, records => {
 }, { immediate: true })
 
 watch([active, copiedPath], scheduleCanvasRender)
+watch(() => {
+  const page = pages.value.find(item => item.id === focusedPageId.value)
+  return page ? [page.id, pageUser(page)] as const : undefined
+}, (next, previous) => {
+  if (!next || !previous || next[0] !== previous[0] || next[1] === previous[1]) return
+  const pageId = next[0]
+  clearPendingPreviewNavigation()
+  // Navigation can reuse another page's physical iframe. Rebase it before
+  // applying the current page's role so its URL and session agree.
+  livePreviewId.value = pageId
+  livePreviewFrameId.value = pageId
+  livePreviewCacheIds.value = touchPreviewCache(livePreviewCacheIds.value, pageId)
+  loadedPreviewIds.value.delete(pageId)
+  readyPreviewIds.value.delete(pageId)
+  focusedLinks.value = []
+  focusedLinksScannedPageId = undefined
+  focusedTargetPositions.value = {}
+  focusedDiagnostics.value = []
+  pendingApiResultsByPage.delete(pageId)
+  apiResultsByPage.value = { ...apiResultsByPage.value, [pageId]: [] }
+  focusedRoleRevision.value++
+  scheduleCanvasRender()
+})
 watch(focusedFormAvailable, () => syncOverlay(false))
 watch([focusedPageId, routeGroupPath, previewMode, activeUser, panelTab, workbenchView], scheduleWorkbenchLocationSync, { deep: true })
 watch(panelCollapsed, (collapsed) => {
@@ -4510,8 +4550,8 @@ onUnmounted(() => {
             <template #trailing><kbd>{{ searchShortcutLabel }}</kbd></template>
             <template #item="{ item }">
               <div class="search-result-item">
-                <strong>{{ item.label }}</strong>
-                <small>{{ item.description }}</small>
+                <strong :title="item.label">{{ item.label }}</strong>
+                <small :title="item.path">{{ item.path }}</small>
               </div>
             </template>
             <template #empty>没有匹配页面</template>
@@ -4602,6 +4642,24 @@ onUnmounted(() => {
         role="menu"
         :style="{ left: `${virtualPageMenu.x}px`, top: `${virtualPageMenu.y}px` }"
       >
+        <UButton
+          type="button"
+          role="menuitem"
+          icon="i-lucide-star"
+          :label="favoritePageIds.has(virtualPageMenu.pageId) ? '取消收藏' : '收藏'"
+          color="neutral"
+          variant="ghost"
+          @click="togglePageTreeFavorite(virtualPageMenu.pageId)"
+        />
+        <UButton
+          type="button"
+          role="menuitem"
+          icon="i-lucide-link"
+          label="复制 URL"
+          color="neutral"
+          variant="ghost"
+          @click="copyPageTreeUrl(virtualPageMenu.pageId)"
+        />
         <UButton
           type="button"
           role="menuitem"
@@ -4814,7 +4872,7 @@ onUnmounted(() => {
           >
             <iframe
               :ref="element => setPreviewFrame(page.id, element as Element | null)"
-              :key="`${previewMode}:${currentPreviewMode.width}x${currentPreviewMode.height}:${page.id}:${pageUser(page)}`"
+              :key="`${previewMode}:${currentPreviewMode.width}x${currentPreviewMode.height}:${page.id}:${pageUser(page)}:${page.id === livePreviewFrameId ? focusedRoleRevision : 0}`"
               :src="previewUrl(page.path, shouldInspectPreviewFrame(page.id, focusedPageId, livePreviewFrameId, livePreviewId))"
               :title="`${pages.find(item => item.id === previewDisplayPageId(page.id))?.title ?? page.title} preview`"
               :style="{

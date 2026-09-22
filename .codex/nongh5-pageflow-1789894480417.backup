@@ -1,0 +1,966 @@
+{
+  "enabled": true,
+  "previewPath": "/__unplugin-pageflow/",
+  "appUrl": "/",
+  "dynamicParams": {},
+  "previewRoles": [
+    {
+      "match": "/pages/machinery/farmer/**",
+      "role": "trace-farmer"
+    },
+    {
+      "match": "/pages/machinery/**",
+      "role": "machinery-operator"
+    },
+    {
+      "match": "/pages/agritech/orders/**",
+      "role": "agritech-expert"
+    },
+    {
+      "match": "/pages/agritech/expert/**",
+      "role": "agritech-expert"
+    },
+    {
+      "match": "/pages/agritech/farmer/consultations/index",
+      "role": "agritech-farmer"
+    },
+    {
+      "match": "/pages/agritech/**",
+      "role": "agritech-farmer"
+    },
+    {
+      "match": "/pages/product/supplier/**",
+      "role": "supplier"
+    },
+    {
+      "match": "/pages/trace/farmer/**",
+      "role": "trace-farmer"
+    },
+    {
+      "match": "/pages/materials/**",
+      "role": "trace-farmer"
+    },
+    {
+      "match": "/pages/personal-center/**",
+      "role": "trace-farmer"
+    }
+  ],
+  "groupNames": {
+    "product": "农品服务",
+    "agritech": "农技服务",
+    "finance": "金融",
+    "materials": "农资",
+    "machinery": "农机服务",
+    "product/supplier": "供应商名录",
+    "auth": "登录注册",
+    "agri-condition": "农情服务",
+    "legal": "隐私协议",
+    "finance/consultations": "咨询服务",
+    "finance/loans": "金融服务",
+    "finance/policies": "惠农政策",
+    "agritech/expert/purchase-reviews": "购药审核",
+    "agritech/expert/orders": "农技服务",
+    "agritech/expert": "农技专家",
+    "agritech/shared/consultations": "专家咨询",
+    "machinery/operator": "农机手",
+    "machinery/operator/machines": "农机信息",
+    "machinery/operator/orders": "订单",
+    "materials/farmer/orders": "订单",
+    "trace": "溯源",
+    "complaint": "诉求",
+    "product/buyer": "采购",
+    "personal-center": "个人中心",
+    "personal-center/plots": "地块",
+    "machinery/farmer": "农户端",
+    "machinery/farmer/orders": "订单",
+    "materials/farmer": "农户端",
+    "product/buyer/demands": "需求",
+    "product/shared/fairs": "临沂大集",
+    "product/shared/products": "产品",
+    "product/shared/subjects": "涉农主题",
+    "product/shared/suppliers": "供应商",
+    "materials/farmer/profile": "会员",
+    "agritech/public/knowledge": "知识库",
+    "agritech/public/experts": "专家库",
+    "agritech/farmer": "农户",
+    "agritech/public": "公共",
+    "machinery/farmer/reviews": "评价"
+  },
+  "canvasLayouts": {
+    "/roles": {
+      "/pages/product/buyer/home/index": [
+        180,
+        64
+      ],
+      "/pages/agritech/expert/home/index": [
+        1044,
+        64
+      ],
+      "/pages/machinery/operator/home/index": [
+        1332,
+        64
+      ]
+    },
+    "/": {
+      "/pages/index": [
+        75.5,
+        64
+      ],
+      "/pages/auth/login/index": [
+        651.5,
+        64
+      ],
+      "/pages/legal/privacy/index": [
+        1227.5,
+        64
+      ],
+      "/pages/personal-center/index": [
+        75.5,
+        648
+      ],
+      "/pages/product/buyer/categories/index": [
+        651.5,
+        648
+      ],
+      "/pages/agritech/expert/orders/index": [
+        939.5,
+        648
+      ],
+      "/pages/finance/consultations/index": [
+        1227.5,
+        648
+      ],
+      "/pages/agri-condition/public/advice/index": [
+        75.5,
+        1232
+      ],
+      "/pages/materials/farmer/home/index": [
+        363.5,
+        1232
+      ],
+      "/pages/machinery/farmer/home/index": [
+        651.5,
+        1232
+      ]
+    },
+    "/product": {
+      "/pages/product/buyer/categories/index": [
+        298,
+        64
+      ],
+      "/pages/product/shared/fairs/index": [
+        586,
+        64
+      ]
+    },
+    "/product/fair": {
+      "/pages/product/shared/fairs/index": [
+        468,
+        64
+      ],
+      "/pages/product/shared/fairs/list": [
+        756,
+        64
+      ],
+      "/pages/product/shared/fairs/calendar": [
+        1044,
+        64
+      ]
+    },
+    "/account": {
+      "/pages/personal-center/security/index": [
+        546.5,
+        64
+      ],
+      "/pages/personal-center/profile/edit": [
+        834.5,
+        64
+      ]
+    },
+    "/personal-center": {
+      "/pages/personal-center/index": [
+        114.5,
+        64
+      ],
+      "/pages/personal-center/qr-code/index": [
+        402.5,
+        64
+      ],
+      "/pages/personal-center/security/index": [
+        690.5,
+        64
+      ],
+      "/pages/personal-center/plantings/edit": [
+        978.5,
+        64
+      ],
+      "/pages/personal-center/profile/edit": [
+        1266.5,
+        64
+      ],
+      "/pages/personal-center/plots/index": [
+        114.5,
+        648
+      ]
+    },
+    "/personal-center/plots": {
+      "/pages/personal-center/plots/index": [
+        402.5,
+        64
+      ],
+      "/pages/personal-center/plots/detail": [
+        690.5,
+        64
+      ],
+      "/pages/personal-center/plots/boundary": [
+        978.5,
+        64
+      ]
+    },
+    "/materials/farmer": {
+      "/pages/materials/farmer/home/index": [
+        154,
+        64
+      ],
+      "/pages/materials/farmer/stores/detail": [
+        442,
+        64
+      ],
+      "/pages/materials/farmer/orders/index": [
+        730,
+        64
+      ],
+      "/pages/materials/farmer/profile/cards": [
+        154,
+        648
+      ]
+    },
+    "/agritech/public": {
+      "/pages/agritech/public/experts/index": [
+        730,
+        64
+      ],
+      "/pages/agritech/public/knowledge/index": [
+        1018,
+        64
+      ]
+    },
+    "/agritech/public/knowledge": {
+      "/pages/agritech/public/knowledge/index": [
+        154,
+        64
+      ],
+      "/pages/agritech/public/knowledge/detail": [
+        442,
+        64
+      ],
+      "/pages/agritech/public/knowledge/article-detail": [
+        730,
+        64
+      ],
+      "/pages/agritech/public/knowledge/video-detail": [
+        1018,
+        64
+      ]
+    }
+  },
+  "pages": {
+    "/pages/personal-center/profile/edit": {
+      "figma": "YEY4pxJ4pq64sAf5LRbvF0#13406:15491"
+    },
+    "/pages/personal-center/security/index": {
+      "figma": "YEY4pxJ4pq64sAf5LRbvF0#13406:15700"
+    },
+    "/pages/personal-center/plantings/index": {
+      "figma": "YEY4pxJ4pq64sAf5LRbvF0#13406:15864"
+    },
+    "/pages/personal-center/plantings/edit": {
+      "figma": "YEY4pxJ4pq64sAf5LRbvF0#13406:15651",
+      "location": "/pages/personal-center/plantings/edit?id=1"
+    },
+    "/pages/agritech/expert/orders/reschedule": {
+      "figma": "YEY4pxJ4pq64sAf5LRbvF0#13406:10395",
+      "location": "/pages/agritech/expert/orders/reschedule?orderId=2083682616058769410"
+    },
+    "/pages/product/buyer/favorites/index": {
+      "figma": "YEY4pxJ4pq64sAf5LRbvF0#13406:22990"
+    },
+    "/pages/product/buyer/supplier-apply/index": {
+      "figma": "YEY4pxJ4pq64sAf5LRbvF0#15125:816"
+    },
+    "/pages/product/supplier/statistics/index": {
+      "figma": "YEY4pxJ4pq64sAf5LRbvF0#13406:19055"
+    },
+    "/pages/product/supplier/profile/index": {
+      "figma": "YEY4pxJ4pq64sAf5LRbvF0#13406:19212"
+    },
+    "/pages/product/supplier/supplies/publish": {
+      "figma": "YEY4pxJ4pq64sAf5LRbvF0#13406:18343"
+    },
+    "/pages/product/buyer/demands/index": {
+      "figma": "YEY4pxJ4pq64sAf5LRbvF0#13406:22801"
+    },
+    "/pages/product/buyer/demands/detail": {
+      "figma": "YEY4pxJ4pq64sAf5LRbvF0#13406:20844",
+      "location": "/pages/product/buyer/demands/detail?id=2100829683201806338&source=market"
+    },
+    "/pages/product/buyer/demands/publish": {
+      "figma": "YEY4pxJ4pq64sAf5LRbvF0#13406:23907"
+    },
+    "/pages/product/shared/products/index": {
+      "figma": "YEY4pxJ4pq64sAf5LRbvF0#13406:21088",
+      "location": "/pages/product/shared/products/index?categoryCode=livestock-eggs&keyword=%25E7%2595%259C%25E7%25A6%25BD%25E8%259B%258B%25E7%25B1%25BB"
+    },
+    "/pages/agritech/expert/home/index": {
+      "figma": "YEY4pxJ4pq64sAf5LRbvF0#13406:8412",
+      "name": "专家角色首页"
+    },
+    "/pages/agritech/shared/messages/index": {
+      "figma": "YEY4pxJ4pq64sAf5LRbvF0#13406:7995",
+      "location": "/pages/agritech/shared/messages/index?actor=expert"
+    },
+    "/pages/personal-center/index": {
+      "figma": "YEY4pxJ4pq64sAf5LRbvF0#13406:15160"
+    },
+    "/pages/auth/login/index": {
+      "figma": "YEY4pxJ4pq64sAf5LRbvF0#13406:6752",
+      "location": "/pages/auth/login/index?role=operator&redirect=%252Fpages%252Fmachinery%252Foperator%252Fhome%252Findex"
+    },
+    "/pages/auth/register/index": {
+      "figma": "YEY4pxJ4pq64sAf5LRbvF0#13406:6804",
+      "location": "/pages/auth/register/index?role=farmer&redirect=%252Fpages%252Fmine"
+    },
+    "/pages/auth/reset-password/index": {
+      "figma": "YEY4pxJ4pq64sAf5LRbvF0#13406:6997"
+    },
+    "/pages/auth/role-select/index": {
+      "figma": "YEY4pxJ4pq64sAf5LRbvF0#13406:7154",
+      "location": "/pages/auth/role-select/index?redirect=%2Fpages%2Fpersonal-center%2Findex"
+    },
+    "/pages/agri-condition/public/home/index": {
+      "figma": "YEY4pxJ4pq64sAf5LRbvF0#13406:650"
+    },
+    "/pages/agri-condition/public/weather/index": {
+      "figma": "YEY4pxJ4pq64sAf5LRbvF0#13406:922"
+    },
+    "/pages/agri-condition/public/alerts/index": {
+      "figma": "YEY4pxJ4pq64sAf5LRbvF0#13406:1062"
+    },
+    "/pages/agri-condition/public/alerts/detail": {
+      "figma": "YEY4pxJ4pq64sAf5LRbvF0#13406:1416"
+    },
+    "/pages/agri-condition/public/advice/index": {
+      "figma": "YEY4pxJ4pq64sAf5LRbvF0#13406:1251"
+    },
+    "/pages/agri-condition/public/advice/detail": {
+      "figma": "YEY4pxJ4pq64sAf5LRbvF0#13406:1469"
+    },
+    "/pages/finance/home/index": {
+      "figma": "YEY4pxJ4pq64sAf5LRbvF0#13406:3461"
+    },
+    "/pages/finance/loans/index": {
+      "figma": "YEY4pxJ4pq64sAf5LRbvF0#13406:3614"
+    },
+    "/pages/finance/loans/detail": {
+      "figma": "YEY4pxJ4pq64sAf5LRbvF0#13406:4376",
+      "location": "/pages/finance/loans/detail?productId=1761&code=2023041218085112298701"
+    },
+    "/pages/finance/policies/index": {
+      "figma": "YEY4pxJ4pq64sAf5LRbvF0#13690:1838"
+    },
+    "/pages/finance/policies/detail": {
+      "figma": "YEY4pxJ4pq64sAf5LRbvF0#13406:4910",
+      "location": "/pages/finance/policies/detail?eventId=1638740623817994479"
+    },
+    "/pages/finance/consultations/detail": {
+      "location": "/pages/finance/consultations/detail?serviceId=2076000400000000002"
+    },
+    "/pages/product/buyer/home/index": {
+      "figma": "YEY4pxJ4pq64sAf5LRbvF0#13406:19954"
+    },
+    "/pages/product/buyer/market/index": {
+      "figma": "YEY4pxJ4pq64sAf5LRbvF0#13406:21088",
+      "location": "/pages/product/buyer/market/index?type=supply"
+    },
+    "/pages/product/shared/fairs/index": {
+      "figma": "YEY4pxJ4pq64sAf5LRbvF0#13406:23403",
+      "name": "赶集地图"
+    },
+    "/pages/product/shared/growers/search": {
+      "figma": "YEY4pxJ4pq64sAf5LRbvF0#13406:24671"
+    },
+    "/pages/product/shared/map/index": {
+      "figma": "YEY4pxJ4pq64sAf5LRbvF0#13406:24760"
+    },
+    "/pages/product/buyer/negotiations/manage": {
+      "figma": "YEY4pxJ4pq64sAf5LRbvF0#13406:18464",
+      "location": "/pages/product/buyer/negotiations/manage?role=buyer&productId=2087356147850235905&supplierId=2087356147418222593",
+      "name": "洽谈"
+    },
+    "/pages/product/shared/subjects/search": {
+      "figma": "YEY4pxJ4pq64sAf5LRbvF0#13406:21839"
+    },
+    "/pages/product/shared/subjects/detail": {
+      "figma": "YEY4pxJ4pq64sAf5LRbvF0#13406:22011",
+      "location": "/pages/product/shared/subjects/detail?id=1"
+    },
+    "/pages/product/shared/suppliers/index": {
+      "figma": "YEY4pxJ4pq64sAf5LRbvF0#13406:24031"
+    },
+    "/pages/product/shared/suppliers/search": {
+      "figma": "YEY4pxJ4pq64sAf5LRbvF0#13406:24554"
+    },
+    "/pages/product/shared/suppliers/detail": {
+      "figma": "YEY4pxJ4pq64sAf5LRbvF0#13406:24882",
+      "location": "/pages/product/shared/suppliers/detail?supplierId=2087356259099955202"
+    },
+    "/pages/product/shared/suppliers/recommend": {
+      "figma": "YEY4pxJ4pq64sAf5LRbvF0#13406:24228"
+    },
+    "/pages/trace/public/detail": {
+      "figma": "YEY4pxJ4pq64sAf5LRbvF0#13406:1592",
+      "location": "/pages/trace/public/detail?code=archive-2094321906514006017"
+    },
+    "/pages/agritech/expert/purchase-reviews/index": {
+      "figma": "YEY4pxJ4pq64sAf5LRbvF0#13406:8766"
+    },
+    "/pages/agritech/expert/purchase-reviews/detail": {
+      "figma": "YEY4pxJ4pq64sAf5LRbvF0#13406:8882",
+      "location": "/pages/agritech/expert/purchase-reviews/detail?reviewId=900000000000015400"
+    },
+    "/pages/agritech/farmer/ai/index": {
+      "figma": "YEY4pxJ4pq64sAf5LRbvF0#13406:11112"
+    },
+    "/pages/agritech/farmer/guidance/publish": {
+      "figma": "YEY4pxJ4pq64sAf5LRbvF0#13406:11705"
+    },
+    "/pages/agritech/farmer/guidance/confirm": {
+      "figma": "YEY4pxJ4pq64sAf5LRbvF0#13406:11804"
+    },
+    "/pages/agritech/farmer/tracking/index": {
+      "figma": "YEY4pxJ4pq64sAf5LRbvF0#13468:4078"
+    },
+    "/pages/agritech/farmer/tracking/detail": {
+      "figma": "YEY4pxJ4pq64sAf5LRbvF0#13406:13522",
+      "location": "/pages/agritech/farmer/tracking/detail?consultationId=2082356812829868033"
+    },
+    "/pages/agritech/farmer/home/index": {
+      "figma": "YEY4pxJ4pq64sAf5LRbvF0#13406:7512"
+    },
+    "/pages/agritech/shared/consultations/session": {
+      "figma": "YEY4pxJ4pq64sAf5LRbvF0#13406:11244",
+      "location": "/pages/agritech/shared/consultations/session?consultationId=2101549364732690433"
+    },
+    "/pages/agritech/shared/consultations/cancel": {
+      "figma": "YEY4pxJ4pq64sAf5LRbvF0#13406:10438",
+      "location": "/pages/agritech/shared/consultations/cancel?consultationId=2099403176545869825"
+    },
+    "/pages/agritech/expert/orders/index": {
+      "figma": "YEY4pxJ4pq64sAf5LRbvF0#13406:8595"
+    },
+    "/pages/agritech/expert/orders/detail": {
+      "figma": "YEY4pxJ4pq64sAf5LRbvF0#13734:623",
+      "location": "/pages/agritech/expert/orders/detail?appointmentId=2100381164523429889"
+    },
+    "/pages/agritech/expert/orders/route": {
+      "figma": "YEY4pxJ4pq64sAf5LRbvF0#13406:10284"
+    },
+    "/pages/agritech/farmer/favorites/index": {
+      "figma": "YEY4pxJ4pq64sAf5LRbvF0#13406:8082"
+    },
+    "/pages/agritech/public/experts/index": {
+      "figma": "YEY4pxJ4pq64sAf5LRbvF0#13468:8874"
+    },
+    "/pages/agritech/public/experts/detail": {
+      "figma": "YEY4pxJ4pq64sAf5LRbvF0#13468:9021",
+      "location": "/pages/agritech/public/experts/detail?expertId=101966225449419549"
+    },
+    "/pages/agritech/public/knowledge/index": {
+      "figma": "YEY4pxJ4pq64sAf5LRbvF0#13406:12954",
+      "location": "/pages/agritech/public/knowledge/index?section=videos",
+      "name": "案例库 视频课 文章库"
+    },
+    "/pages/agritech/public/knowledge/detail": {
+      "figma": "YEY4pxJ4pq64sAf5LRbvF0#13406:13447",
+      "location": "/pages/agritech/public/knowledge/detail?caseId=2100020868692795394"
+    },
+    "/pages/machinery/farmer/demands/create": {
+      "figma": "YEY4pxJ4pq64sAf5LRbvF0#13406:5544",
+      "location": "/pages/machinery/farmer/demands/create?mode=edit&orderId=2097606550273531905"
+    },
+    "/pages/machinery/farmer/orders/detail": {
+      "figma": "YEY4pxJ4pq64sAf5LRbvF0#13406:5993",
+      "location": "/pages/machinery/farmer/orders/detail?orderId=2097606550273531905"
+    },
+    "/pages/personal-center/plots/index": {
+      "figma": "YEY4pxJ4pq64sAf5LRbvF0#13406:15756"
+    },
+    "/pages/personal-center/plots/detail": {
+      "location": "/pages/personal-center/plots/detail?plotId=2082064871558950914&mode=edit",
+      "figma": "YEY4pxJ4pq64sAf5LRbvF0#13406:15580"
+    },
+    "/pages/machinery/farmer/reviews/index": {
+      "figma": "YEY4pxJ4pq64sAf5LRbvF0#13406:5636"
+    },
+    "/pages/machinery/farmer/reviews/detail": {
+      "figma": "YEY4pxJ4pq64sAf5LRbvF0#13406:6069",
+      "location": "/pages/machinery/farmer/reviews/detail?reviewId=2092783661720473601"
+    },
+    "/pages/machinery/operator/home/index": {
+      "figma": "YEY4pxJ4pq64sAf5LRbvF0#13406:14703"
+    },
+    "/pages/machinery/operator/demands/detail": {
+      "figma": "YEY4pxJ4pq64sAf5LRbvF0#13406:14525",
+      "location": "/pages/machinery/operator/demands/detail?orderId=2101503443609255937"
+    },
+    "/pages/machinery/operator/orders/index": {
+      "figma": "YEY4pxJ4pq64sAf5LRbvF0#13406:13963"
+    },
+    "/pages/machinery/operator/orders/detail": {
+      "figma": "YEY4pxJ4pq64sAf5LRbvF0#13406:14173",
+      "location": "/pages/machinery/operator/orders/detail?orderId=2083682616058769410"
+    },
+    "/pages/machinery/operator/profile/edit": {
+      "figma": "YEY4pxJ4pq64sAf5LRbvF0#13406:14229"
+    },
+    "/pages/machinery/operator/machines/index": {
+      "figma": "YEY4pxJ4pq64sAf5LRbvF0#13406:14296"
+    },
+    "/pages/machinery/operator/machines/edit": {
+      "location": "/pages/machinery/operator/machines/edit?machineId=2082080633673646081"
+    },
+    "/pages/machinery/operator/qualifications/index": {
+      "figma": "YEY4pxJ4pq64sAf5LRbvF0#13406:14387"
+    },
+    "/pages/materials/farmer/home/index": {
+      "figma": "YEY4pxJ4pq64sAf5LRbvF0#13406:3140"
+    },
+    "/pages/personal-center/qr-code/index": {
+      "figma": "YEY4pxJ4pq64sAf5LRbvF0#13406:15964"
+    },
+    "/pages/materials/farmer/stores/detail": {
+      "figma": "YEY4pxJ4pq64sAf5LRbvF0#13406:2971",
+      "location": "/pages/materials/farmer/stores/detail?storeId=1"
+    },
+    "/pages/materials/farmer/orders/index": {
+      "figma": "YEY4pxJ4pq64sAf5LRbvF0#13406:2589"
+    },
+    "/pages/materials/farmer/orders/detail": {
+      "figma": "YEY4pxJ4pq64sAf5LRbvF0#13406:2790",
+      "location": "/pages/materials/farmer/orders/detail?orderId=mock-materials-002"
+    },
+    "/pages/materials/farmer/profile/cards": {
+      "figma": "YEY4pxJ4pq64sAf5LRbvF0#13406:3035",
+      "name": "会员卡"
+    },
+    "/pages/materials/farmer/profile/member-detail": {
+      "figma": "YEY4pxJ4pq64sAf5LRbvF0#13406:2884",
+      "location": "/pages/materials/farmer/profile/member-detail?memberId=preview-2"
+    },
+    "/pages/machinery/operator/reviews/index": {
+      "figma": "YEY4pxJ4pq64sAf5LRbvF0#13406:5636"
+    },
+    "/pages/index": {
+      "figma": "YEY4pxJ4pq64sAf5LRbvF0#13406:7057"
+    },
+    "/pages/complaint/farmer/create": {
+      "location": "/pages/complaint/farmer/create?category=agri_quality&type=%25E5%2586%259C%25E4%25BA%25A7%25E5%2593%2581%25E8%25B4%25A8%25E9%2587%258F%25E5%25AE%2589%25E5%2585%25A8",
+      "figma": "YEY4pxJ4pq64sAf5LRbvF0#13411:1411"
+    },
+    "/pages/complaint/farmer/search": {
+      "figma": "YEY4pxJ4pq64sAf5LRbvF0#13411:1248"
+    },
+    "/pages/complaint/farmer/mine": {
+      "figma": "YEY4pxJ4pq64sAf5LRbvF0#13411:1554"
+    },
+    "/pages/complaint/farmer/feedback": {
+      "figma": "YEY4pxJ4pq64sAf5LRbvF0#13411:1860"
+    },
+    "/pages/complaint/farmer/detail": {
+      "figma": "YEY4pxJ4pq64sAf5LRbvF0#13411:1630"
+    },
+    "/pages/product/shared/subjects/permits": {
+      "location": "/pages/product/shared/subjects/permits?id=1",
+      "figma": "YEY4pxJ4pq64sAf5LRbvF0#13406:22131"
+    },
+    "/pages/product/shared/subjects/penalties": {
+      "location": "/pages/product/shared/subjects/penalties?id=1",
+      "figma": "YEY4pxJ4pq64sAf5LRbvF0#13406:22278"
+    },
+    "/pages/product/shared/subjects/positive": {
+      "location": "/pages/product/shared/subjects/positive?id=1",
+      "figma": "YEY4pxJ4pq64sAf5LRbvF0#13406:22404"
+    },
+    "/pages/product/shared/subjects/dishonesty": {
+      "location": "/pages/product/shared/subjects/dishonesty?id=1",
+      "figma": "YEY4pxJ4pq64sAf5LRbvF0#13406:22488"
+    },
+    "/pages/machinery/farmer/home/index": {
+      "figma": "YEY4pxJ4pq64sAf5LRbvF0#13406:5164"
+    },
+    "/pages/personal-center/plots/boundary": {
+      "location": "/pages/personal-center/plots/boundary?mode=edit"
+    },
+    "/pages/product/shared/fairs/calendar": {
+      "figma": "YEY4pxJ4pq64sAf5LRbvF0#13406:23685",
+      "name": "赶集日历"
+    },
+    "/pages/product/shared/fairs/list": {
+      "figma": "YEY4pxJ4pq64sAf5LRbvF0#13406:23547",
+      "name": "赶集列表"
+    },
+    "/pages/product/shared/fairs/overview": {
+      "figma": "YEY4pxJ4pq64sAf5LRbvF0#13406:15457"
+    },
+    "/pages/machinery/farmer/reviews/append": {
+      "location": "/pages/machinery/farmer/reviews/append?reviewId=2092783661720473601"
+    },
+    "/pages/machinery/farmer/index": {
+      "figma": "YEY4pxJ4pq64sAf5LRbvF0#13491:9314"
+    },
+    "/pages/product/shared/premium-products/index": {
+      "figma": "YEY4pxJ4pq64sAf5LRbvF0#13406:24228"
+    },
+    "/pages/product/shared/featured-enterprises/index": {
+      "figma": "YEY4pxJ4pq64sAf5LRbvF0#13406:24343"
+    },
+    "/pages/product/shared/exporters/index": {
+      "figma": "YEY4pxJ4pq64sAf5LRbvF0#13406:24458"
+    },
+    "/pages/product/supplier/supplies/detail": {
+      "location": "/pages/product/supplier/supplies/detail?id=preview-peach"
+    },
+    "/pages/agritech/public/knowledge/article-detail": {
+      "location": "/pages/agritech/public/knowledge/article-detail?id=2092494920963522562&sourceType=doc"
+    },
+    "/pages/product/shared/products/detail": {
+      "location": "/pages/product/shared/products/detail?productId=2087356147850235905"
+    },
+    "/pages/machinery/operator/index": {
+      "figma": "YEY4pxJ4pq64sAf5LRbvF0#13406:14596"
+    },
+    "/pages/agritech/public/knowledge/video-detail": {
+      "location": "/pages/agritech/public/knowledge/video-detail?id=2092495403186847746&sourceType=video"
+    },
+    "/pages/agritech/expert/orders/offline": {
+      "figma": "YEY4pxJ4pq64sAf5LRbvF0#13406:12037"
+    },
+    "/pages/agritech/farmer/consultations/index": {
+      "location": "/pages/agritech/farmer/consultations/index?expertId=101966225449418753"
+    }
+  },
+  "pageTree": {
+    "placements": {
+      "/pages/auth/reset-password/index": {
+        "group": "auth",
+        "order": 2
+      },
+      "/pages/personal-center/index": {
+        "group": "personal-center",
+        "order": 0
+      },
+      "/pages/personal-center/profile/edit": {
+        "group": "personal-center",
+        "order": 1
+      },
+      "/pages/personal-center/plantings/edit": {
+        "group": "personal-center",
+        "order": 5
+      },
+      "group:personal-center/plots": {
+        "group": "personal-center",
+        "order": 6
+      },
+      "/pages/personal-center/qr-code/index": {
+        "group": "personal-center",
+        "order": 3
+      },
+      "/pages/personal-center/security/index": {
+        "group": "personal-center",
+        "order": 2
+      },
+      "/pages/personal-center/plantings/index": {
+        "group": "personal-center",
+        "order": 4
+      },
+      "/pages/personal-center/plots/index": {
+        "group": "personal-center/plots",
+        "order": 0
+      },
+      "/pages/personal-center/plots/detail": {
+        "group": "personal-center/plots",
+        "order": 1
+      },
+      "/pages/index": {
+        "group": "/",
+        "order": 0
+      },
+      "group:auth": {
+        "group": "/",
+        "order": 1
+      },
+      "group:legal": {
+        "group": "/",
+        "order": 3
+      },
+      "group:personal-center": {
+        "group": "/",
+        "order": 4
+      },
+      "group:machinery": {
+        "group": "/",
+        "order": 5
+      },
+      "group:trace": {
+        "group": "/",
+        "order": 6
+      },
+      "group:product": {
+        "group": "/",
+        "order": 7
+      },
+      "group:agritech": {
+        "group": "/",
+        "order": 9
+      },
+      "group:finance": {
+        "group": "/",
+        "order": 10
+      },
+      "group:agri-condition": {
+        "group": "/",
+        "order": 11
+      },
+      "group:materials": {
+        "group": "/",
+        "order": 8
+      },
+      "group:complaint": {
+        "group": "/",
+        "order": 12
+      },
+      "/pages/machinery/farmer/home/index": {
+        "group": "machinery/farmer",
+        "order": 0
+      },
+      "/pages/machinery/farmer/demands/create": {
+        "group": "machinery/farmer",
+        "order": 1
+      },
+      "group:machinery/farmer/orders": {
+        "group": "machinery/farmer",
+        "order": 2
+      },
+      "group:machinery/farmer/reviews": {
+        "group": "machinery/farmer",
+        "order": 4
+      },
+      "/pages/product/buyer/demands/index": {
+        "group": "product/buyer/demands",
+        "order": 0
+      },
+      "/pages/product/buyer/demands/detail": {
+        "group": "product/buyer/demands",
+        "order": 1
+      },
+      "/pages/product/buyer/demands/publish": {
+        "group": "product/buyer/demands",
+        "order": 2
+      },
+      "/pages/product/shared/subjects/search": {
+        "group": "product/shared/subjects",
+        "order": 0
+      },
+      "/pages/product/shared/subjects/detail": {
+        "group": "product/shared/subjects",
+        "order": 1
+      },
+      "/pages/product/shared/subjects/dishonesty": {
+        "group": "product/shared/subjects",
+        "order": 2
+      },
+      "/pages/product/shared/subjects/penalties": {
+        "group": "product/shared/subjects",
+        "order": 3
+      },
+      "/pages/product/shared/subjects/permits": {
+        "group": "product/shared/subjects",
+        "order": 4
+      },
+      "/pages/product/shared/subjects/positive": {
+        "group": "product/shared/subjects",
+        "order": 5
+      },
+      "/pages/agritech/expert/home/index": {
+        "group": "agritech/expert",
+        "order": 0
+      },
+      "group:agritech/expert/orders": {
+        "group": "agritech/expert",
+        "order": 1
+      },
+      "group:agritech/expert/purchase-reviews": {
+        "group": "agritech/expert",
+        "order": 2
+      },
+      "/pages/agritech/farmer/home/index": {
+        "group": "agritech/farmer",
+        "order": 0
+      },
+      "group:agritech/farmer/ai": {
+        "group": "agritech/farmer",
+        "order": 1
+      },
+      "/pages/agritech/farmer/favorites/index": {
+        "group": "agritech/farmer",
+        "order": 2
+      },
+      "/pages/agritech/farmer/guidance/publish": {
+        "group": "agritech/farmer",
+        "order": 3
+      },
+      "/pages/agritech/farmer/guidance/confirm": {
+        "group": "agritech/farmer",
+        "order": 4
+      },
+      "/pages/agritech/farmer/subscription/index": {
+        "group": "agritech/farmer",
+        "order": 5
+      },
+      "group:agritech/farmer/tracking": {
+        "group": "agritech/farmer",
+        "order": 6
+      },
+      "/pages/agritech/public/knowledge/index": {
+        "group": "agritech/public/knowledge",
+        "order": 0
+      },
+      "/pages/agritech/public/knowledge/article-detail": {
+        "group": "agritech/public/knowledge",
+        "order": 2
+      },
+      "/pages/agritech/public/knowledge/video-detail": {
+        "group": "agritech/public/knowledge",
+        "order": 3
+      },
+      "/pages/agritech/public/knowledge/detail": {
+        "group": "agritech/public/knowledge",
+        "order": 1
+      },
+      "/pages/machinery/farmer/reviews/index": {
+        "group": "machinery/farmer/reviews",
+        "order": 0
+      },
+      "/pages/machinery/farmer/reviews/detail": {
+        "group": "machinery/farmer/reviews",
+        "order": 1
+      },
+      "/pages/machinery/farmer/reviews/append": {
+        "group": "machinery/farmer/reviews",
+        "order": 2
+      },
+      "/pages/machinery/farmer/orders/detail": {
+        "group": "machinery/farmer",
+        "order": 2
+      },
+      "/pages/machinery/farmer/index": {
+        "group": "machinery/farmer",
+        "order": 3
+      },
+      "/pages/machinery/operator/home/index": {
+        "group": "machinery/operator",
+        "order": 0
+      },
+      "/pages/machinery/operator/demands/detail": {
+        "group": "machinery/operator",
+        "order": 1
+      },
+      "group:machinery/operator/machines": {
+        "group": "machinery/operator",
+        "order": 2
+      },
+      "group:machinery/operator/orders": {
+        "group": "machinery/operator",
+        "order": 3
+      },
+      "/pages/machinery/operator/profile/edit": {
+        "group": "machinery/operator",
+        "order": 5
+      },
+      "/pages/machinery/operator/qualifications/index": {
+        "group": "machinery/operator",
+        "order": 6
+      },
+      "/pages/machinery/operator/reviews/index": {
+        "group": "machinery/operator",
+        "order": 7
+      },
+      "/pages/product/buyer/home/index": {
+        "group": "product/buyer",
+        "order": 0
+      },
+      "/pages/product/buyer/market/index": {
+        "group": "product/buyer",
+        "order": 1
+      },
+      "/pages/product/buyer/categories/index": {
+        "group": "product/buyer",
+        "order": 2
+      },
+      "group:product/buyer/demands": {
+        "group": "product/buyer",
+        "order": 3
+      },
+      "/pages/product/buyer/negotiations/manage": {
+        "group": "product/buyer",
+        "order": 4
+      },
+      "/pages/product/buyer/favorites/index": {
+        "group": "product/buyer",
+        "order": 5
+      },
+      "/pages/product/buyer/supplier-apply/index": {
+        "group": "product/buyer",
+        "order": 6
+      },
+      "group:product/shared/fairs": {
+        "group": "product/shared",
+        "order": 0
+      },
+      "/pages/product/shared/featured-enterprises/index": {
+        "group": "product/shared",
+        "order": 1
+      },
+      "/pages/product/shared/exporters/index": {
+        "group": "product/shared",
+        "order": 2
+      },
+      "/pages/product/shared/growers/search": {
+        "group": "product/shared",
+        "order": 3
+      },
+      "/pages/product/shared/map/index": {
+        "group": "product/shared",
+        "order": 4
+      },
+      "/pages/product/shared/premium-products/index": {
+        "group": "product/shared",
+        "order": 5
+      },
+      "group:product/shared/products": {
+        "group": "product/shared",
+        "order": 6
+      },
+      "group:product/shared/subjects": {
+        "group": "product/shared",
+        "order": 7
+      },
+      "group:product/shared/suppliers": {
+        "group": "product/shared",
+        "order": 8
+      }
+    }
+  }
+}
+  }
+}

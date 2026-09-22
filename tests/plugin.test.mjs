@@ -23,6 +23,9 @@ test('persists edited group and page names and refreshes the virtual client conf
     const address = server.httpServer?.address()
     assert(address && typeof address === 'object')
     const origin = `http://127.0.0.1:${address.port}`
+    const versionedClient = await (await fetch(`${origin}/@id/virtual:unplugin-pageflow/client?v=regression`)).text()
+    assert.match(versionedClient, /mount\.js\?pageflow_version=regression/)
+    assert.doesNotMatch(versionedClient, /mount\.js\?v=/)
     const configUrl = `${origin}/@id/virtual:unplugin-pageflow/config`
     assert.doesNotMatch(await (await fetch(configUrl)).text(), /业务流程/)
     const save = await fetch(`${origin}/__unplugin-pageflow/api/group-name`, {
@@ -186,9 +189,18 @@ test('refreshing project config rescans uni-app routes and removes deleted pages
     }))
 
     const refreshResponse = await fetch(`${origin}/__unplugin-pageflow/api/config`, { method: 'POST' })
+    assert.equal(refreshResponse.status, 200)
+    const preservedConfig = JSON.parse(await readFile(resolve(root, '.pageflow'), 'utf8'))
+    assert.deepEqual(preservedConfig.pages['/pages/legacy'], { name: 'Legacy' })
+    assert.deepEqual(preservedConfig.pageTree.placements['/pages/legacy'], { group: '/', order: 0 })
+    assert.deepEqual(preservedConfig.canvasLayouts['/']['/pages/legacy'], [100, 100])
+
+    // A temporarily incomplete generated route list must not delete source-backed settings.
+    await rm(resolve(pagesDirectory, 'legacy.vue'))
+    const deletionResponse = await fetch(`${origin}/__unplugin-pageflow/api/config`, { method: 'POST' })
     const refreshedGraph = await (await fetch(graphUrl)).json()
     const cleanedConfig = JSON.parse(await readFile(resolve(root, '.pageflow'), 'utf8'))
-    assert.equal(refreshResponse.status, 200)
+    assert.equal(deletionResponse.status, 200)
     assert.deepEqual(refreshedGraph.pages.map(page => page.path), ['/pages/home', '/pages/current'])
     assert.equal(cleanedConfig.pages['/pages/legacy'], undefined)
     assert.deepEqual(cleanedConfig.pages['/pages/current'], { name: 'Current' })
@@ -409,7 +421,7 @@ test('serves the unplugin-pageflow client from the configured development route'
     assert.doesNotMatch(html, /@vite\/client/)
     assert.equal(client.status, 200)
     assert.match(clientCode, /mountPageFlow/)
-    assert.match(clientCode, /mount\.(?:js|ts)\?v=\d+(?:\.\d+)?/)
+    assert.match(clientCode, /mount\.(?:js|ts)\?pageflow_version=\d+(?:\.\d+)?/)
     assert.equal(runtime.status, 200)
     assert.match(runtimeCode, /startPageFlowRuntime/)
     assert.equal(runtimeClient.status, 200)

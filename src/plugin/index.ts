@@ -1,3 +1,4 @@
+import { readPageFlowConfig, writePageFlowConfig } from './config-store.ts'
 import { createUnplugin } from 'unplugin'
 import { inspectApiUsage } from './api-usage.ts'
 import type { UnpluginFactory } from 'unplugin'
@@ -633,9 +634,12 @@ const factory: UnpluginFactory<PageFlowOptions | undefined> = (options) => {
       }
       const configFile = resolve(projectRoot, '.pageflow')
       try {
-        const stored = JSON.parse(stripJsonComments(await readFile(configFile, 'utf8'))) as PageFlowOptions
+        const stored = await readPageFlowConfig(configFile)
         const legacyPageTree = (stored.pageTree ?? {}) as PageFlowOptions['pageTree'] & { collapsed?: unknown, scrollTop?: unknown }
         const validPaths = new Set(routes.map(route => route.path === '/' && uniAppHomePath ? uniAppHomePath : route.path))
+        const configuredPaths = [...Object.keys(stored.pages ?? {}), ...Object.keys(stored.pageTree?.placements ?? {}).filter(key => !key.startsWith('group:'))]
+        const incompleteScan = !uniAppRoutes.length || configuredPaths.some(path =>
+          !validPaths.has(path) && (!path.startsWith('/pages/') || existsSync(resolve(projectRoot, `src${path}.vue`))))
         const validIds = new Set(routes.flatMap(route => [route.id, route.path]))
         const nativeGroups = new Set<string>()
         for (const path of validPaths) {
@@ -664,12 +668,12 @@ const factory: UnpluginFactory<PageFlowOptions | undefined> = (options) => {
           || Object.hasOwn(legacyPageTree, 'collapsed')
           || Object.hasOwn(legacyPageTree, 'scrollTop')
           || JSON.stringify(canvasLayouts) !== JSON.stringify(stored.canvasLayouts ?? {})
-        if (changed) {
+        if (changed && !incompleteScan) {
           stored.pages = pages
           stored.groupNames = groupNames
           stored.pageTree = { placements }
           stored.canvasLayouts = canvasLayouts
-          await writeFile(configFile, `${JSON.stringify(stored, null, 2)}\n`)
+          await writePageFlowConfig(configFile, stored)
           Object.assign(resolved, await loadProjectOptions(projectRoot, options))
         }
       } catch (error) {
@@ -741,7 +745,9 @@ const factory: UnpluginFactory<PageFlowOptions | undefined> = (options) => {
       if (id === PAGEFLOW_CONFIG_RESOLVED_ID)
         return `export default ${JSON.stringify(resolved)}`
       if (id === PAGEFLOW_CLIENT_RESOLVED_ID || id.startsWith(`${PAGEFLOW_CLIENT_RESOLVED_ID}?`)) {
-        const versionQuery = id.slice(PAGEFLOW_CLIENT_RESOLVED_ID.length)
+        // Vite propagates its reserved `v` query to static imports, but not
+        // dynamic imports. That loads two Vue runtimes in lazy panels.
+        const versionQuery = id.slice(PAGEFLOW_CLIENT_RESOLVED_ID.length).replace(/([?&])v=/g, '$1pageflow_version=')
         return `import config from '${PAGEFLOW_CONFIG_ID}'; import { mountPageFlow } from '${clientEntry}${versionQuery}'; mountPageFlow(document.querySelector('#app'), config)`
       }
       if (id === PAGEFLOW_RUNTIME_RESOLVED_ID && resolved.framework === 'qwik-city')
@@ -789,6 +795,9 @@ const factory: UnpluginFactory<PageFlowOptions | undefined> = (options) => {
                 },
                 '**/.unplugin-pageflow/cache/**',
                 '**/.pageflow',
+                '**/.pageflow.bak',
+                '**/.pageflow.lock',
+                '**/.pageflow.*.tmp',
               ],
             },
           },
@@ -796,6 +805,7 @@ const factory: UnpluginFactory<PageFlowOptions | undefined> = (options) => {
       },
       async handleHotUpdate(context) {
         const file = normalizeFile(context.file)
+        if (/\/\.pageflow(?:\.(?:bak|lock|.*\.tmp))?$/.test(file)) return []
         if (`${file}/`.startsWith(pluginDist) || file.includes('/.unplugin-pageflow/cache/')) return []
         if (isPageFlowTestFile(file) && pageTestIndex && pageTestIndexScanned) {
           pageTestIndexReady = pageTestIndex.update(file).then(() => sendEvent(PAGEFLOW_TEST_EVENT, { file }))
@@ -1171,12 +1181,12 @@ const factory: UnpluginFactory<PageFlowOptions | undefined> = (options) => {
               if (!key || key.length > 300) throw new Error('Invalid group key')
               if (name.length > 80) throw new Error('Group name is too long')
               const configFile = resolve(projectRoot, '.pageflow')
-              const stored = JSON.parse(stripJsonComments(await readFile(configFile, 'utf8'))) as PageFlowOptions
+              const stored = await readPageFlowConfig(configFile)
               const groupNames = { ...(stored.groupNames ?? {}) }
               if (name) groupNames[key] = name
               else delete groupNames[key]
               stored.groupNames = groupNames
-              await writeFile(configFile, `${JSON.stringify(stored, null, 2)}\n`)
+              await writePageFlowConfig(configFile, stored)
               resolved.groupNames = groupNames
               const configModule = server.moduleGraph.getModuleById(PAGEFLOW_CONFIG_RESOLVED_ID)
               if (configModule) server.moduleGraph.invalidateModule(configModule)
@@ -1198,7 +1208,7 @@ const factory: UnpluginFactory<PageFlowOptions | undefined> = (options) => {
               if (!key || key.length > 500) throw new Error('Invalid page key')
               if (name.length > 80) throw new Error('Page name is too long')
               const configFile = resolve(projectRoot, '.pageflow')
-              const stored = JSON.parse(stripJsonComments(await readFile(configFile, 'utf8'))) as PageFlowOptions
+              const stored = await readPageFlowConfig(configFile)
               const pages = { ...(stored.pages ?? {}) }
               const page = { ...(pages[key] ?? {}) }
               if (name) page.name = name
@@ -1213,7 +1223,7 @@ const factory: UnpluginFactory<PageFlowOptions | undefined> = (options) => {
               const pageNames = { ...resolved.pageNames }
               if (name) pageNames[key] = name
               else delete pageNames[key]
-              await writeFile(configFile, `${JSON.stringify(stored, null, 2)}\n`)
+              await writePageFlowConfig(configFile, stored)
               resolved.pageNames = pageNames
               const configModule = server.moduleGraph.getModuleById(PAGEFLOW_CONFIG_RESOLVED_ID)
               if (configModule) server.moduleGraph.invalidateModule(configModule)
@@ -1238,11 +1248,11 @@ const factory: UnpluginFactory<PageFlowOptions | undefined> = (options) => {
               const link = normalizeFigmaPages({ [path]: ref }, resolved.pageNames)[path]
               if (!link) throw new Error('Figma 节点链接无效')
               const configFile = resolve(projectRoot, '.pageflow')
-              const stored = JSON.parse(stripJsonComments(await readFile(configFile, 'utf8'))) as PageFlowOptions
+              const stored = await readPageFlowConfig(configFile)
               const page = { ...(stored.pages?.[path] ?? {}) }
               if (page.figma !== ref) delete page.figmaVersion
               stored.pages = { ...(stored.pages ?? {}), [path]: { ...page, figma: ref } }
-              await writeFile(configFile, `${JSON.stringify(stored, null, 2)}\n`)
+              await writePageFlowConfig(configFile, stored)
               resolved.figmaPages = { ...resolved.figmaPages, [path]: link }
               const configModule = server.moduleGraph.getModuleById(PAGEFLOW_CONFIG_RESOLVED_ID)
               if (configModule) server.moduleGraph.invalidateModule(configModule)
@@ -1291,7 +1301,7 @@ const factory: UnpluginFactory<PageFlowOptions | undefined> = (options) => {
                   return ref && version && ref.length <= 500 && version.length <= 200 ? [[ref, version] as const] : []
                 }))
                 const configFile = resolve(projectRoot, '.pageflow')
-                const stored = JSON.parse(stripJsonComments(await readFile(configFile, 'utf8'))) as PageFlowOptions
+                const stored = await readPageFlowConfig(configFile)
                 const initialized: Record<string, string> = {}
                 stored.pages = { ...(stored.pages ?? {}) }
                 for (const [path, pageConfig] of Object.entries(stored.pages)) {
@@ -1303,7 +1313,7 @@ const factory: UnpluginFactory<PageFlowOptions | undefined> = (options) => {
                   const link = resolved.figmaPages[path]
                   if (link) resolved.figmaPages[path] = { ...link, version }
                 }
-                if (Object.keys(initialized).length) await writeFile(configFile, `${JSON.stringify(stored, null, 2)}\n`)
+                if (Object.keys(initialized).length) await writePageFlowConfig(configFile, stored)
                 response.setHeader('Content-Type', 'application/json; charset=utf-8')
                 response.end(JSON.stringify({ initialized }))
                 return
@@ -1312,12 +1322,12 @@ const factory: UnpluginFactory<PageFlowOptions | undefined> = (options) => {
               const version = typeof body.version === 'string' ? body.version.trim() : ''
               if (!path || path.length > 500 || !version || version.length > 200) throw new Error('Invalid Figma version')
               const configFile = resolve(projectRoot, '.pageflow')
-              const stored = JSON.parse(stripJsonComments(await readFile(configFile, 'utf8'))) as PageFlowOptions
+              const stored = await readPageFlowConfig(configFile)
               const page = { ...(stored.pages?.[path] ?? {}) }
               if (!page.figma) throw new Error('Page has no Figma binding')
               page.figmaVersion = version
               stored.pages = { ...(stored.pages ?? {}), [path]: page }
-              await writeFile(configFile, `${JSON.stringify(stored, null, 2)}\n`)
+              await writePageFlowConfig(configFile, stored)
               const link = resolved.figmaPages[path]
               if (link) resolved.figmaPages = { ...resolved.figmaPages, [path]: { ...link, version } }
               response.setHeader('Content-Type', 'application/json; charset=utf-8')
@@ -1339,9 +1349,9 @@ const factory: UnpluginFactory<PageFlowOptions | undefined> = (options) => {
               if (!location || location.length > 2000 || location.split(/[?#]/, 1)[0] !== path)
                 throw new Error('Invalid page location')
               const configFile = resolve(projectRoot, '.pageflow')
-              const stored = JSON.parse(stripJsonComments(await readFile(configFile, 'utf8'))) as PageFlowOptions
+              const stored = await readPageFlowConfig(configFile)
               stored.pages = { ...(stored.pages ?? {}), [path]: { ...(stored.pages?.[path] ?? {}), location } }
-              await writeFile(configFile, `${JSON.stringify(stored, null, 2)}\n`)
+              await writePageFlowConfig(configFile, stored)
               resolved.pageLocations = { ...resolved.pageLocations, [path]: location }
               const configModule = server.moduleGraph.getModuleById(PAGEFLOW_CONFIG_RESOLVED_ID)
               if (configModule) server.moduleGraph.invalidateModule(configModule)
@@ -1361,14 +1371,14 @@ const factory: UnpluginFactory<PageFlowOptions | undefined> = (options) => {
               const path = typeof body.path === 'string' ? body.path.trim() : ''
               if (!path || path.length > 500) throw new Error('Invalid page path')
               const configFile = resolve(projectRoot, '.pageflow')
-              const stored = JSON.parse(stripJsonComments(await readFile(configFile, 'utf8'))) as PageFlowOptions
+              const stored = await readPageFlowConfig(configFile)
               const page = { ...(stored.pages?.[path] ?? {}) }
               delete page.figma
               delete page.figmaVersion
               stored.pages = { ...(stored.pages ?? {}) }
               if (Object.keys(page).length) stored.pages[path] = page
               else delete stored.pages[path]
-              await writeFile(configFile, `${JSON.stringify(stored, null, 2)}\n`)
+              await writePageFlowConfig(configFile, stored)
               const figmaPages = { ...resolved.figmaPages }
               delete figmaPages[path]
               resolved.figmaPages = figmaPages
@@ -1408,13 +1418,17 @@ const factory: UnpluginFactory<PageFlowOptions | undefined> = (options) => {
                 ? { ...placement, path: sourceMove.nextPath }
                 : placement)
               const configFile = resolve(projectRoot, '.pageflow')
-              const storedSource = stripJsonComments(await readFile(configFile, 'utf8'))
-              const stored = JSON.parse(sourceMove.moved ? storedSource.replaceAll(sourceMove.oldPath, sourceMove.nextPath) : storedSource) as PageFlowOptions
+              const stored = await readPageFlowConfig(configFile)
+              if (sourceMove.moved) {
+                const remapped = JSON.parse(JSON.stringify(stored).replaceAll(sourceMove.oldPath, sourceMove.nextPath)) as PageFlowOptions
+                Object.keys(stored).forEach(key => delete (stored as Record<string, unknown>)[key])
+                Object.assign(stored, remapped)
+              }
               const placements = { ...(stored.pageTree?.placements ?? {}) }
               if (sourceMove.moved) delete placements[sourceMove.oldPath]
               for (const { path, group, order } of savedPlacements) placements[path] = { ...placements[path], group, order }
               stored.pageTree = { ...stored.pageTree, placements }
-              await writeFile(configFile, `${JSON.stringify(stored, null, 2)}\n`)
+              await writePageFlowConfig(configFile, stored)
               resolved.pageTreePlacements = placements
               const configModule = server.moduleGraph.getModuleById(PAGEFLOW_CONFIG_RESOLVED_ID)
               if (configModule) server.moduleGraph.invalidateModule(configModule)
@@ -1444,10 +1458,10 @@ const factory: UnpluginFactory<PageFlowOptions | undefined> = (options) => {
                 return [pageId, position as [number, number]]
               }))
               const configFile = resolve(projectRoot, '.pageflow')
-              const stored = JSON.parse(stripJsonComments(await readFile(configFile, 'utf8'))) as PageFlowOptions
+              const stored = await readPageFlowConfig(configFile)
               const canvasLayouts = { ...(stored.canvasLayouts ?? {}), [key]: positions }
               stored.canvasLayouts = canvasLayouts
-              await writeFile(configFile, `${JSON.stringify(stored, null, 2)}\n`)
+              await writePageFlowConfig(configFile, stored)
               resolved.canvasLayouts = canvasLayouts
               const configModule = server.moduleGraph.getModuleById(PAGEFLOW_CONFIG_RESOLVED_ID)
               if (configModule) server.moduleGraph.invalidateModule(configModule)
