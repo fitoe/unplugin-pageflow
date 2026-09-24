@@ -5,10 +5,10 @@ import type { UnpluginFactory } from 'unplugin'
 import { createHash } from 'node:crypto'
 import { spawn, type ChildProcess } from 'node:child_process'
 import { createRequire } from 'node:module'
-import { mkdir, readFile, readdir, rename, stat, writeFile } from 'node:fs/promises'
+import { readFile, readdir, stat } from 'node:fs/promises'
 import { existsSync, readFileSync } from 'node:fs'
 import type { ServerResponse } from 'node:http'
-import { basename, dirname, isAbsolute, relative, resolve } from 'node:path'
+import { dirname, isAbsolute, relative, resolve } from 'node:path'
 import { StringDecoder } from 'node:string_decoder'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { stripVTControlCharacters } from 'node:util'
@@ -39,6 +39,7 @@ import { createPageTestResultCache } from './page-test-results.ts'
 import { runPageFlowLighthouse } from './lighthouse.ts'
 import { windowsEditorLaunchCommand } from './editor.ts'
 import { inferTestCommands } from './test-command.ts'
+import { isAllowedPageFlowRequest } from './request-origin.ts'
 import { extractEventNavigationDiagnostics } from './source-diagnostics.ts'
 import { PAGEFLOW_TEST_EVENT } from '../shared/protocol.ts'
 import { loadProjectOptions, resolveOptions, stripJsonComments } from './options.ts'
@@ -690,34 +691,6 @@ const factory: UnpluginFactory<PageFlowOptions | undefined> = (options) => {
     pageTestIndex?.setRoutes(routes)
     rebuildGraph()
   }
-  const movePageSource = async (pagePath: string, targetGroup: string) => {
-    const route = routes.find(candidate => candidate.path === pagePath)
-    if (!route?.componentFile) throw new Error('Page source file was not found')
-    const sourceFile = resolve(projectRoot, route.componentFile)
-    const leaf = pagePath.split('/').filter(Boolean).at(-1)
-    if (!leaf) throw new Error('Invalid page path')
-    const normalizedGroup = targetGroup.replace(/^\/+|\/+$/g, '')
-    const nextPath = `/pages/${[normalizedGroup, leaf].filter(Boolean).join('/')}`
-    if (nextPath === pagePath) return { oldPath: pagePath, nextPath, moved: false }
-    const targetFile = resolve(projectRoot, 'src/pages', normalizedGroup, basename(sourceFile))
-    const relativeTarget = normalizeFile(relative(projectRoot, targetFile))
-    if (relativeTarget.startsWith('../') || isAbsolute(relativeTarget)) throw new Error('Target page path is outside the project')
-    if (existsSync(targetFile)) throw new Error(`Target page already exists: ${relativeTarget}`)
-    await mkdir(dirname(targetFile), { recursive: true })
-    await rename(sourceFile, targetFile)
-    const replaceRouteReferences = async (directory: string) => {
-      for (const entry of await readdir(directory, { withFileTypes: true }).catch(() => [])) {
-        const file = resolve(directory, entry.name)
-        if (entry.isDirectory()) await replaceRouteReferences(file)
-        else if (entry.isFile() && /\.(?:vue|ts|tsx|js|jsx|json)$/.test(entry.name)) {
-          const source = await readFile(file, 'utf8')
-          if (source.includes(pagePath)) await writeFile(file, source.replaceAll(pagePath, nextPath))
-        }
-      }
-    }
-    await replaceRouteReferences(resolve(projectRoot, 'src'))
-    return { oldPath: pagePath, nextPath, moved: true }
-  }
   let projectRefreshTimer: ReturnType<typeof setTimeout> | undefined
   const scheduleProjectGraphRefresh = () => {
     if (projectRefreshTimer) clearTimeout(projectRefreshTimer)
@@ -888,6 +861,12 @@ const factory: UnpluginFactory<PageFlowOptions | undefined> = (options) => {
         server.middlewares.use(async (request, response, next) => {
           const requestUrl = new URL(request.url ?? '/', 'http://unplugin-pageflow.local')
           const pathname = requestUrl.pathname
+          if (pathname.startsWith(`${resolved.previewPath}api/`) && !isAllowedPageFlowRequest(request.headers, request.method, Boolean(server.config.server.https))) {
+            response.statusCode = 403
+            response.setHeader('Content-Type', 'application/json; charset=utf-8')
+            response.end(JSON.stringify({ error: 'Cross-origin PageFlow requests are not allowed' }))
+            return
+          }
           const graphPath = `${resolved.previewPath}api/graph`
           const configPath = `${resolved.previewPath}api/config`
           const publicConfigPath = '/.well-known/pageflow.json'
@@ -1409,23 +1388,12 @@ const factory: UnpluginFactory<PageFlowOptions | undefined> = (options) => {
               })
               if (!normalized.length || normalized.length > 1000) throw new Error('Invalid page tree placement')
               const movedPath = typeof body.movedPath === 'string' ? body.movedPath.trim() : ''
-              const sourceGroup = typeof body.sourceGroup === 'string' ? body.sourceGroup.trim().replace(/^\/+|\/+$/g, '') : ''
-              const targetGroup = normalized.find(placement => placement.path === movedPath)?.group.replace(/^\/+|\/+$/g, '')
-              const sourceMove = movedPath && !movedPath.startsWith('group:') && targetGroup !== undefined && targetGroup !== sourceGroup
-                ? await movePageSource(movedPath, targetGroup)
-                : { oldPath: movedPath, nextPath: movedPath, moved: false }
-              const savedPlacements = normalized.map(placement => placement.path === sourceMove.oldPath
-                ? { ...placement, path: sourceMove.nextPath }
-                : placement)
+              // Tree placement is presentation state, not a framework source refactor.
+              const sourceMove = { oldPath: movedPath, nextPath: movedPath, moved: false }
+              const savedPlacements = normalized
               const configFile = resolve(projectRoot, '.pageflow')
               const stored = await readPageFlowConfig(configFile)
-              if (sourceMove.moved) {
-                const remapped = JSON.parse(JSON.stringify(stored).replaceAll(sourceMove.oldPath, sourceMove.nextPath)) as PageFlowOptions
-                Object.keys(stored).forEach(key => delete (stored as Record<string, unknown>)[key])
-                Object.assign(stored, remapped)
-              }
               const placements = { ...(stored.pageTree?.placements ?? {}) }
-              if (sourceMove.moved) delete placements[sourceMove.oldPath]
               for (const { path, group, order } of savedPlacements) placements[path] = { ...placements[path], group, order }
               stored.pageTree = { ...stored.pageTree, placements }
               await writePageFlowConfig(configFile, stored)

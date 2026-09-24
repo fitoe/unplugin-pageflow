@@ -15,6 +15,8 @@ Selecting a page brings its connected pages into view, promotes the selected pre
 
 ## Explore route groups
 
+Dragging a page into another directory in the page tree saves its visual group and order in `.pageflow`. The page URL, application route configuration, source files and imports stay unchanged.
+
 Routes with shared path segments can appear as a deck. Open the deck to inspect the next level. PageFlow keeps a breadcrumb for the active group and animates between levels so the current context remains clear.
 
 ## Read connections

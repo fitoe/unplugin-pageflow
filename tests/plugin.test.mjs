@@ -213,7 +213,7 @@ test('refreshing project config rescans uni-app routes and removes deleted pages
   }
 })
 
-test('moves a uni-app page source when dropped into another tree directory', async () => {
+test('regroups a uni-app page without changing routes, source files or relative dependencies', async () => {
   const root = await mkdtemp(resolve(os.tmpdir(), 'pageflow-uni-move-'))
   await mkdir(resolve(root, 'src/pages/source'), { recursive: true })
   await writeFile(resolve(root, '.pageflow'), JSON.stringify({
@@ -224,8 +224,11 @@ test('moves a uni-app page source when dropped into another tree directory', asy
   await writeFile(resolve(root, 'src/pages.json'), JSON.stringify({
     pages: [{ path: 'pages/source/detail', style: { navigationBarTitleText: 'Detail' } }],
   }))
-  await writeFile(resolve(root, 'src/pages/source/detail.vue'), '<template><view>detail</view></template>')
+  const source = '<script setup>import value from "./helper.js"</script><template><view>{{value}}</view></template>'
+  await writeFile(resolve(root, 'src/pages/source/detail.vue'), source)
+  await writeFile(resolve(root, 'src/pages/source/helper.js'), 'export default 1')
   await writeFile(resolve(root, 'src/pages/source/index.vue'), '<template><navigator url="/pages/source/detail" /></template>')
+  const originalRoutes = await readFile(resolve(root, 'src/pages.json'), 'utf8')
   const server = await createServer({ root, configFile: resolve('vite.config.ts'), logLevel: 'silent', server: { host: '127.0.0.1', port: 0 } })
   await server.listen()
   try {
@@ -242,12 +245,20 @@ test('moves a uni-app page source when dropped into another tree directory', asy
       }),
     })
     assert.equal(response.status, 200)
-    assert.equal(await readFile(resolve(root, 'src/pages/target/detail.vue'), 'utf8'), '<template><view>detail</view></template>')
-    await assert.rejects(readFile(resolve(root, 'src/pages/source/detail.vue'), 'utf8'))
-    assert.match(await readFile(resolve(root, 'src/pages/source/index.vue'), 'utf8'), /\/pages\/target\/detail/)
+    assert.equal((await response.json()).move.moved, false)
+    assert.equal(await readFile(resolve(root, 'src/pages/source/detail.vue'), 'utf8'), source)
+    assert.equal(await readFile(resolve(root, 'src/pages/source/helper.js'), 'utf8'), 'export default 1')
+    await assert.rejects(readFile(resolve(root, 'src/pages/target/detail.vue'), 'utf8'), { code: 'ENOENT' })
+    assert.match(await readFile(resolve(root, 'src/pages/source/index.vue'), 'utf8'), /\/pages\/source\/detail/)
+    assert.equal(await readFile(resolve(root, 'src/pages.json'), 'utf8'), originalRoutes)
+    const refresh = await fetch(`${origin}/__unplugin-pageflow/api/config`, { method: 'POST' })
+    assert.equal(refresh.status, 200)
+    const graph = await (await fetch(`${origin}/__unplugin-pageflow/api/graph`)).json()
+    assert(graph.pages.some(page => page.path === '/pages/source/detail'))
     const stored = JSON.parse(await readFile(resolve(root, '.pageflow'), 'utf8'))
-    assert.deepEqual(stored.pages['/pages/target/detail'], { name: 'Detail' })
-    assert.equal(stored.pages['/pages/source/detail'], undefined)
+    assert.deepEqual(stored.pages['/pages/source/detail'], { name: 'Detail' })
+    assert.deepEqual(stored.pageTree.placements['/pages/source/detail'], { group: 'target', order: 0 })
+    assert.equal(stored.pages['/pages/target/detail'], undefined)
   } finally {
     await server.close()
     await rm(root, { recursive: true, force: true })

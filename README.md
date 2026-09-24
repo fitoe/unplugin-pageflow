@@ -1,268 +1,178 @@
 # PageFlow
 
-> 在一张无限画布上，看清应用的页面、跳转、接口、测试与问题。
+> 在一张无限画布上，查看应用页面、追踪跳转，并检查接口、测试与诊断结果。
 
 [![CI](https://github.com/fitoe/unplugin-pageflow/actions/workflows/ci.yml/badge.svg)](https://github.com/fitoe/unplugin-pageflow/actions/workflows/ci.yml)
 [![npm](https://img.shields.io/npm/v/unplugin-pageflow?color=cb3837&logo=npm)](https://www.npmjs.com/package/unplugin-pageflow)
 ![Node](https://img.shields.io/badge/Node-%3E%3D20.19-339933?logo=node.js&logoColor=white)
 
-PageFlow 是一个开发环境页面流程可视化插件。它自动读取项目路由，在无限画布中运行真实页面，并把页面之间的导航关系、接口请求、相关测试和诊断结果放进同一个上下文。
+PageFlow 是面向开发与调试的页面流程工作台。它从项目路由发现页面，在画布中按需加载真实预览，把导航关系和页面相关信息集中到一起。适合接手陌生项目、梳理业务流程、排查跳转问题，以及检查页面改动。
 
-PageFlow 也提供独立 Chrome 扩展：不改造目标项目即可使用页面、接口、基础诊断、截图和 Todo。需要源码、HMR 和测试集成时使用 unplugin；扩展的开发与安装说明见 [`packages/chrome-extension`](packages/chrome-extension/README.md)。
+[快速开始](#快速开始) · [在线文档](https://pageflowjs.github.io) · [框架接入](https://pageflowjs.github.io/integrations/) · [Chrome 扩展](https://pageflowjs.github.io/guide/chrome-extension)
 
-**真实页面，不是截图 · 自动发现路由 · 不进入生产构建**
+![PageFlow 动画演示：展开页面组、聚焦页面并查看跳转关系](https://raw.githubusercontent.com/fitoe/unplugin-pageflow/master/docs/public/pageflow-demo.svg)
 
-[快速开始](#快速开始) · [在线文档](https://pageflowjs.github.io) · [框架接入](https://pageflowjs.github.io/guide/getting-started) · [npm](https://www.npmjs.com/package/unplugin-pageflow)
+## 你可以用它做什么
 
-![PageFlow 动画演示：展开页面组、聚焦页面并查看跳转关系](./docs/public/pageflow-demo.svg)
-
-## 为什么使用 PageFlow
-
-应用变大后，页面分散在路由、模块、接口和测试中。开发者经常需要回答：
-
-- 项目到底有哪些页面？
-- 当前按钮会跳到哪里？
-- 某个页面从哪里进入，又能前往哪里？
-- 当前页面调用了哪些接口？
-- 页面有没有关联测试和明显问题？
-
-传统流程图需要额外维护，静态截图又容易过期。PageFlow 直接使用项目正在运行的页面和路由，把答案放回一张可以拖动、缩放和探索的画布。
-
-## 它如何工作
-
-```text
-发现项目路由 → 在画布中运行真实页面 → 聚焦页面并检查关联信息
-```
-
-1. PageFlow 从框架路由或显式配置中发现页面。
-2. 页面按路由层级组织，在进入视口时按需渲染。
-3. 聚焦页面后，PageFlow 识别链接与程序式导航。
-4. 关联页面移动到焦点页周围，并从实际交互位置建立连线。
-5. 右侧面板集中显示接口、测试与诊断结果。
-
-## 核心能力
-
-| 能力 | 你可以做什么 |
+| 想了解的问题 | PageFlow 提供的能力 |
 | --- | --- |
-| 无限路由画布 | 从全局查看应用结构，按路由层级展开或收起页面组 |
-| 真实页面预览 | 直接运行项目页面，不依赖另一套原型或过期截图 |
-| 导航关系发现 | 识别链接、RouterLink、uni-app API 和常见程序式跳转 |
-| 接口检查 | 查看当前页面的请求方法、路由、耗时、状态和返回字段 |
-| 页面测试 | 自动关联单元、组件和 E2E 测试，并按配置触发执行 |
-| 轻量诊断 | 检查可访问性、布局、交互和导航问题，并定位对应元素 |
-| AI 协作 | 复制当前页面的结构化上下文和修复提示词，交给任意编码助手分析 |
+| 项目有哪些页面？ | 路由画布、页面搜索和分组浏览 |
+| 这个页面能跳到哪里？ | 导航目标发现、交互热点与方向连线 |
+| 页面实际运行是什么样？ | 按需加载真实页面，结合缩略图浏览更多页面 |
+| 页面调用了哪些接口？ | Fetch/XHR 请求、耗时、状态和响应字段 |
+| 哪些问题值得检查？ | 可访问性、布局、交互、导航与接口诊断 |
+| 页面有哪些相关测试？ | 关联单元、组件及 E2E 测试，查看或触发执行结果 |
+| 如何把问题交给编码助手？ | 复制包含路由、接口、测试与诊断的页面上下文 |
 
-PageFlow 只分析当前需要的页面，不会预先启动整个应用的所有 iframe。
+## 选择使用方式
+
+| | 项目插件 `unplugin-pageflow` | Chrome 扩展 |
+| --- | --- | --- |
+| 接入 | 安装开发依赖并配置项目 | 安装浏览器扩展，无需修改目标项目 |
+| 页面与接口 | 路由画布、页面预览、请求检查 | 页面画板、请求检查 |
+| 检查与记录 | 页面诊断、按需 Lighthouse 审计 | 基础诊断、截图与 Todo |
+| 源码与测试 | 源码分析、HMR 更新、测试发现与执行 | 使用项目插件获得这些能力 |
+| 适用场景 | 持续开发、调试和回归检查 | 快速检查当前浏览器页面 |
+
+需要与项目源码联动时，按下面的步骤安装插件。浏览器扩展的安装和权限说明见 [Chrome 扩展指南](https://pageflowjs.github.io/guide/chrome-extension)。
 
 ## 快速开始
 
-### 1. 安装
+以下以 **Vite + Vue Router** 项目为例，需要 Node.js `>=20.19`。其他框架见[框架支持](#框架支持)。
+
+### 1. 安装开发依赖
 
 ```bash
 pnpm add -D unplugin-pageflow
+# 或 npm install -D unplugin-pageflow
 ```
 
-也可以使用 `npm install -D unplugin-pageflow`。
+### 2. 添加插件
 
-### 2. 加入 Vite 配置
+在现有 Vite 配置中保留项目原有插件，并加入 `PageFlow.vite()`：
 
 ```ts
 // vite.config.ts
-import PageFlow from 'unplugin-pageflow'
 import { defineConfig } from 'vite'
+import vue from '@vitejs/plugin-vue'
+import PageFlow from 'unplugin-pageflow'
 
 export default defineConfig({
-  plugins: [
-    PageFlow.vite(),
-  ],
+  plugins: [vue(), PageFlow.vite()],
 })
 ```
 
-### 3. 启动项目
+### 3. 启动并打开画布
 
 ```bash
 pnpm dev
 ```
 
-打开开发服务器上的：
+打开终端输出的 PageFlow 地址，例如：
 
 ```text
 http://localhost:5173/__unplugin-pageflow/
 ```
 
-宿主页面右下角也会显示 PageFlow 浮动按钮，点击后在新窗口打开面板。若不需要，可关闭：
+端口跟随宿主开发服务器。也可以点击宿主页面右下角的 PageFlow 浮动按钮。
 
-```ts
-PageFlow.vite({ launcher: false })
-```
+进入画布后，搜索一个页面并聚焦它：查看真实预览、点击热点和右侧关联信息。若未发现页面，检查框架接入方式，或通过 `routes` 显式提供路由，参见[配置参考](https://pageflowjs.github.io/reference/configuration)。
 
-可在 `.pageflow` 中把页面绑定到 Figma 节点；聚焦该页面后，预览旁会显示 Figma 按钮：
+## 一次典型的检查流程
+
+1. **找到页面**：搜索路由，或逐层展开页面组，缩小检查范围。
+2. **查看关系**：聚焦页面，查看已识别的导航目标和热点连线。
+3. **检查运行信息**：查看接口请求和诊断，定位异常元素；需要性能评估时手动运行 Lighthouse。
+4. **验证改动**：查看关联测试并按需执行，结合 HMR 更新检查页面变化。
+5. **交接问题**：复制页面上下文或 AI 修复提示词，交给团队成员或编码助手。
+
+### 整理页面与预览
+
+页面树支持分组和排序。跨目录拖动只把显示位置保存到 `.pageflow`，页面 URL、路由配置、源码文件和导入关系保持不变。
+
+画布结合缩略图与按需挂载的真实预览，不会一次启动所有页面的 iframe。动态路由参数、登录会话和页面状态可以按项目配置，详见[动态路由](https://pageflowjs.github.io/guide/dynamic-routes)、[页面状态](https://pageflowjs.github.io/guide/state)和[大型项目与缓存](https://pageflowjs.github.io/guide/large-projects)。
+
+### 关联测试
+
+PageFlow 根据组件导入、同名文件约定、路由引用或显式映射关联测试。检测到项目已安装 Vitest 时，可自动提供单元与组件测试命令；其他执行方式通过 `testCommands` 配置。测试由用户触发，结果保存在本地。
+
+配置方法见[页面测试](https://pageflowjs.github.io/guide/page-tests)。
+
+### 对照 Figma 设计
+
+聚焦页面后，点击 Figma 按钮并粘贴节点链接即可绑定。也可以在项目根目录的 `.pageflow` 中配置：
 
 ```json
 {
   "pages": {
-    "/pages/agri-condition/home/index": {
+    "/orders": {
       "figma": "FILE_KEY#123:456"
     }
   }
 }
 ```
 
-未绑定时可直接点击常驻的 Figma 按钮，粘贴包含节点链接的任意文本；PageFlow 会自动识别并保存紧凑的 `fileKey#nodeId`。
-
-如需检查绑定设计文件是否有新版本，在运行 PageFlow 的本地环境中设置 `FIGMA_ACCESS_TOKEN`（也兼容 `FIGMA_TOKEN`）。令牌是当前环境的全局能力，不属于项目配置，PageFlow 只在本地服务端使用它。首次成功查询时会自动为尚无基线的绑定保存一个轻量的 `figmaVersion` 字符串；之后文件版本变化时，Figma 图标会显示橙色提示。提示表示文件有更新，不代表绑定节点一定发生了变化。
-
-浮动按钮只注入开发环境，不进入生产构建。端口跟随项目的 Vite 开发服务器。Vue Router 路由会自动发现；uni-app 以 `pages.json` 作为页面集合与顺序的唯一来源，`.pageflow` 中的 `routes` 只用于覆盖路由元数据或补充自定义页面，不会裁剪 `pages.json` 页面。
-
-## 框架支持
-
-| 框架 | 接入方式 |
-| --- | --- |
-| Vite + Vue Router | `PageFlow.vite()` |
-| uni-app | `PageFlow.vite()` |
-| Nuxt | `modules: ['unplugin-pageflow/nuxt']` |
-| Astro | `PageFlow()` from `unplugin-pageflow/astro` |
-| React Router | `PageFlow(routeObjects)` from `unplugin-pageflow/react-router` |
-| SvelteKit | `...PageFlow()` from `unplugin-pageflow/sveltekit` |
-| SolidStart | `...PageFlow()` from `unplugin-pageflow/solid-start` |
-| Qwik City | `PageFlow()` from `unplugin-pageflow/qwik-city` |
-| Next.js | `pageflow-next` 开发期 sidecar |
-| 普通 Vite 项目 | 通过 `routes` 显式提供路由 |
-
-查看[兼容性与限制](https://pageflowjs.github.io/reference/compatibility)以及[各框架接入指南](https://pageflowjs.github.io/guide/getting-started)。
-
-## 适合这些场景
-
-- **接手陌生项目**：快速理解页面范围和主要流程。
-- **大型应用梳理**：从路由分组进入具体页面，不在文件树中反复跳转。
-- **UI 重构**：在修改前确认页面入口、目标页面和关联测试。
-- **跳转问题排查**：发现失效路由、重复导航和不合适的导航方法。
-- **Code Review**：把页面、接口、测试和诊断放在同一上下文中检查。
-- **测试补齐**：看到页面是否有关联测试，以及最近一次执行结果。
-
-## 开发环境专用
-
-PageFlow 的运行边界明确：
-
-- 仅在开发服务器中启用，不向生产构建注入 runtime。
-- 页面进入视口或参与聚焦时才挂载真实预览。
-- 只分析焦点页的一层导航关系，不持续扫描整个应用。
-- 缩略图、测试结果和画布状态使用本地有界缓存。
-- 项目专属规则通过可选 Inspector 注册，不进入 PageFlow 核心。
-
-## 页面诊断
-
-PageFlow 可以检查：
-
-- 缺少可访问名称、无效链接和交互控件嵌套；
-- 点击区域、字号、对比度、横向溢出和图片尺寸；
-- 纯跳转事件、重复导航、失效路由和导航方法不匹配；
-- HTTP 失败、慢请求、大响应和短时间重复请求。
-
-诊断只报告问题，不自动修改项目源码。Lighthouse 审计按需运行，不会因为打开 PageFlow 自动启动。
-
-规则阈值、忽略区域和开关见[配置参考](https://pageflowjs.github.io/reference/configuration)。
+如需查询设计文件版本，在运行插件的服务端环境设置 `FIGMA_ACCESS_TOKEN`，也兼容 `FIGMA_TOKEN`。令牌无需写入 `.pageflow`。版本提示表示整个 Figma 文件有更新，不代表绑定节点一定发生了变化。
 
 ### 与 AI 协作
 
-聚焦页面后，可在“诊断”面板复制 AI 修复提示词。提示词包含当前路由、诊断、接口请求、相关测试、页面链接和 Lighthouse 结果，可直接交给 Codex、Claude Code、Cursor 或其他编码助手。
+在诊断面板复制修复提示词，即可把页面路由、诊断、接口、相关测试和已获取的 Lighthouse 结果交给 Codex、Claude Code、Cursor 等编码助手。PageFlow 不内置模型；由你选择如何使用这些上下文。
 
-PageFlow 不内置模型、不上传项目数据，也不自动修改源码。编码助手完成修改后，Vite 热更新会让 PageFlow 自动重新检查当前页面。
-
-PageFlow 还会把当前焦点页上下文同步到仅存在于本地开发服务器内存的 JSON 接口：
+项目插件还提供当前已聚焦页面的上下文接口：
 
 ```text
-http://localhost:5173/__unplugin-pageflow/api/ai-context?path=/pages/mine
+http://localhost:5173/__unplugin-pageflow/api/ai-context?path=/orders
 ```
 
-端口和路由参数按实际项目调整。页面尚未在画布中聚焦时，接口返回 `404`。
+上下文保存在开发服务器内存中；尚未采集该页面时返回 `404`。端口和页面路径按实际项目调整。
 
-## 按需扩展
+## 框架支持
 
-项目专属检查可以通过独立入口注册，不需要把业务规则加入 PageFlow：
+| 框架 | 接入入口 |
+| --- | --- |
+| Vite + Vue Router | `PageFlow.vite()` |
+| uni-app（Vite / H5 开发预览） | `PageFlow.vite()` |
+| Nuxt | `unplugin-pageflow/nuxt` |
+| Astro | `unplugin-pageflow/astro` |
+| React Router | `unplugin-pageflow/react-router` |
+| SvelteKit | `unplugin-pageflow/sveltekit` |
+| SolidStart | `unplugin-pageflow/solid-start` |
+| Qwik City | `unplugin-pageflow/qwik-city` |
+| Next.js | `pageflow-next` 开发入口 |
+| 其他 Vite 项目 | `PageFlow.vite({ routes: [...] })`，显式提供路由 |
 
-```ts
-import { registerPageFlowInspector } from 'unplugin-pageflow/inspectors'
+各入口的配置方式不同，完整示例见[框架接入指南](https://pageflowjs.github.io/integrations/)，版本要求见[兼容性说明](https://pageflowjs.github.io/reference/compatibility)。
 
-const dispose = registerPageFlowInspector({
-  id: 'project-rules',
-  inspect({ document }) {
-    return document.querySelector('[data-project-warning]')
-      ? [{
-          ruleId: 'project-warning',
-          severity: 'suggestion',
-          category: 'interaction',
-          title: '发现项目提示',
-          description: '这是由宿主项目提供的检查结果。',
-        }]
-      : []
-  },
-})
-```
+uni-app 的页面集合与顺序来自 `pages.json`；`.pageflow` 中的 `routes` 可覆盖路由元数据或补充自定义页面。
 
-Inspector 只在 PageFlow 请求诊断时运行，支持同步、异步和注销。单个 Inspector 失败不会中断其他检查。
+## 使用边界
 
-## 常见问题
+- **项目插件仅用于开发环境**：生产构建不会注入 PageFlow runtime。
+- **预览运行真实页面**：页面初始化仍会发起请求并执行自身逻辑；涉及写入时请使用本地或测试数据。
+- **预览遵循应用权限**：PageFlow 不绕过登录和授权，真实页面预览需要同源 iframe 访问能力。
+- **导航发现有范围**：识别支持的链接和程序式跳转，无法预先推断所有动态目标。
+- **诊断需要判断**：结果用于辅助检查；Lighthouse 按需运行，项目专属规则可通过 `unplugin-pageflow/inspectors` 注册。
 
-<details>
-<summary><strong>PageFlow 会进入生产包吗？</strong></summary>
-
-不会。插件及页面 runtime 只在开发服务器中启用，生产构建不会注入 PageFlow runtime。
-
-</details>
-
-<details>
-<summary><strong>它会替代 Storybook、测试框架或设计工具吗？</strong></summary>
-
-不会。PageFlow 负责把应用路由和真实页面组织成可探索的流程画布，并关联项目已有的接口、测试和诊断信息。
-
-</details>
-
-<details>
-<summary><strong>它会自动点击页面或提交表单吗？</strong></summary>
-
-不会。PageFlow 不自动操作业务控件，也不会绕过认证或授权。预览页面仍可能执行自身初始化逻辑，因此涉及真实写入时应使用本地或可清理测试环境。
-
-</details>
-
-<details>
-<summary><strong>动态路由和登录页面可以预览吗？</strong></summary>
-
-可以通过配置提供安全的动态参数和本地预览会话。PageFlow 不接管项目权限模型，也不要在页面状态中注册 Token、密码或验证码。
-
-</details>
-
-## 文档
-
-- [快速开始](https://pageflowjs.github.io/guide/getting-started)
-- [基本概念](https://pageflowjs.github.io/guide/concepts)
-- [使用画布](https://pageflowjs.github.io/guide/canvas)
-- [页面状态](https://pageflowjs.github.io/guide/state)
-- [页面测试](https://pageflowjs.github.io/guide/page-tests)
-- [大型项目与缓存](https://pageflowjs.github.io/guide/large-projects)
-- [配置参考](https://pageflowjs.github.io/reference/configuration)
-- [限制与安全](https://pageflowjs.github.io/reference/limitations)
-- [故障排查](https://pageflowjs.github.io/guide/troubleshooting)
+更多说明见[限制与安全](https://pageflowjs.github.io/reference/limitations)及[故障排查](https://pageflowjs.github.io/guide/troubleshooting)。
 
 ## 参与开发
+
+仓库使用 pnpm workspace，CI 使用 pnpm 10。安装依赖后可启动示例项目：
 
 ```bash
 pnpm install
 pnpm playground
-pnpm test
-pnpm build
 ```
 
-日常快速检查（类型检查与核心测试）：
+| 命令 | 用途 |
+| --- | --- |
+| `pnpm check` | 类型检查与核心测试 |
+| `pnpm test` | 全量 `*.test.mjs` 测试 |
+| `pnpm build:plugin` | 构建可发布插件与画布客户端 |
+| `pnpm dev:chrome` | 开发 Chrome 扩展 |
+| `pnpm docs:dev` | 本地预览文档 |
+| `pnpm check:full` | 发布前完整检查，含构建、Chrome E2E 和打包验证 |
 
-```bash
-pnpm check
-```
+运行浏览器测试前，可用 `pnpm exec playwright install chromium` 安装测试浏览器。扩展开发细节见 [Chrome 扩展开发说明](https://github.com/fitoe/unplugin-pageflow/blob/master/packages/chrome-extension/README.md)。
 
-发布前完整检查（包含构建、全量测试、Chrome E2E 与打包验证）：
-
-```bash
-pnpm check:full
-```
-
-要求 Node.js `>=20.19`、npm `>=10`。
+遇到问题时，请在 [GitHub Issues](https://github.com/fitoe/unplugin-pageflow/issues) 中提供框架及版本、接入配置、复现步骤和相关日志。
