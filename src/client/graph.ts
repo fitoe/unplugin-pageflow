@@ -1,6 +1,6 @@
 import type { PageFlowGraph, PageFlowLighthouseReport, PageFlowLighthouseSession, PageFlowPage, PageFlowPageTest, PageFlowProjectConfig, ResolvedPageFlowOptions } from '../shared/types'
 import type { PageFlowAIContext } from './ai-context'
-import { PAGEFLOW_GRAPH_EVENT, PAGEFLOW_PAGE_EVENT, PAGEFLOW_TEST_EVENT } from '../shared/protocol'
+import { PAGEFLOW_CLIENT_UPDATE_EVENT, PAGEFLOW_GRAPH_EVENT, PAGEFLOW_PAGE_EVENT, PAGEFLOW_TEST_EVENT } from '../shared/protocol'
 
 export interface PageFlowEditorInfo {
   id: 'cursor' | 'jetbrains' | 'sublime' | 'system' | 'vscode' | 'zed'
@@ -163,13 +163,14 @@ export async function cancelPageFlowTest(config: ResolvedPageFlowOptions, id: st
 
 export function subscribeToPageFlowUpdates(
   config: ResolvedPageFlowOptions,
-  callbacks: { graph: (graph: PageFlowGraph) => void; page: (page: PageFlowPage) => void; tests?: () => void; connected?: () => void },
+  callbacks: { graph: (graph: PageFlowGraph) => void; page: (page: PageFlowPage) => void; tests?: () => void; client?: () => void; connected?: () => void },
 ) {
   const source = new EventSource(`${config.previewPath}api/events`)
   source.addEventListener('open', () => callbacks.connected?.())
   source.addEventListener(PAGEFLOW_GRAPH_EVENT, event => callbacks.graph(JSON.parse(event.data)))
   source.addEventListener(PAGEFLOW_PAGE_EVENT, event => callbacks.page(JSON.parse(event.data)))
   source.addEventListener(PAGEFLOW_TEST_EVENT, () => callbacks.tests?.())
+  source.addEventListener(PAGEFLOW_CLIENT_UPDATE_EVENT, () => callbacks.client?.())
   return () => source.close()
 }
 

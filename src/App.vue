@@ -4412,6 +4412,7 @@ onMounted(async () => {
     graph: graph => applyGraph(graph.pages, graph.routeMode),
     page: applyPageUpdate,
     tests: () => void refreshFocusedTests(),
+    client: () => window.location.reload(),
     connected: () => {
       if (pages.value.length) return
       void fetchPageFlowGraph(props.config)

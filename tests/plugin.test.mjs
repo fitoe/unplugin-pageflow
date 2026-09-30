@@ -328,8 +328,7 @@ test('serves the unplugin-pageflow client from the configured development route'
     const runtimeProxyCode = await runtimeProxy.text()
     const pageflow = await fetch(`${origin}/__unplugin-pageflow/`)
     const html = await pageflow.text()
-    const clientVersion = await (await fetch(`${origin}/__unplugin-pageflow/api/client-version`)).text()
-    assert.ok(html.includes(`let pageflowClientVersion = ${JSON.stringify(clientVersion)}`))
+    assert.doesNotMatch(html, /api\/client-version|setInterval/)
     const clientPath = html.match(/src="([^"]*virtual:unplugin-pageflow\/client[^"]*)"/)?.[1]
     assert(clientPath)
     const client = await fetch(`${origin}${clientPath}`)
@@ -428,7 +427,7 @@ test('serves the unplugin-pageflow client from the configured development route'
     assert.equal(pageflow.status, 200)
     assert.match(html, /<title>unplugin-pageflow<\/title>/)
     assert.match(clientPath, /^\/@id\/virtual:unplugin-pageflow\/client\?v=\d+(?:\.\d+)?$/)
-    assert.equal(new URL(clientPath, origin).searchParams.get('v'), clientVersion)
+    assert.ok(new URL(clientPath, origin).searchParams.get('v'))
     assert.doesNotMatch(html, /@vite\/client/)
     assert.equal(client.status, 200)
     assert.match(clientCode, /mountPageFlow/)

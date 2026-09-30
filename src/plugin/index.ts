@@ -6,7 +6,7 @@ import { createHash } from 'node:crypto'
 import { spawn, type ChildProcess } from 'node:child_process'
 import { createRequire } from 'node:module'
 import { readFile, readdir, stat } from 'node:fs/promises'
-import { existsSync, readFileSync } from 'node:fs'
+import { existsSync, readFileSync, watch, type FSWatcher } from 'node:fs'
 import type { ServerResponse } from 'node:http'
 import { dirname, isAbsolute, relative, resolve } from 'node:path'
 import { StringDecoder } from 'node:string_decoder'
@@ -24,7 +24,7 @@ import type {
   ResolvedPageFlowOptions,
 } from '../shared/types.ts'
 import { expandDynamicRoutes } from '../shared/dynamic-routes.ts'
-import { PAGEFLOW_GRAPH_EVENT, PAGEFLOW_PAGE_EVENT } from '../shared/protocol.ts'
+import { PAGEFLOW_CLIENT_UPDATE_EVENT, PAGEFLOW_GRAPH_EVENT, PAGEFLOW_PAGE_EVENT } from '../shared/protocol.ts'
 import {
   PAGEFLOW_CLIENT_ID,
   PAGEFLOW_CLIENT_RESOLVED_ID,
@@ -447,7 +447,7 @@ async function readPage(request: AsyncIterable<Uint8Array | string>): Promise<Pa
   return { path: value.path, title, links }
 }
 
-function pageflowHtml(base = '/', styleUrl?: string, versionUrl?: string, clientVersion?: string) {
+function pageflowHtml(base = '/', styleUrl?: string, clientVersion?: string) {
   const clientUrl = `${base.endsWith('/') ? base : `${base}/`}@id/${PAGEFLOW_CLIENT_ID}${clientVersion ? `?v=${encodeURIComponent(clientVersion)}` : ''}`
   return `<!doctype html>
 <html lang="en">
@@ -460,17 +460,6 @@ function pageflowHtml(base = '/', styleUrl?: string, versionUrl?: string, client
   <body>
     <div id="app"></div>
     <script type="module" src="${clientUrl}"></script>
-    ${versionUrl ? `<script>
-      let pageflowClientVersion = ${JSON.stringify(clientVersion ?? '')};
-      setInterval(async () => {
-        try {
-          const response = await fetch('${versionUrl}', { cache: 'no-store' });
-          const version = await response.text();
-          if (pageflowClientVersion && version !== pageflowClientVersion) location.reload();
-          pageflowClientVersion = version;
-        } catch {}
-      }, 1000);
-    </script>` : ''}
   </body>
 </html>`
 }
@@ -803,7 +792,6 @@ const factory: UnpluginFactory<PageFlowOptions | undefined> = (options) => {
         },
       },
       async configureServer(server) {
-        let servedRuntimeVersion = 0
         projectRoot = resolve(options?.projectRoot ?? server.config.root)
         const handleDeletedFile = (file: string) => {
           const normalized = normalizeFile(file)
@@ -851,6 +839,29 @@ const factory: UnpluginFactory<PageFlowOptions | undefined> = (options) => {
           server.ws.send({ type: 'custom', event: PAGEFLOW_PAGE_EVENT, data: page })
           sendEvent(PAGEFLOW_PAGE_EVENT, page)
         }
+        // PageFlow's built client is excluded from Vite HMR to avoid a build
+        // loop. Watch it separately and reuse the existing SSE connection,
+        // instead of asking every open canvas to poll once per second.
+        const clientWatchers: FSWatcher[] = []
+        let clientUpdateTimer: ReturnType<typeof setTimeout> | undefined
+        let knownClientVersion = await getClientVersion()
+        const notifyClientUpdate = () => {
+          if (clientUpdateTimer) clearTimeout(clientUpdateTimer)
+          clientUpdateTimer = setTimeout(() => {
+            clientUpdateTimer = undefined
+            void getClientVersion().then((version) => {
+              if (version === knownClientVersion) return
+              knownClientVersion = version
+              sendEvent(PAGEFLOW_CLIENT_UPDATE_EVENT, { version })
+            }).catch(() => undefined)
+          }, 250)
+        }
+        if (useBuiltClient && !packaged) {
+          for (const directory of new Set([dirname(builtClientEntryFile), dirname(clientStyleFile ?? builtClientEntryFile)])) {
+            try { clientWatchers.push(watch(directory, notifyClientUpdate)) }
+            catch { /* The normal Vite HMR path remains available in source mode. */ }
+          }
+        }
         if (resolved.routes.length && resolved.framework !== 'uni-app') {
           routes = resolved.routes
           rebuildGraph()
@@ -876,7 +887,6 @@ const factory: UnpluginFactory<PageFlowOptions | undefined> = (options) => {
           const thumbnailsPath = `${resolved.previewPath}api/thumbnails`
           const thumbnailPath = `${resolved.previewPath}api/thumbnail`
           const stylePath = `${resolved.previewPath}style.css`
-          const clientVersionPath = `${resolved.previewPath}api/client-version`
           const groupNamePath = `${resolved.previewPath}api/group-name`
           const pageNamePath = `${resolved.previewPath}api/page-name`
           const figmaPagePath = `${resolved.previewPath}api/figma-page`
@@ -1443,18 +1453,6 @@ const factory: UnpluginFactory<PageFlowOptions | undefined> = (options) => {
             return
           }
 
-          if (pathname === clientVersionPath && request.method === 'GET') {
-            const runtimeVersion = await stat(runtimeEntryFile).then(info => info.mtimeMs).catch(() => 0)
-            if (runtimeVersion !== servedRuntimeVersion) {
-              server.moduleGraph.getModulesByFile(runtimeEntryFile)?.forEach(module => server.moduleGraph.invalidateModule(module))
-              servedRuntimeVersion = runtimeVersion
-            }
-            response.setHeader('Content-Type', 'text/plain; charset=utf-8')
-            response.setHeader('Cache-Control', 'no-store')
-            response.end(await getClientVersion())
-            return
-          }
-
           if (pathname === stylePath && request.method === 'GET' && clientStyleFile) {
             response.setHeader('Content-Type', 'text/css; charset=utf-8')
             response.setHeader('Cache-Control', 'no-cache')
@@ -1608,12 +1606,14 @@ const factory: UnpluginFactory<PageFlowOptions | undefined> = (options) => {
 
           response.statusCode = 200
           response.setHeader('Content-Type', 'text/html; charset=utf-8')
-          response.end(pageflowHtml(server.config.base, clientStyleFile ? stylePath : undefined, clientVersionPath, await getClientVersion()))
+          response.end(pageflowHtml(server.config.base, clientStyleFile ? stylePath : undefined, await getClientVersion()))
         })
 
         server.httpServer?.once('close', () => {
           server.watcher.off('unlink', handleDeletedFile)
           if (projectRefreshTimer) clearTimeout(projectRefreshTimer)
+          if (clientUpdateTimer) clearTimeout(clientUpdateTimer)
+          clientWatchers.forEach(watcher => watcher.close())
           eventResponses.forEach(response => response.end())
           eventResponses.clear()
         })
