@@ -50,7 +50,7 @@ test('scans native controls and generates varied safe values with Faker', () => 
   assert.match(idCard, /^\d{17}[\dX]$/)
   assert.equal('10X98765432'[[...idCard.slice(0, 17)].reduce((sum, digit, index) => sum + Number(digit) * [7, 9, 10, 5, 8, 4, 2, 1, 6, 3, 7, 9, 10, 5, 8, 4, 2][index], 0) % 11], idCard.at(-1))
   assert.equal(first.controls.some(item => typeof item.suggestedValue === 'string' && /pageflow|测试|示例/i.test(item.suggestedValue)), false)
-  assert.equal(first.controls.find(item => item.identity === 'name:role').suggestedValue, 'farmer')
+  assert.ok(['farmer', 'expert'].includes(first.controls.find(item => item.identity === 'name:role').suggestedValue))
   assert.equal(first.controls.find(item => item.identity === 'name:agreement').suggestedValue, true)
   assert.equal(first.controls.some(item => /password|captcha/i.test(item.identity)), false)
   window.close()
@@ -199,7 +199,45 @@ test('scans and selects uni-app selector pickers through their component items',
 
   const result = formFill.applyPageFlowFormValues({ [scan.controls[0].id]: scan.controls[0].suggestedValue }, window.document)
   assert.deepEqual(result.applied, [scan.controls[0].id])
-  assert.equal(selected, '余杭区')
+  assert.ok(['余杭区', '临平区'].includes(selected))
+  window.close()
+})
+
+test('下拉框随机选择真实选项并跳过占位与禁用项', () => {
+  faker.seed(20261012)
+  const window = new Window()
+  Object.assign(globalThis, { window, document: window.document })
+  window.document.body.innerHTML = `
+    <select name="county">
+      <option value="">请选择县区</option>
+      <option value="placeholder">请选择</option>
+      <option value="blocked" disabled>禁用县区</option>
+      <optgroup disabled><option value="group-blocked">禁用分组</option></optgroup>
+      <option value="a">兰山区</option><option value="b">罗庄区</option>
+    </select>
+    <uni-picker><div class="uni-picker-select">
+      <div class="uni-picker-item">请选择县区</div>
+      <div class="uni-picker-item" aria-disabled="true">禁用县区</div>
+      <div class="uni-picker-item">兰山区</div>
+      <div class="uni-picker-item">罗庄区</div>
+    </div></uni-picker>`
+  const nativeValues = new Set()
+  const pickerValues = new Set()
+  for (let index = 0; index < 40; index++) {
+    const { controls } = formFill.scanPageFlowFormControls(window.document)
+    nativeValues.add(controls.find(item => item.kind === 'select').suggestedValue)
+    pickerValues.add(controls.find(item => item.kind === 'picker').suggestedValue)
+  }
+  assert.deepEqual([...nativeValues].sort(), ['a', 'b'])
+  assert.deepEqual([...pickerValues].sort(), ['2', '3'])
+  window.close()
+})
+
+test('只有占位项的原生 picker 不生成虚假选择', () => {
+  const window = new Window()
+  Object.assign(globalThis, { window, document: window.document })
+  window.document.body.innerHTML = '<uni-picker><div class="uni-picker-select"><div class="uni-picker-item">请选择县区</div></div></uni-picker>'
+  assert.equal(formFill.scanPageFlowFormControls(window.document).controls.length, 0)
   window.close()
 })
 
@@ -267,7 +305,7 @@ test('applies edited values through native events and restores the pre-fill stat
   assert.equal(result.applied.length, scan.controls.length)
   assert.equal(result.canUndo, true)
   assert.equal(window.document.querySelector('[name=contactName]').value, '自定义测试姓名')
-  assert.equal(window.document.querySelector('[name=role]').value, 'farmer')
+  assert.equal(window.document.querySelector('[name=role]').value, values[role.id])
   assert.equal(window.document.querySelector('[name=agreement]').checked, true)
   assert.equal(window.document.querySelector('[name=password]').value, 'secret')
   assert.equal(window.document.querySelector('[name=captchaCode]').value, '1234')

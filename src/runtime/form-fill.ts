@@ -216,14 +216,19 @@ function generatedText(element: FormControl, kind: PageFlowFormControlKind) {
   return faker.commerce.productName()
 }
 
+function isPlaceholderOption(label: string) {
+  return !normalizedText(label) || /^(?:请(?:选择|选取)|请选择|please\s+select|select\s+(?:an?\s+)?(?:option|one)\b)/i.test(normalizedText(label))
+}
+
 function suggestedValue(element: FormControl, id: string, kind: PageFlowFormControlKind, radioDefault: boolean): PageFlowFormValue {
   if (kind === 'checkbox') return element.required ? true : (element as HTMLInputElement).checked
   if (kind === 'radio') return radioDefault
   if (kind === 'select') {
     const options = [...(element as HTMLSelectElement).options]
-    return options.find(option => !option.disabled && option.value !== '')?.value
-      ?? options.find(option => !option.disabled)?.value
-      ?? element.value
+    const available = options.filter(option => !option.disabled
+      && !(option.parentElement?.localName === 'optgroup' && (option.parentElement as HTMLOptGroupElement).disabled)
+      && option.value !== '' && !isPlaceholderOption(option.textContent ?? ''))
+    return available.length ? faker.helpers.arrayElement(available).value : element.value
   }
   if (kind === 'number') {
     const semantic = controlSemanticText(element)
@@ -274,6 +279,10 @@ function pickerDescriptor(element: HTMLElement, id: string): PageFlowFormControl
     }
   }
   if (!items.length) return undefined
+  const available = items.flatMap((item, index) =>
+    !item.hasAttribute('disabled') && item.getAttribute('aria-disabled') !== 'true'
+      && !item.classList.contains('disabled') && !isPlaceholderOption(item.textContent ?? '') ? [String(index)] : [])
+  if (!available.length) return undefined
   const selectedIndex = items.findIndex(item => item.classList.contains('selected'))
   return {
     id,
@@ -283,7 +292,7 @@ function pickerDescriptor(element: HTMLElement, id: string): PageFlowFormControl
     kind: 'picker',
     required: element.hasAttribute('required'),
     value: selectedIndex >= 0 ? String(selectedIndex) : '',
-    suggestedValue: '0',
+    suggestedValue: faker.helpers.arrayElement(available),
     options: items.map((item, index) => ({ value: String(index), label: normalizedText(item.textContent) || String(index) })),
   }
 }
